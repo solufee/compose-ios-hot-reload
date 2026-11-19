@@ -1,0 +1,41 @@
+# source A: local toolchain built on this machine (layout local, no tools in the manifest), plugin 0.1.0 from the local Pages dir (commit e472c3d), 2026-11-19 18:47:18
+package OK CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-beta01, Xcode 27.2 Build version 27B52)
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 208, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+compat: baseline written for app,ui (1383 ms)
+BUILD SUCCESSFUL in 2m 39s
+run CMP hot reload: app started (attempt 1, pid 26254, 10.9 s, port 5568, log <WORK>/scratch/endpoint/my-app/launch.log) BUILD SUCCESSFUL in 11s
+screen 402x874 points, app frame 320x480
+pid0 26254
+ui[0] OK 8937ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui0-85411)']
+ui[1] OK 5834ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui1-85420)']
+ui[2] OK 5037ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui2-85426)']
+ui[3] OK 5159ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui3-85431)']
+ui[4] OK 4668ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui4-85437)']
+ui[5] OK 5025ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui5-85441)']
+ui[6] OK 5074ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui6-85446)']
+ui[7] OK 4984ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui7-85451)']
+ui[8] OK 4976ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui8-85457)']
+ui[9] OK 4760ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui9-85462)']
+ui[10] OK 5207ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui10-85466)']
+ui[11] OK 4707ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui11-85472)']
+ui[12] OK 4195ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui12-85476)']
+ui[13] OK 4866ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui13-85481)']
+ui[14] OK 4916ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui14-85486)']
+ui[15] OK 4846ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui15-85490)']
+ui[16] OK 5034ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui16-85495)']
+ui[17] OK 4945ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui17-85500)']
+ui[18] OK 5255ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui18-85505)']
+ui[19] OK 6954ms hot=True loaded=True on_screen=True pid 26254->26254 text=['Edited in ui module (ui19-85511)']
+# sources restored
+Traceback (most recent call last):
+  File "<WORK>/accept-v7/gradle-plugin/test-projects/endpoint/endpoint.py", line 285, in <module>
+    hot_round("app", i)
+    ~~~~~~~~~^^^^^^^^^^
+  File "<WORK>/accept-v7/gradle-plugin/test-projects/endpoint/endpoint.py", line 189, in hot_round
+    edit(a.app_file, a.app_re, new)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<WORK>/accept-v7/gradle-plugin/test-projects/endpoint/endpoint.py", line 168, in edit
+    raise RuntimeError(f"pattern {regex!r} not found in {rel}")
+RuntimeError: pattern 'Counter( [\\w-]+)?(?=: $count)' not found in app/src/main/kotlin/main.kt
+# exit=1
+# note: this run stopped after the ui stage because the driver's app-stage regex lost its backslash in shell quoting (no source was edited); app/both/warm/taps/cold ran again in endpoint-A-local-part2.txt. ui summary: ok=20/20, PID unchanged for all 20.

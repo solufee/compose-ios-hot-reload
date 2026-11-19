@@ -1,0 +1,1852 @@
+diff --git a/llvm/include/llvm/MC/MCAsmInfo.h b/llvm/include/llvm/MC/MCAsmInfo.h
+index 71da0482fe88..2e784ce2dc4a 100644
+--- a/llvm/include/llvm/MC/MCAsmInfo.h
++++ b/llvm/include/llvm/MC/MCAsmInfo.h
+@@ -629,6 +629,8 @@ public:
+     ExceptionsType = EH;
+   }
+ 
++  void setUsesCFIWithoutEH(bool Value) { UsesCFIWithoutEH = Value; }
++
+   bool usesCFIWithoutEH() const {
+     return ExceptionsType == ExceptionHandling::None && UsesCFIWithoutEH;
+   }
+diff --git a/llvm/include/llvm/MC/MCObjectFileInfo.h b/llvm/include/llvm/MC/MCObjectFileInfo.h
+index 5ce58ae0a836..bc8d256ecbc1 100644
+--- a/llvm/include/llvm/MC/MCObjectFileInfo.h
++++ b/llvm/include/llvm/MC/MCObjectFileInfo.h
+@@ -256,10 +256,20 @@ public:
+   bool getSupportsCompactUnwindWithoutEHFrame() const {
+     return SupportsCompactUnwindWithoutEHFrame;
+   }
++
++  void setSupportsCompactUnwindWithoutEHFrame(bool Value) {
++    SupportsCompactUnwindWithoutEHFrame = Value;
++  }
+   bool getOmitDwarfIfHaveCompactUnwind() const {
+     return OmitDwarfIfHaveCompactUnwind;
+   }
+ 
++  /// Hot reload (split) builds need DWARF CFI for every function so JIT'd
++  /// frames can be unwound. Other builds keep the platform default.
++  void setOmitDwarfIfHaveCompactUnwind(bool Value) {
++    OmitDwarfIfHaveCompactUnwind = Value;
++  }
++
+   unsigned getFDEEncoding() const { return FDECFIEncoding; }
+ 
+   unsigned getCompactUnwindDwarfEHFrameOnly() const {
+diff --git a/llvm/lib/CodeGen/AsmPrinter/AsmPrinter.cpp b/llvm/lib/CodeGen/AsmPrinter/AsmPrinter.cpp
+index 725d362ebe4c..65bd679e25ed 100644
+--- a/llvm/lib/CodeGen/AsmPrinter/AsmPrinter.cpp
++++ b/llvm/lib/CodeGen/AsmPrinter/AsmPrinter.cpp
+@@ -464,6 +464,21 @@ void AsmPrinter::getAnalysisUsage(AnalysisUsage &AU) const {
+ }
+ 
+ bool AsmPrinter::doInitialization(Module &M) {
++  // Kotlin/Native split (hot reload) builds mark the module with
++  // `Kotlin_hotReload`. Their code is JIT'd, and the system unwinder can only
++  // use DWARF CFI registered from __eh_frame, so keep FDEs even when compact
++  // unwind is present.
++  if (M.getNamedGlobal("Kotlin_hotReload") != nullptr) {
++    if (::getenv("LLVM_HOTRELOAD_DEBUG"))
++      llvm::errs() << "[hotreload] marker found, enabling DWARF unwind\n";
++    auto *MOFI =
++        const_cast<MCObjectFileInfo *>(OutContext.getObjectFileInfo());
++    MOFI->setOmitDwarfIfHaveCompactUnwind(false);
++    MOFI->setSupportsCompactUnwindWithoutEHFrame(false);
++    const_cast<MCAsmInfo *>(OutContext.getAsmInfo())
++        ->setUsesCFIWithoutEH(true);
++  }
++
+   VFS = vfs::getRealFileSystem();
+   auto *MMIWP = getAnalysisIfAvailable<MachineModuleInfoWrapperPass>();
+   MMI = MMIWP ? &MMIWP->getMMI() : nullptr;
+diff --git a/llvm/lib/ExecutionEngine/Orc/LLJIT.cpp b/llvm/lib/ExecutionEngine/Orc/LLJIT.cpp
+index 67bb7dd8ad08..0f0fc1b0b144 100644
+--- a/llvm/lib/ExecutionEngine/Orc/LLJIT.cpp
++++ b/llvm/lib/ExecutionEngine/Orc/LLJIT.cpp
+@@ -1076,6 +1076,11 @@ LLJIT::LLJIT(LLJITBuilderState &S, Error &Err)
+     Err = MainOrErr.takeError();
+     return;
+   }
++
++  // Kaldo: make the platform dylib (and therefore the ORC runtime archive)
++  // reachable from dylibs that only link against main, such as Kaldo_bootstrap.
++  if (Platform)
++    Main->addToLinkOrder(*Platform);
+ }
+ 
+ std::string LLJIT::mangle(StringRef UnmangledName) const {
+diff --git a/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp b/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp
+index d1a6eaf914a7..6a9dc803e9c5 100644
+--- a/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp
++++ b/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp
+@@ -197,11 +197,12 @@ public:
+             ExtraSymbols.push_back(KV.first);
+       }
+ 
+-      // If there were extra definitions then report the error.
+-      if (!ExtraSymbols.empty())
+-        return make_error<UnexpectedSymbolDefinitions>(
+-            Layer.getExecutionSession().getSymbolStringPool(), G.getName(),
+-            std::move(ExtraSymbols));
++      // Kaldo: plugins may synthesize definitions (e.g. __objc_stubs) that
++      // were not part of the object's original symbol set. Drop them from the
++      // resolution result instead of failing the whole materialization; their
++      // edges are already fixed up inside the graph.
++      for (auto &Name : ExtraSymbols)
++        InternedResult.erase(Name);
+     }
+ 
+     if (auto Err = MR->notifyResolved(InternedResult))
+diff --git a/llvm/lib/ExecutionEngine/Orc/MachOPlatform.cpp b/llvm/lib/ExecutionEngine/Orc/MachOPlatform.cpp
+index 6a5fb51cd6d5..7a6f14a6005a 100644
+--- a/llvm/lib/ExecutionEngine/Orc/MachOPlatform.cpp
++++ b/llvm/lib/ExecutionEngine/Orc/MachOPlatform.cpp
+@@ -1055,6 +1055,12 @@ Error MachOPlatform::MachOPlatformPlugin::preserveImportantSections(
+ Error MachOPlatform::MachOPlatformPlugin::processObjCImageInfo(
+     jitlink::LinkGraph &G, MaterializationResponsibility &MR) {
+ 
++  // Kaldo: the synthetic __llvm_jitlink_macho_objc_imageinfo symbol does not
++  // survive the hot-reload JITDylib lifecycle (it either stays Materializing
++  // forever or conflicts across objects). Kotlin's ObjC classes do not need
++  // the Swift image-info flags, so skip this registration entirely.
++  return Error::success();
++
+   // If there's an ObjC imagine info then either
+   //   (1) It's the first __objc_imageinfo we've seen in this JITDylib. In
+   //       this case we name and record it.
+@@ -1130,10 +1136,14 @@ Error MachOPlatform::MachOPlatformPlugin::processObjCImageInfo(
+     // move on. The section should already be marked no-dead-strip.
+     G.addDefinedSymbol(ObjCImageInfoBlock, 0, ObjCImageInfoSymbolName,
+                        ObjCImageInfoBlock.getSize(), jitlink::Linkage::Strong,
+-                       jitlink::Scope::Hidden, false, true);
++                       jitlink::Scope::Default, /*IsLive=*/true,
++                       /*IsExported=*/true);
++    // Kaldo: declare the marker in the JITDylib so ORC expects (and resolves)
++    // the definition emitted below. Hidden/non-exported variants either stayed
++    // in Materializing state forever or were reported as unexpected defs.
+     if (auto Err = MR.defineMaterializing(
+             {{MR.getExecutionSession().intern(ObjCImageInfoSymbolName),
+-              JITSymbolFlags()}}))
++              JITSymbolFlags::Exported}}))
+       return Err;
+     ObjCImageInfos[&MR.getTargetJITDylib()] = {Version, Flags, false};
+   }
+@@ -1219,26 +1229,12 @@ Error MachOPlatform::MachOPlatformPlugin::fixTLVSectionsAndEdges(
+ 
+   // Store key in __thread_vars struct fields.
+   if (auto *ThreadDataSec = G.findSectionByName(MachOThreadVarsSectionName)) {
+-    std::optional<uint64_t> Key;
+-    {
+-      std::lock_guard<std::mutex> Lock(MP.PlatformMutex);
+-      auto I = MP.JITDylibToPThreadKey.find(&JD);
+-      if (I != MP.JITDylibToPThreadKey.end())
+-        Key = I->second;
+-    }
+-
+-    if (!Key) {
+-      if (auto KeyOrErr = MP.createPThreadKey())
+-        Key = *KeyOrErr;
+-      else
+-        return KeyOrErr.takeError();
+-    }
+-
+-    uint64_t PlatformKeyBits =
+-        support::endian::byte_swap(*Key, G.getEndianness());
+-
++    // Kaldo: a merged object (ld -r) can contain several 3-pointer TLV records
++    // in one block. Give each record its own pthread key instead of requiring
++    // exactly one record per block.
++    const uint64_t RecordSize = 3 * G.getPointerSize();
+     for (auto *B : ThreadDataSec->blocks()) {
+-      if (B->getSize() != 3 * G.getPointerSize())
++      if (B->getSize() % RecordSize != 0)
+         return make_error<StringError>("__thread_vars block at " +
+                                            formatv("{0:x}", B->getAddress()) +
+                                            " has unexpected size",
+@@ -1246,8 +1242,15 @@ Error MachOPlatform::MachOPlatformPlugin::fixTLVSectionsAndEdges(
+ 
+       auto NewBlockContent = G.allocateBuffer(B->getSize());
+       llvm::copy(B->getContent(), NewBlockContent.data());
+-      memcpy(NewBlockContent.data() + G.getPointerSize(), &PlatformKeyBits,
+-             G.getPointerSize());
++      for (uint64_t Off = 0; Off < B->getSize(); Off += RecordSize) {
++        auto KeyOrErr = MP.createPThreadKey();
++        if (!KeyOrErr)
++          return KeyOrErr.takeError();
++        uint64_t PlatformKeyBits =
++            support::endian::byte_swap(*KeyOrErr, G.getEndianness());
++        memcpy(NewBlockContent.data() + Off + G.getPointerSize(),
++               &PlatformKeyBits, G.getPointerSize());
++      }
+       B->setContent(NewBlockContent);
+     }
+   }
+diff --git a/llvm/tools/kaldo/CMakeLists.txt b/llvm/tools/kaldo/CMakeLists.txt
+index a848f54aee63..deb2c347dd51 100644
+--- a/llvm/tools/kaldo/CMakeLists.txt
++++ b/llvm/tools/kaldo/CMakeLists.txt
+@@ -67,6 +67,7 @@ endif()
+ if(APPLE)
+     # For some reasons, -z is passed to the Xcode linker which is not supported by
+     string(REPLACE "-Wl,-z,defs" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
++    string(REPLACE "-Wl,--gc-sections" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
+ endif()
+ 
+ message(STATUS "Kaldo output name set to: ${KALDO_OUTPUT_NAME}, sysroot: ${CMAKE_OSX_SYSROOT}")
+@@ -96,6 +97,10 @@ add_llvm_library(
+         plugins/MachOHostDataSymbolGenerator.cpp
+         plugins/ObjCSelectorFixupPlugin.hpp
+         plugins/ObjCSelectorFixupPlugin.cpp
++        plugins/ModuleInitRunner.hpp
++        plugins/ModuleInitRunner.cpp
++        plugins/CompactUnwindEhFrame.hpp
++        plugins/CompactUnwindEhFrame.cpp
+         plugins/WeakSymbolFallbackGenerator.hpp
+         plugins/WeakSymbolFallbackGenerator.cpp
+ )
+diff --git a/llvm/tools/kaldo/Kaldo.cpp b/llvm/tools/kaldo/Kaldo.cpp
+index 9acf22f299ba..e9c9fb27ad67 100644
+--- a/llvm/tools/kaldo/Kaldo.cpp
++++ b/llvm/tools/kaldo/Kaldo.cpp
+@@ -7,6 +7,7 @@
+ #include "ObjCInteropManager.hpp"
+ #include "Utility.hpp"
+ 
++#include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
+ #include "llvm/ExecutionEngine/Orc/Core.h"
+ #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
+ #include "llvm/ExecutionEngine/Orc/Debugging/DebuggerSupport.h"
+@@ -31,11 +32,16 @@
+ #include "KaldoInternal.hpp"
+ #include "plugins/KotlinSymbolExternalizer.hpp"
+ #include "plugins/MachOHostDataSymbolGenerator.hpp"
++#include "llvm/ExecutionEngine/Orc/EHFrameRegistrationPlugin.h"
++#include "plugins/CompactUnwindEhFrame.hpp"
++#include "plugins/ModuleInitRunner.hpp"
+ #include "plugins/ObjCSelectorFixupPlugin.hpp"
+ #include "plugins/WeakSymbolFallbackGenerator.hpp"
+ 
+ #include "llvm/ADT/ScopeExit.h"
+ 
++extern "C" void kaldo_run_module_inits();
++
+ namespace {
+ 
+ // region Constants
+@@ -117,11 +123,6 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
+ 
+                 auto OLL = std::make_unique<llvm::orc::ObjectLinkingLayer>(
+                     ES, std::move(*Mapper));
+-#if defined(__APPLE__)
+-                OLL->addPlugin(
+-                    std::make_shared<
+-                        llvm::kaldo::orc::plugin::ObjCSelectorFixupPlugin>());
+-#endif
+                 return std::move(OLL);
+               })
+           .setNotifyCreatedCallback([&](llvm::orc::LLJIT &J) -> llvm::Error {
+@@ -179,6 +180,35 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
+                 std::make_unique<orc::plugin::KotlinSymbolExternalizerPlugin>(
+                     *StubsJD));
+ 
++            // Register the JIT'd __eh_frame with the system unwinder. Without
++            // this, C++/Kotlin exceptions cannot unwind through JIT frames:
++            // catches never run and a cancellation exception escapes to the
++            // unhandled-exception hook (Compose node detach).
++            // Synthesize __eh_frame from compact unwind before the registration
++            // plugin sees the section (hot-reload builds only).
++            JOL->addPlugin(std::make_shared<
++                llvm::kaldo::orc::plugin::CompactUnwindToEHFramePlugin>());
++
++            if (auto EHFramePlugin =
++                    llvm::orc::EHFrameRegistrationPlugin::Create(J.getExecutionSession())) {
++              JOL->addPlugin(std::move(*EHFramePlugin));
++            } else {
++              reportLlvmError(EHFramePlugin.takeError(),
++                              "EHFrameRegistrationPlugin");
++            }
++
++            JOL->addPlugin(
++                std::make_shared<
++                    llvm::kaldo::orc::plugin::ModuleInitRunnerPlugin>());
++
++#if defined(__APPLE__)
++            // Register after the externalizer: it creates `_objc_msgSend$...`
++            // references that the selector-stub pass must still see.
++            JOL->addPlugin(
++                std::make_shared<
++                    llvm::kaldo::orc::plugin::ObjCSelectorFixupPlugin>());
++#endif
++
+ #if defined(__APPLE__)
+             ObjCInteropManager =
+                 std::make_unique<llvm::kaldo::objc::ObjCInteropManager>(J);
+@@ -301,6 +331,16 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+ 
+   auto &BootstrapJD = *BootstrapJDOrErr;
+ 
++  // Kaldo: object files from Kotlin/Compose caches may reference the synthetic
++  // MachO image-info marker even when image-info processing is disabled. Bind
++  // it to a zero-filled dummy (version 0, flags 0) so lookups never fail.
++  static const uint32_t DummyObjCImageInfo[2] = {0, 0};
++  if (auto Err = BootstrapJD.define(llvm::orc::absoluteSymbols(
++          {{ES.intern("__llvm_jitlink_macho_objc_imageinfo"),
++            {llvm::orc::ExecutorAddr::fromPtr(&DummyObjCImageInfo),
++             llvm::JITSymbolFlags::Exported}}})))
++    return tl::make_unexpected(dumpLlvmErrorToString(std::move(Err)));
++
+   auto Cleanup = llvm::make_scope_exit([&] {
+     if (Succeeded)
+       return;
+@@ -316,6 +356,12 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+ 
+   BootstrapJD.addToLinkOrder(StubsJD); // StubsJD
+   BootstrapJD.addToLinkOrder(MainJD);
++  // ORC link order is not transitive: MainJD's own link order (which includes
++  // the platform JITDylib holding the ORC runtime archive) must be copied here
++  // so ___orc_rt_macho_tlv_get_addr is reachable from the bootstrap.
++  MainJD.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder &Order) {
++    BootstrapJD.addToLinkOrder(Order);
++  });
+ 
+   BootstrapJD.addGenerator(
+       std::make_unique<
+@@ -361,6 +407,23 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+     return tl::make_unexpected(dumpLlvmErrorToString(std::move(RedirectErr)));
+   }
+ 
++  // Kotlin global initializers (run via RuntimeInit below) may create
++  // Objective-C classes for `@ExportObjCClass` Kotlin classes. Creating such a
++  // class requires the ObjC type adapters of the guest, in particular the
++  // adapter of `kotlin.Any` (exported as `KotlinBase`): the runtime computes a
++  // synthesized super TypeInfo's vtable size from it, and without the adapter
++  // falls back to -1, which makes `std::vector` throw `std::length_error`.
++  // Bind the adapters before running the guest constructors and initializers.
++  if (ObjCInteroManager) {
++    auto InitAdaptersOrErr =
++        ObjCInteroManager->initializeObjCAdaptersFromJIT(BootstrapJD);
++    if (!InitAdaptersOrErr) {
++      return tl::make_unexpected(InitAdaptersOrErr.error());
++    }
++
++    ObjCAdaptersInit(*InitAdaptersOrErr);
++  }
++
+   if (auto ConstErr =
+           callKonanConstructors(ES, JIT->getDataLayout(), BootstrapJD)) {
+     return tl::make_unexpected(dumpLlvmErrorToString(std::move(ConstErr)));
+@@ -368,6 +431,14 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+ 
+   RuntimeInit();
+ 
++#if defined(__APPLE__)
++  // `ReinitializeGlobalVariablesAndTLS` restores the payload's `__objc_selrefs`
++  // initializers (raw methname pointers). Put the registered SELs back.
++  llvm::kaldo::orc::plugin::registerPendingObjCSelectorRefs();
++#endif
++
++  // The unique prefix is only written by the guest's global initialization, so
++  // it cannot be read before `RuntimeInit` above.
+   if (ObjCInteroManager) {
+     auto InitPrefixOrErr =
+         ObjCInteroManager->initializeObjCUniquePrefixFromJIT(BootstrapJD);
+@@ -376,14 +447,6 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+     }
+ 
+     ObjCUniquePrefixInit(*InitPrefixOrErr);
+-
+-    auto InitAdaptersOrErr =
+-        ObjCInteroManager->initializeObjCAdaptersFromJIT(BootstrapJD);
+-    if (!InitAdaptersOrErr) {
+-      return tl::make_unexpected(InitAdaptersOrErr.error());
+-    }
+-
+-    ObjCAdaptersInit(*InitAdaptersOrErr);
+   }
+ 
+   auto BootstrapHandle = llvm::kaldo::ReloadUnitHandle::getBootstrapHandle();
+@@ -397,6 +460,8 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+ 
+   llvm::dbgs() << "[kaldo] :: bootstrap objects loaded with success!\n";
+ 
++  kaldo_run_module_inits();
++
+   return BootstrapHandle;
+ }
+ 
+diff --git a/llvm/tools/kaldo/KaldoInternal.cpp b/llvm/tools/kaldo/KaldoInternal.cpp
+index 7c1dff79cbf4..4cb2a8daae28 100644
+--- a/llvm/tools/kaldo/KaldoInternal.cpp
++++ b/llvm/tools/kaldo/KaldoInternal.cpp
+@@ -1,4 +1,5 @@
+ #include "KaldoInternal.hpp"
++#include "plugins/KotlinSymbolExternalizer.hpp"
+ #include "Kaldo.hpp"
+ 
+ #include "llvm/Support/Error.h"
+@@ -93,6 +94,8 @@ llvm::Error llvm::kaldo::SymbolsRedirector::redirectStubsToImplementation(
+   llvm::orc::SymbolMap Dests{};
+ 
+   for (auto &SymName : SymbolNames) {
++    if (!llvm::kaldo::orc::plugin::isHotSymbol(*SymName))
++      continue;
+     std::string ImplName = (*SymName + KImplSymbolSuffix).str();
+     auto SymOrErr =
+         ES.lookup(llvm::orc::makeJITDylibSearchOrder(
+diff --git a/llvm/tools/kaldo/plugins/CompactUnwindEhFrame.cpp b/llvm/tools/kaldo/plugins/CompactUnwindEhFrame.cpp
+new file mode 100644
+index 000000000000..6d3d93b78ec3
+--- /dev/null
++++ b/llvm/tools/kaldo/plugins/CompactUnwindEhFrame.cpp
+@@ -0,0 +1,572 @@
++#include "CompactUnwindEhFrame.hpp"
++
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/Support/Endian.h"
++#include "llvm/Support/raw_ostream.h"
++
++#include <chrono>
++#include <cstdint>
++#include <cstdlib>
++#include <memory>
++#include <mutex>
++#include <string>
++#include <vector>
++
++using namespace llvm;
++using namespace llvm::jitlink;
++
++extern "C" void __register_frame(const void *);
++// Whole-section registration: libunwind parses the section lazily and adds all
++// FDEs in one call. Weak so older runtimes keep the per-FDE fallback.
++extern "C" void __unw_add_dynamic_eh_frame_section(uintptr_t)
++    __attribute__((weak_import));
++// libc++abi's personality; referenced so the pointer is real even though the
++// symbol lives outside the JIT graph.
++extern "C" void __gxx_personality_v0();
++
++namespace {
++
++// Apple compact-unwind (arm64) encoding.
++constexpr uint32_t UNWIND_ARM64_MODE_MASK = 0x0F000000;
++constexpr uint32_t UNWIND_ARM64_MODE_FRAMELESS = 0x02000000;
++constexpr uint32_t UNWIND_ARM64_MODE_DWARF = 0x03000000;
++constexpr uint32_t UNWIND_ARM64_MODE_FRAME = 0x04000000;
++constexpr uint32_t UNWIND_ARM64_FRAMELESS_STACK_SIZE_MASK = 0x00FFF000;
++
++constexpr uint8_t DW_CFA_def_cfa = 0x0C;
++constexpr uint8_t DW_CFA_offset = 0x80;
++
++constexpr uint8_t DW_EH_PE_absptr = 0x00;
++constexpr uint8_t DW_EH_PE_pcrel_sdata4 = 0x1B;
++
++bool profiling() {
++  static const bool On = ::getenv("KALDO_EH_PROFILE") != nullptr;
++  return On;
++}
++
++void appendULEB(std::vector<uint8_t> &Out, uint64_t V) {
++  do {
++    uint8_t B = V & 0x7F;
++    V >>= 7;
++    if (V)
++      B |= 0x80;
++    Out.push_back(B);
++  } while (V);
++}
++
++void appendSLEB(std::vector<uint8_t> &Out, int64_t V) {
++  bool More = true;
++  while (More) {
++    uint8_t B = V & 0x7F;
++    V >>= 7;
++    if ((V == 0 && (B & 0x40) == 0) || (V == -1 && (B & 0x40) != 0))
++      More = false;
++    else
++      B |= 0x80;
++    Out.push_back(B);
++  }
++}
++
++void append32(std::vector<uint8_t> &Out, uint32_t V) {
++  size_t At = Out.size();
++  Out.resize(At + 4);
++  support::endian::write32le(Out.data() + At, V);
++}
++
++void dumpBytes(const char *Tag, const uint8_t *Data, size_t N) {
++  llvm::dbgs() << "[kaldo] :: " << Tag << " (" << N << "):";
++  for (size_t I = 0; I < N; ++I)
++    llvm::dbgs() << " " << llvm::format_hex_no_prefix(Data[I], 2);
++  llvm::dbgs() << "\n";
++}
++
++/// Build a CIE. Personality uses absptr (libc++abi is >2GB from the JIT);
++/// FDE pointers and LSDA use pcrel|sdata4. `PersonalityOffset` is the byte
++/// offset of the 8-byte personality slot inside the returned buffer.
++std::vector<uint8_t> buildCIE(bool HasPersonality, bool HasLSDA,
++                              size_t &PersonalityOffset) {
++  PersonalityOffset = 0;
++  std::vector<uint8_t> CIE;
++  append32(CIE, 0); // length, fixed at the end
++  append32(CIE, 0); // CIE id
++  CIE.push_back(1); // version
++  // A CIE that declares 'L' forces every FDE to carry an LSDA field, so only
++  // use "zPLR" when the FDE really has one.
++  const char *Aug = HasPersonality ? (HasLSDA ? "zPLR" : "zPR") : "zR";
++  for (const char *C = Aug; *C; ++C)
++    CIE.push_back(static_cast<uint8_t>(*C));
++  CIE.push_back(0);
++  appendULEB(CIE, 1);  // code alignment
++  appendSLEB(CIE, -8); // data alignment
++  appendULEB(CIE, 30); // return address register (x30)
++
++  size_t AugLenAt = CIE.size();
++  appendULEB(CIE, 0); // augmentation length, fixed below
++  if (HasPersonality) {
++    CIE.push_back(DW_EH_PE_absptr); // 'P'
++    PersonalityOffset = CIE.size();
++    CIE.resize(CIE.size() + 8, 0);
++    if (HasLSDA)
++      CIE.push_back(DW_EH_PE_pcrel_sdata4); // 'L'
++  }
++  CIE.push_back(DW_EH_PE_pcrel_sdata4); // 'R'
++
++  CIE[AugLenAt] = static_cast<uint8_t>(CIE.size() - AugLenAt - 1);
++  support::endian::write32le(CIE.data(),
++                             static_cast<uint32_t>(CIE.size() - 4));
++  return CIE;
++}
++
++/// CFI instructions for one function, from its compact-unwind encoding.
++bool buildCFI(uint32_t Encoding, std::vector<uint8_t> &Out) {
++  uint32_t Mode = Encoding & UNWIND_ARM64_MODE_MASK;
++  if (Mode == UNWIND_ARM64_MODE_FRAMELESS) {
++    uint64_t Stack =
++        ((Encoding & UNWIND_ARM64_FRAMELESS_STACK_SIZE_MASK) >> 12) * 16;
++    Out.push_back(DW_CFA_def_cfa);
++    appendULEB(Out, 31); // sp
++    appendULEB(Out, Stack);
++    return true;
++  }
++  if (Mode != UNWIND_ARM64_MODE_FRAME)
++    return false;
++
++  Out.push_back(DW_CFA_def_cfa);
++  appendULEB(Out, 29); // fp
++  appendULEB(Out, 16);
++  Out.push_back(DW_CFA_offset | 29); // fp at CFA-16
++  appendULEB(Out, 2);
++  Out.push_back(DW_CFA_offset | 30); // lr at CFA-8
++  appendULEB(Out, 1);
++
++  struct Pair {
++    uint32_t Bit;
++    uint8_t First;
++    uint8_t Second;
++  };
++  static const Pair Pairs[] = {
++      {0x00000001, 19, 20}, {0x00000002, 21, 22}, {0x00000004, 23, 24},
++      {0x00000008, 25, 26}, {0x00000010, 27, 28}, {0x00000100, 72, 73},
++      {0x00000200, 74, 75}, {0x00000400, 76, 77}, {0x00000800, 78, 79},
++  };
++  uint64_t Offset = 24;
++  for (const auto &P : Pairs) {
++    if ((Encoding & P.Bit) == 0)
++      continue;
++    Out.push_back(DW_CFA_offset | (P.First & 0x3F));
++    appendULEB(Out, Offset / 8);
++    Offset += 8;
++    Out.push_back(DW_CFA_offset | (P.Second & 0x3F));
++    appendULEB(Out, Offset / 8);
++    Offset += 8;
++  }
++  return true;
++}
++
++/// One synthesized block: [CIE][FDE]. Keeping the CIE inside the block makes
++/// cie_pointer a constant, independent of how JITLink orders blocks. All
++/// records now live back-to-back in one section-sized block, so both
++/// synthesis and registration are single-pass.
++struct FDERecord {
++  size_t Off = 0; // start of the [CIE] within the section
++  size_t CieLen = 0;
++  size_t FdeOff = 0; // CIE length; FDE starts at Off + FdeOff
++  size_t RecSize = 0;
++  size_t PersonalityOff = 0; // relative to Off
++  size_t LSDAOff = 0;        // relative to Off
++  uint32_t Range = 0;
++  StringRef FunctionName;
++  Symbol *FunctionSym = nullptr;
++  Symbol *LSDASym = nullptr;
++  int64_t LSDAOffsetInSection = -1;
++};
++
++struct State {
++  std::mutex M;
++  Block *SectionBlock = nullptr;
++  std::vector<FDERecord> FDEs;
++};
++
++} // namespace
++
++void llvm::kaldo::orc::plugin::CompactUnwindToEHFramePlugin::modifyPassConfig(
++    llvm::orc::MaterializationResponsibility &MR, LinkGraph &G,
++    PassConfiguration &Config) {
++  // Enabled by any non-empty value other than "0"; unset, "" and "0" mean off.
++  const char *Synth = ::getenv("KALDO_SYNTH_EH_FRAME");
++  if (Synth == nullptr || Synth[0] == '\0' || (Synth[0] == '0' && Synth[1] == '\0'))
++    return;
++
++  auto S = std::make_shared<State>();
++
++  Config.PrePrunePasses.insert(
++      Config.PrePrunePasses.begin(), [S](LinkGraph &Graph) -> Error {
++        auto T0 = std::chrono::steady_clock::now();
++        auto *CUSec = Graph.findSectionByName("__KALDO,__kaldo_cu");
++        if (!CUSec)
++          CUSec = Graph.findSectionByName("__KALDO,__compact_unwind");
++        if (!CUSec)
++          CUSec = Graph.findSectionByName("__LD,__compact_unwind");
++        if (!CUSec || CUSec->empty())
++          return Error::success();
++
++        Section *EH = Graph.findSectionByName("__TEXT,__kaldo_eh_frame");
++        if (!EH)
++          EH = &Graph.createSection(
++              "__TEXT,__kaldo_eh_frame",
++              static_cast<llvm::orc::MemProt>(
++                  static_cast<unsigned>(llvm::orc::MemProt::Read)));
++
++        uint64_t GccStart = ~0ull;
++        if (auto *Gcc = Graph.findSectionByName("__TEXT,__gcc_except_tab")) {
++          unsigned Keep = 0;
++          for (auto *B : Gcc->blocks()) {
++            GccStart = std::min(GccStart, B->getAddress().getValue());
++            auto &KeepSym = Graph.addDefinedSymbol(
++                *B, 0, Graph.intern("__kaldo_lsda_" + llvm::Twine(Keep).str()),
++                1, Linkage::Strong, Scope::Local, false, false);
++            KeepSym.setLive(true);
++            ++Keep;
++          }
++        }
++
++        struct RawRecord {
++          Block *Block;
++          size_t Offset;
++          uint32_t Range;
++          uint32_t Encoding;
++          StringRef Function;
++          bool HasPersonality;
++          bool HasLSDA;
++          Symbol *FunctionSymbol;
++          Symbol *LSDASymbol;
++          int64_t LSDAOffsetInSection;
++        };
++
++        struct EdgeTargets {
++          Symbol *FirstNamed = nullptr;
++          Symbol *FirstDefinedNamed = nullptr;
++          Symbol *FirstDefined = nullptr;
++        };
++
++        std::vector<RawRecord> Records;
++        Records.reserve(131072);
++        unsigned SkippedDwarf = 0, SkippedOther = 0;
++
++        constexpr size_t RecordSize = 32;
++        for (auto *B : CUSec->blocks()) {
++          // edges_at() scans every edge in the block, and a merged payload has
++          // hundreds of thousands of edges: calling it per record is O(N^2)
++          // (~20s for 126k records). Index one pass per block instead.
++          DenseMap<uint64_t, EdgeTargets> EdgeIndex;
++          EdgeIndex.reserve(B->edges_size());
++          for (auto &E : B->edges()) {
++            auto &T = E.getTarget();
++            auto &Slot = EdgeIndex[E.getOffset()];
++            if (!Slot.FirstNamed && T.hasName())
++              Slot.FirstNamed = &T;
++            if (!Slot.FirstDefinedNamed && T.hasName() && T.isDefined())
++              Slot.FirstDefinedNamed = &T;
++            if (!Slot.FirstDefined && T.isDefined())
++              Slot.FirstDefined = &T;
++          }
++          auto NamedAt = [&](size_t Off, bool MustBeDefined) -> StringRef {
++            auto It = EdgeIndex.find(Off);
++            if (It == EdgeIndex.end())
++              return {};
++            Symbol *S =
++                MustBeDefined ? It->second.FirstDefinedNamed
++                              : It->second.FirstNamed;
++            if (!S || !S->hasName())
++              return {};
++            return *S->getName();
++          };
++
++          auto Content = B->getContent();
++          for (size_t Rec = 0; Rec + RecordSize <= Content.size();
++               Rec += RecordSize) {
++            const uint8_t *RecData =
++                reinterpret_cast<const uint8_t *>(Content.data()) + Rec;
++            uint32_t Range = support::endian::read32le(RecData + 8);
++            uint32_t Encoding = support::endian::read32le(RecData + 12);
++
++            uint32_t Mode = Encoding & UNWIND_ARM64_MODE_MASK;
++            if (Mode == UNWIND_ARM64_MODE_DWARF) {
++              ++SkippedDwarf;
++              continue;
++            }
++            if (Mode != UNWIND_ARM64_MODE_FRAME &&
++                Mode != UNWIND_ARM64_MODE_FRAMELESS) {
++              ++SkippedOther;
++              continue;
++            }
++
++            StringRef Fn = NamedAt(Rec, true);
++            if (Fn.empty()) {
++              ++SkippedOther;
++              continue;
++            }
++            Symbol *FnSym = EdgeIndex[Rec].FirstDefinedNamed;
++            StringRef Personality = NamedAt(Rec + 16, false);
++            StringRef LSDA = NamedAt(Rec + 24, false);
++            Symbol *LSDASym = EdgeIndex[Rec + 24].FirstDefined;
++            int64_t LSDAOffInSec = -1;
++            if (LSDASym && GccStart != ~0ull) {
++              uint64_t A = LSDASym->getAddress().getValue();
++              if (A >= GccStart)
++                LSDAOffInSec = static_cast<int64_t>(A - GccStart);
++            }
++            Records.push_back({B, Rec, Range, Encoding, Fn, !Personality.empty(),
++                               !LSDA.empty(), FnSym, LSDASym, LSDAOffInSec});
++          }
++        }
++        auto TScan = std::chrono::steady_clock::now();
++
++        // Three CIE variants, built once instead of per record.
++        std::vector<uint8_t> CIEs[2][2];
++        size_t CiePersonalityOff[2][2] = {{0, 0}, {0, 0}};
++        for (int P = 0; P < 2; ++P)
++          for (int L = 0; L < 2; ++L) {
++            if (L && !P)
++              continue;
++            CIEs[P][L] = buildCIE(P, L, CiePersonalityOff[P][L]);
++          }
++
++        // Upper bound: CIE (<= 45) + FDE + CFI (<= 40) per record, plus the
++        // zero terminator libunwind expects at the end of the section.
++        std::vector<uint8_t> Section;
++        Section.reserve(Records.size() * 96 + 4);
++        S->FDEs.reserve(Records.size());
++
++        unsigned Emitted = 0, WithLSDA = 0, PersonalityNoLSDA = 0;
++        for (auto &R : Records) {
++          std::vector<uint8_t> CFI;
++          if (!buildCFI(R.Encoding, CFI))
++            continue;
++
++          bool HasPersonality = R.HasPersonality;
++          bool HasLSDA = HasPersonality && R.HasLSDA;
++          if (HasLSDA)
++            ++WithLSDA;
++          else if (HasPersonality)
++            ++PersonalityNoLSDA;
++
++          const auto &CIE = CIEs[HasPersonality][HasLSDA];
++          size_t Off = Section.size();
++          Section.insert(Section.end(), CIE.begin(), CIE.end());
++          size_t CieLen = CIE.size();
++          size_t FdeOff = CieLen;
++
++          size_t FdeLen = 4 + 4 + 4 + (HasLSDA ? 5 : 1) + CFI.size();
++          append32(Section, static_cast<uint32_t>(FdeLen));
++          append32(Section, static_cast<uint32_t>(FdeOff + 4)); // cie_pointer
++          append32(Section, 0); // pc_begin, patched in PostFixup
++          append32(Section, R.Range);
++          size_t LSDAOff = 0;
++          if (HasLSDA) {
++            appendULEB(Section, 4);
++            LSDAOff = Section.size() - Off;
++            append32(Section, 0);
++          } else {
++            appendULEB(Section, 0);
++          }
++          Section.insert(Section.end(), CFI.begin(), CFI.end());
++
++          S->FDEs.push_back({Off, CieLen, FdeOff, Section.size() - Off,
++                             CiePersonalityOff[HasPersonality][HasLSDA],
++                             LSDAOff, R.Range, R.Function, R.FunctionSymbol,
++                             R.LSDASymbol, R.LSDAOffsetInSection});
++          ++Emitted;
++        }
++        append32(Section, 0); // section terminator for libunwind
++
++        auto Buf = Graph.allocateBuffer(Section.size());
++        memcpy(Buf.data(), Section.data(), Section.size());
++        auto &Block = Graph.createContentBlock(
++            *EH, Buf, llvm::orc::ExecutorAddr(), 8, 0);
++        auto &Sym = Graph.addDefinedSymbol(
++            Block, 0, Graph.intern("__kaldo_eh_frame"), 1, Linkage::Strong,
++            Scope::Local, false, false);
++        Sym.setLive(true);
++        S->SectionBlock = &Block;
++
++        if (::getenv("KALDO_EH_DUMP") && Emitted > 0)
++          dumpBytes("section-head",
++                    reinterpret_cast<const uint8_t *>(Buf.data()),
++                    std::min<size_t>(64, Buf.size()));
++
++        auto TEnd = std::chrono::steady_clock::now();
++        dbgs() << "[kaldo] :: synthesized " << Emitted << " inline-CIE FDEs"
++               << ", skipped DWARF=" << SkippedDwarf
++               << " other=" << SkippedOther << ", withLSDA=" << WithLSDA
++               << ", personalityNoLSDA=" << PersonalityNoLSDA
++               << ", section=" << Section.size() << " bytes\n";
++        if (profiling())
++          dbgs() << "[kaldo] :: profile: scan="
++                 << std::chrono::duration_cast<std::chrono::milliseconds>(
++                        TScan - T0).count()
++                 << "ms emit="
++                 << std::chrono::duration_cast<std::chrono::milliseconds>(
++                        TEnd - TScan).count()
++                 << "ms\n";
++        return Error::success();
++      });
++
++  Config.PostFixupPasses.emplace_back([S](LinkGraph &Graph) -> Error {
++    std::lock_guard<std::mutex> Lock(S->M);
++    auto T0 = std::chrono::steady_clock::now();
++
++    uint64_t GccBase = ~0ull, GccEnd = 0;
++    if (auto *Gcc = Graph.findSectionByName("__TEXT,__gcc_except_tab"))
++      for (auto *B : Gcc->blocks()) {
++        GccBase = std::min(GccBase, B->getAddress().getValue());
++        GccEnd = std::max(GccEnd, B->getAddress().getValue() + B->getSize());
++      }
++    if (GccBase == ~0ull)
++      GccBase = 0;
++
++    uint64_t TextBase = ~0ull, TextEnd = 0;
++    for (auto &Sec : Graph.sections())
++      if (Sec.getName() == "__TEXT,__text")
++        for (auto *B : Sec.blocks()) {
++          TextBase = std::min(TextBase, B->getAddress().getValue());
++          TextEnd = std::max(TextEnd, B->getAddress().getValue() + B->getSize());
++        }
++
++    unsigned Patched = 0, Registered = 0;
++    unsigned LsdaCount = 0, LsdaOutOfRange = 0, PcOutOfRange = 0;
++    unsigned UnresolvedPersonality = 0;
++
++    auto *Block = S->SectionBlock;
++    if (!Block)
++      return Error::success();
++    auto Mutable = Block->getMutableContent(Graph);
++    if (Mutable.data() == nullptr)
++      return Error::success();
++    auto *Base = reinterpret_cast<uint8_t *>(Mutable.data());
++    uint64_t BlockAddr = Block->getAddress().getValue();
++
++    uint64_t Personality = 0;
++    if (auto *Sym = Graph.findDefinedSymbolByName(
++            Graph.intern("___gxx_personality_v0")))
++      Personality = Sym->getAddress().getValue();
++    if (Personality == 0)
++      Personality = reinterpret_cast<uint64_t>(&__gxx_personality_v0);
++
++    for (auto &FDE : S->FDEs) {
++      if (Mutable.size() < FDE.Off + FDE.RecSize)
++        continue;
++      auto *RecBase = Base + FDE.Off;
++      auto *Data = RecBase + FDE.FdeOff;
++
++      auto *Fn = FDE.FunctionSym;
++      if (!Fn || !Fn->isDefined())
++        continue;
++
++      uint64_t FdeAddr = BlockAddr + FDE.Off + FDE.FdeOff;
++
++      uint64_t FnAddr = Fn->getAddress().getValue();
++      if (FnAddr != 0 &&
++          FDE.FunctionName.starts_with("_kfun:") &&
++          TextBase != ~0ull && (FnAddr < TextBase || FnAddr >= TextEnd)) {
++        ++PcOutOfRange;
++        if (PcOutOfRange <= 5)
++          dbgs() << "[kaldo] :: EH check: pc out of range 0x"
++                 << llvm::Twine::utohexstr(FnAddr) << " for " << FDE.FunctionName
++                 << "\n";
++      }
++      int64_t PcDelta =
++          static_cast<int64_t>(FnAddr) - static_cast<int64_t>(FdeAddr + 8);
++      support::endian::write32le(Data + 8, static_cast<uint32_t>(PcDelta));
++      support::endian::write32le(Data + 12, static_cast<uint32_t>(FDE.Range));
++
++      if (FDE.LSDAOff != 0) {
++        uint64_t LsdaAddr = 0;
++        if (FDE.LSDASym && FDE.LSDASym->isDefined())
++          LsdaAddr = FDE.LSDASym->getAddress().getValue();
++        if (LsdaAddr == 0 && FDE.LSDAOffsetInSection >= 0 && GccBase != 0)
++          LsdaAddr = GccBase + static_cast<uint64_t>(FDE.LSDAOffsetInSection);
++
++        ++LsdaCount;
++        if (LsdaAddr == 0 || LsdaAddr < GccBase || LsdaAddr >= GccEnd) {
++          ++LsdaOutOfRange;
++          if (LsdaOutOfRange <= 5)
++            dbgs() << "[kaldo] :: EH check: LSDA out of range 0x"
++                   << llvm::Twine::utohexstr(LsdaAddr) << " for "
++                   << FDE.FunctionName << "\n";
++        } else {
++          // LSDAOff is relative to the record (the CIE precedes the FDE), so
++          // the field address is RecBase + LSDAOff.
++          uint64_t LsdaField = BlockAddr + FDE.Off + FDE.LSDAOff;
++          int64_t LsdaDelta = static_cast<int64_t>(LsdaAddr) -
++                              static_cast<int64_t>(LsdaField);
++          support::endian::write32le(RecBase + FDE.LSDAOff,
++                                     static_cast<uint32_t>(LsdaDelta));
++
++          // Decode back the way libunwind does.
++          int32_t Enc = static_cast<int32_t>(LsdaDelta);
++          uint64_t Decoded = LsdaField + static_cast<int64_t>(Enc);
++          bool Bad = Decoded != LsdaAddr;
++          if (!Bad) {
++            const uint8_t *P = reinterpret_cast<const uint8_t *>(Decoded);
++            if (P[0] != 0xFF)
++              Bad = true;
++          }
++          if (Bad) {
++            ++LsdaOutOfRange;
++            if (LsdaOutOfRange <= 5)
++              dbgs() << "[kaldo] :: EH check: LSDA decode mismatch 0x"
++                     << llvm::Twine::utohexstr(Decoded) << " expected 0x"
++                     << llvm::Twine::utohexstr(LsdaAddr) << " for "
++                     << FDE.FunctionName << "\n";
++          }
++        }
++      }
++
++      if (FDE.PersonalityOff != 0) {
++        if (Personality == 0) {
++          ++UnresolvedPersonality;
++        } else {
++          support::endian::write64le(RecBase + FDE.PersonalityOff, Personality);
++        }
++      }
++
++      ++Patched;
++    }
++
++    // One call registers the whole section; libunwind walks it lazily.
++    if (Patched > 0 && ::getenv("KALDO_EH_SKIP_REGISTER") == nullptr) {
++      if (__unw_add_dynamic_eh_frame_section) {
++        __unw_add_dynamic_eh_frame_section(
++            reinterpret_cast<uintptr_t>(Base));
++        Registered = Patched;
++      } else {
++        for (auto &FDE : S->FDEs) {
++          auto *Fn = FDE.FunctionSym;
++          if (!Fn || !Fn->isDefined())
++            continue;
++          __register_frame(reinterpret_cast<const void *>(
++              Base + FDE.Off + FDE.FdeOff));
++          ++Registered;
++        }
++      }
++    }
++
++    auto TEnd = std::chrono::steady_clock::now();
++    dbgs() << "[kaldo] :: EH check: " << S->FDEs.size() << " FDE, " << LsdaCount
++           << " lsda, " << LsdaOutOfRange << " lsda-out-of-range, "
++           << PcOutOfRange << " pc-out-of-range, " << UnresolvedPersonality
++           << " unresolved-personality\n";
++    dbgs() << "[kaldo] :: patched " << Patched << " FDEs, registered "
++           << Registered << " ("
++           << (__unw_add_dynamic_eh_frame_section ? "section" : "per-fde")
++           << ")\n";
++    if (profiling())
++      dbgs() << "[kaldo] :: profile: patch+register="
++             << std::chrono::duration_cast<std::chrono::milliseconds>(TEnd - T0)
++                    .count()
++             << "ms\n";
++    S->FDEs.clear();
++    return Error::success();
++  });
++}
+diff --git a/llvm/tools/kaldo/plugins/CompactUnwindEhFrame.hpp b/llvm/tools/kaldo/plugins/CompactUnwindEhFrame.hpp
+new file mode 100644
+index 000000000000..dbd47c8a6eda
+--- /dev/null
++++ b/llvm/tools/kaldo/plugins/CompactUnwindEhFrame.hpp
+@@ -0,0 +1,38 @@
++#ifndef LLVM_KALDO_COMPACTUNWINDEHFRAME_HPP
++#define LLVM_KALDO_COMPACTUNWINDEHFRAME_HPP
++
++#include "llvm/ExecutionEngine/Orc/Core.h"
++#include "llvm/ExecutionEngine/Orc/LinkGraphLinkingLayer.h"
++
++namespace llvm::kaldo::orc::plugin {
++
++/// Synthesize DWARF CFI (`__TEXT,__eh_frame`) from Mach-O compact-unwind
++/// records. Darwin arm64 objects only carry `__LD,__compact_unwind`, and JIT'd
++/// code cannot use `__unwind_info` (the system unwinder finds it through the
++/// Mach-O image header). Registerable `__eh_frame` is the only mechanism that
++/// works for JIT frames, so mirror each compact-unwind record as an FDE.
++///
++/// Enabled when `KALDO_SYNTH_EH_FRAME` is set to a non-empty value other than
++/// `0` (hot-reload builds set it to 1); unset, empty or `0` disables it.
++class CompactUnwindToEHFramePlugin
++    : public llvm::orc::LinkGraphLinkingLayer::Plugin {
++public:
++  void modifyPassConfig(llvm::orc::MaterializationResponsibility &MR,
++                        llvm::jitlink::LinkGraph &G,
++                        llvm::jitlink::PassConfiguration &Config) override;
++
++  llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility &MR) override {
++    return llvm::Error::success();
++  }
++  llvm::Error notifyRemovingResources(llvm::orc::JITDylib &JD,
++                                      llvm::orc::ResourceKey K) override {
++    return llvm::Error::success();
++  }
++  void notifyTransferringResources(llvm::orc::JITDylib &JD,
++                                   llvm::orc::ResourceKey DstKey,
++                                   llvm::orc::ResourceKey SrcKey) override {}
++};
++
++} // namespace llvm::kaldo::orc::plugin
++
++#endif
+diff --git a/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.cpp b/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.cpp
+index df54f83f7ae7..1883fb10851b 100644
+--- a/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.cpp
++++ b/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.cpp
+@@ -1,8 +1,12 @@
+ #include "KotlinSymbolExternalizer.hpp"
+ 
++#include "llvm/ADT/DenseMap.h"
+ #include "llvm/ExecutionEngine/Orc/Shared/MachOObjectFormat.h"
++#include "llvm/ADT/StringSet.h"
+ #include "llvm/Support/raw_ostream.h"
+ 
++#include <fstream>
++
+ #include "../KaldoInternal.hpp"
+ 
+ namespace llvm::orc {
+@@ -20,9 +24,39 @@ struct SymbolRename {
+   llvm::orc::SymbolStringPtr ImplSymName;
+ };
+ 
++namespace {
++/// Only the user module's functions can be replaced by a reload. Keep the set
++/// small: externalizing every Compose symbol (100k+) bloats the ORC dependence
++/// graph and occasionally crashes simplifyDepGroups.
++llvm::StringSet<> loadHotSymbols() {
++  llvm::StringSet<> Result;
++  const char *Path = ::getenv("KALDO_HOT_SYMBOLS");
++  llvm::dbgs() << "[kaldo] :: KALDO_HOT_SYMBOLS=" << (Path ? Path : "<unset>")
++               << "\n";
++  if (!Path)
++    return Result;
++  std::ifstream In(Path);
++  std::string Line;
++  while (std::getline(In, Line)) {
++    if (!Line.empty() && Line.back() == '\r')
++      Line.pop_back();
++    if (!Line.empty())
++      Result.insert(Line);
++  }
++  llvm::dbgs() << "[kaldo] :: hot symbol set size=" << Result.size() << "\n";
++  return Result;
++}
++} // namespace
++
++bool llvm::kaldo::orc::plugin::isHotSymbol(llvm::StringRef Name) {
++  static const llvm::StringSet<> Hot = loadHotSymbols();
++  return Hot.empty() || Hot.contains(Name);
++}
++
+ static std::vector<SymbolRename>
+ findSymbolsToExternalize(llvm::jitlink::LinkGraph &G) {
+   std::vector<SymbolRename> ToExternalize{};
++  static const auto HotSymbols = loadHotSymbols();
+ 
+   // Collect _kfun: defined symbols that need externalizing
+   for (auto *Symbol : G.defined_symbols()) {
+@@ -34,6 +68,8 @@ findSymbolsToExternalize(llvm::jitlink::LinkGraph &G) {
+     llvm::StringRef Name = *Symbol->getName();
+     if (!Name.starts_with(llvm::kaldo::KKotlinFunPrefix))
+       continue;
++    if (!HotSymbols.empty() && !HotSymbols.contains(Name))
++      continue;
+ 
+     auto OriginalName = G.getSymbolStringPool()->intern(Name);
+     auto ImplementationName = G.getSymbolStringPool()->intern(
+@@ -49,33 +85,42 @@ findSymbolsToExternalize(llvm::jitlink::LinkGraph &G) {
+ /// Rename definitions and retarget edges.
+ static void retargetEdges(llvm::jitlink::LinkGraph &Graph,
+                           const std::vector<SymbolRename> &ToExternalize) {
+-  for (const auto &[symbol, originalSymName, implSymName] : ToExternalize) {
++  // Resolve every target once, then walk all edges a single time. The previous
++  // version rescanned the whole graph for each symbol (O(symbols * edges)); the
++  // merged Compose payload has ~110k functions and millions of edges, so it
++  // effectively never finished.
++  llvm::DenseMap<llvm::jitlink::Symbol *, llvm::jitlink::Symbol *> Replacement;
++  Replacement.reserve(ToExternalize.size());
+ 
++  for (const auto &[symbol, originalSymName, implSymName] : ToExternalize) {
+     // Create external symbol for the original name
+     auto &ExternalSymbol = Graph.addExternalSymbol(*originalSymName, 0, false);
++    Replacement[symbol] = &ExternalSymbol;
++  }
+ 
+-    // Unwind and debug metadata must point to the implementation, not the
+-    // redirectable stub.
+-
+-    for (auto &Section : Graph.sections()) {
+-      const auto SectionName = Section.getName();
+-      if (SectionName == llvm::orc::MachOCompactUnwindSectionName ||
+-          SectionName == llvm::orc::MachOEHFrameSectionName ||
+-          SectionName.starts_with(llvm::orc::DWARFSectionName))
+-        continue;
+-
+-      for (auto *Block : Section.blocks()) {
+-        for (auto &Edge : Block->edges()) {
+-          if (&Edge.getTarget() != symbol)
+-            continue;
+-          // Non-zero addends are internal references into the implementation.
+-          if (Edge.getAddend() != 0)
+-            continue;
+-          Edge.setTarget(ExternalSymbol);
+-        }
++  // Unwind and debug metadata must point to the implementation, not the
++  // redirectable stub.
++  for (auto &Section : Graph.sections()) {
++    const auto SectionName = Section.getName();
++    if (SectionName == llvm::orc::MachOCompactUnwindSectionName ||
++        SectionName == llvm::orc::MachOEHFrameSectionName ||
++        SectionName.starts_with(llvm::orc::DWARFSectionName))
++      continue;
++
++    for (auto *Block : Section.blocks()) {
++      for (auto &Edge : Block->edges()) {
++        auto It = Replacement.find(&Edge.getTarget());
++        if (It == Replacement.end())
++          continue;
++        // Non-zero addends are internal references into the implementation.
++        if (Edge.getAddend() != 0)
++          continue;
++        Edge.setTarget(*It->second);
+       }
+     }
++  }
+ 
++  for (const auto &[symbol, originalSymName, implSymName] : ToExternalize) {
+     // Rename the definition to $knhr, keep it visible so MR can emit it
+     symbol->setName(implSymName);
+     symbol->setScope(llvm::jitlink::Scope::Default);
+diff --git a/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.hpp b/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.hpp
+index cc30c1810e59..1f3f32727eb6 100644
+--- a/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.hpp
++++ b/llvm/tools/kaldo/plugins/KotlinSymbolExternalizer.hpp
+@@ -6,6 +6,9 @@
+ 
+ namespace llvm::kaldo::orc::plugin {
+ 
++/// True when the symbol belongs to the reloadable (user) module set.
++bool isHotSymbol(llvm::StringRef Name);
++
+ /// JITLink plugin that externalizes _kfun: symbol definitions so that
+ /// intra-object calls go through StubsJD redirectable stubs.
+ ///
+diff --git a/llvm/tools/kaldo/plugins/MachOHostDataSymbolGenerator.cpp b/llvm/tools/kaldo/plugins/MachOHostDataSymbolGenerator.cpp
+index 13adce8a2ec6..fc176aa7a1a5 100644
+--- a/llvm/tools/kaldo/plugins/MachOHostDataSymbolGenerator.cpp
++++ b/llvm/tools/kaldo/plugins/MachOHostDataSymbolGenerator.cpp
+@@ -84,6 +84,13 @@ llvm::Expected<std::unique_ptr<llvm::kaldo::orc::plugin::MachOHostDataSymbolGene
+       llvm::consumeError(NameOrErr.takeError());
+       continue;
+     }
++    // `__objc_stubs` entries are code generated by the host linker for
++    // `_objc_msgSend$<selector>` references. The JIT synthesizes its own stubs
++    // with registered selectors; exposing the host ones as absolute data
++    // symbols shadows them and dispatches with a raw selector string.
++    if (NameOrErr->starts_with("_objc_msgSend$") ||
++        NameOrErr->starts_with("_objc_msgSendSuper$"))
++      continue;
+ 
+     auto AddrOrErr = Sym.getAddress();
+     if (!AddrOrErr) {
+diff --git a/llvm/tools/kaldo/plugins/ModuleInitRunner.cpp b/llvm/tools/kaldo/plugins/ModuleInitRunner.cpp
+new file mode 100644
+index 000000000000..8235cdd353be
+--- /dev/null
++++ b/llvm/tools/kaldo/plugins/ModuleInitRunner.cpp
+@@ -0,0 +1,72 @@
++#include "ModuleInitRunner.hpp"
++
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
++#include "llvm/Support/Endian.h"
++#include "llvm/Support/raw_ostream.h"
++
++#include <mutex>
++#include <vector>
++
++namespace {
++std::mutex InitsMutex;
++std::vector<void (*)()> PendingInits;
++} // namespace
++
++namespace llvm::kaldo::orc::plugin {
++
++void ModuleInitRunnerPlugin::modifyPassConfig(
++    llvm::orc::MaterializationResponsibility &MR, llvm::jitlink::LinkGraph &G,
++    llvm::jitlink::PassConfiguration &Config) {
++  Config.PostFixupPasses.emplace_back(
++      [&MR](llvm::jitlink::LinkGraph &Graph) -> llvm::Error {
++        std::lock_guard<std::mutex> Lock(InitsMutex);
++
++        // Map init-function address -> symbol name. The payload also carries
++        // the Kotlin runtime's own entries (`__Konan_constructors`,
++        // `injectToRuntime`); those must not run twice.
++        llvm::DenseMap<llvm::orc::ExecutorAddr, llvm::StringRef> Names;
++        for (auto *Sym : Graph.defined_symbols()) {
++          if (!Sym->hasName())
++            continue;
++          Names[Sym->getAddress()] = *Sym->getName();
++        }
++
++        for (auto &Section : Graph.sections()) {
++          if (!Section.getName().ends_with("__mod_init_func"))
++            continue;
++          for (auto *Block : Section.blocks()) {
++            auto Content = Block->getContent();
++            for (size_t I = 0; I + 8 <= Content.size(); I += 8) {
++              uint64_t Ptr = llvm::support::endian::read64le(
++                  reinterpret_cast<const uint8_t *>(Content.data()) + I);
++              if (Ptr == 0)
++                continue;
++              auto It = Names.find(llvm::orc::ExecutorAddr(Ptr));
++              if (It == Names.end() ||
++                  !It->second.starts_with("__GLOBAL__sub_I_"))
++                continue;
++              PendingInits.push_back(reinterpret_cast<void (*)()>(Ptr));
++            }
++          }
++        }
++        return llvm::Error::success();
++      });
++}
++
++} // namespace llvm::kaldo::orc::plugin
++
++/// Called from Kaldo once the bootstrap has been materialized; at that point
++/// every initializer address is final and all payloads are mapped.
++extern "C" void kaldo_run_module_inits() {
++  std::vector<void (*)()> Inits;
++  {
++    std::lock_guard<std::mutex> Lock(InitsMutex);
++    Inits.swap(PendingInits);
++  }
++  for (auto *Init : Inits)
++    Init();
++  if (!Inits.empty())
++    llvm::dbgs() << "[kaldo] :: ran " << Inits.size()
++                 << " C++ module initializers\n";
++}
+diff --git a/llvm/tools/kaldo/plugins/ModuleInitRunner.hpp b/llvm/tools/kaldo/plugins/ModuleInitRunner.hpp
+new file mode 100644
+index 000000000000..59927f4f08df
+--- /dev/null
++++ b/llvm/tools/kaldo/plugins/ModuleInitRunner.hpp
+@@ -0,0 +1,33 @@
++#ifndef LLVM_KALDO_MODULEINITRUNNER_HPP
++#define LLVM_KALDO_MODULEINITRUNNER_HPP
++
++#include "llvm/ExecutionEngine/Orc/Core.h"
++#include "llvm/ExecutionEngine/Orc/LinkGraphLinkingLayer.h"
++
++namespace llvm::kaldo::orc::plugin {
++
++/// Runs C++ static initializers (`__DATA,__mod_init_func`) of a materialized
++/// graph. dyld does this for regular images; JIT'd payloads have no such step,
++/// so globals of JIT'd C++ (e.g. skiko's native bridges) stay zero-initialized
++/// and the first use dereferences a null pointer.
++class ModuleInitRunnerPlugin : public llvm::orc::LinkGraphLinkingLayer::Plugin {
++public:
++  void modifyPassConfig(llvm::orc::MaterializationResponsibility &MR,
++                        llvm::jitlink::LinkGraph &G,
++                        llvm::jitlink::PassConfiguration &Config) override;
++
++  llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility &MR) override {
++    return llvm::Error::success();
++  }
++  llvm::Error notifyRemovingResources(llvm::orc::JITDylib &JD,
++                                      llvm::orc::ResourceKey K) override {
++    return llvm::Error::success();
++  }
++  void notifyTransferringResources(llvm::orc::JITDylib &JD,
++                                   llvm::orc::ResourceKey DstKey,
++                                   llvm::orc::ResourceKey SrcKey) override {}
++};
++
++} // namespace llvm::kaldo::orc::plugin
++
++#endif
+diff --git a/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.cpp b/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.cpp
+index 0ec2fda17295..8188cf66e3fe 100644
+--- a/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.cpp
++++ b/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.cpp
+@@ -1,5 +1,19 @@
+ #include "ObjCSelectorFixupPlugin.hpp"
+ 
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/ADT/StringSet.h"
++#include "llvm/ADT/Twine.h"
++#include "llvm/ExecutionEngine/JITLink/aarch64.h"
++
++#include <algorithm>
++#include <cctype>
++#include <cstdlib>
++#include <mutex>
++#include <string>
++#include <vector>
++#include <unistd.h>
++
+ #if defined(__APPLE__)
+ #include <objc/runtime.h>
+ #endif
+@@ -13,26 +27,45 @@ auto constexpr KObjcMethnameSection = "__objc_methname";
+ 
+ using MethnameMap = llvm::DenseMap<uint64_t, std::string>;
+ 
+-static llvm::jitlink::Section *
+-findObjCSelectorSection(llvm::jitlink::LinkGraph &G) {
+-  // Find __objc_selrefs section, this contains pointers to selector strings.
+-  // JITLink uses segment,section naming convention: "__DATA,__objc_selrefs"
+-  llvm::jitlink::Section *SelrefsSection {nullptr};
++namespace {
++struct SelectorSlot {
++  uint64_t Address;
++  uint64_t RawString;
++  uint64_t RegisteredSel;
++  std::string Section;
++};
++std::mutex SelectorSlotsMutex;
++std::vector<SelectorSlot> SelectorSlots;
++// Selector constants embedded in data sections (not in __objc_selrefs): C++
++// call sites and some compiler-generated thunks reference __objc_methname
++// strings directly.
++std::vector<SelectorSlot> EmbeddedSelectorSlots;
++std::vector<std::pair<uint64_t, uint64_t>> SelectorSectionRanges;
++using Range = std::pair<uint64_t, uint64_t>;
++std::vector<Range> MethnameRanges;
++} // namespace
++
++static llvm::SmallVector<llvm::jitlink::Section *, 4>
++findObjCSelectorSections(llvm::jitlink::LinkGraph &G) {
++  // Find every __objc_selrefs section. A merged payload can contain more than
++  // one (e.g. `__DATA,__objc_selrefs` and `__DATA_CONST,__objc_selrefs`);
++  // patching only the first leaves unregistered selector strings behind.
++  llvm::SmallVector<llvm::jitlink::Section *, 4> Result;
+ 
+   for (auto &Section : G.sections()) {
+     if (auto SectionName = Section.getName();
+         SectionName == KDataObjcSelrefsSection ||
+         SectionName == KObjcSelrefsSection ||
+         SectionName.ends_with(KObjcSelrefsSection)) {
+-      SelrefsSection = &Section;
+-      break;
++      Result.push_back(&Section);
+     }
+   }
+ 
+-  return SelrefsSection;
++  return Result;
+ }
+ 
+ static MethnameMap buildMethnameStringMap(llvm::jitlink::LinkGraph &G) {
++  std::vector<Range> Ranges;
+   // First, build a map from methname block addresses to their string content.
+   // __objc_methname section contains the actual selector strings.
+   // Use uint64_t as key since ExecutorAddr doesn't have std::hash.
+@@ -50,11 +83,18 @@ static MethnameMap buildMethnameStringMap(llvm::jitlink::LinkGraph &G) {
+           const std::string MethName(Content.data(),
+                                      strnlen(Content.data(), Content.size()));
+           MethnameStrings[Block->getAddress().getValue()] = MethName;
++          Ranges.emplace_back(Block->getAddress().getValue(),
++                              Block->getAddress().getValue() + Content.size());
+         }
+       }
+     }
+   }
+ 
++  {
++    std::lock_guard<std::mutex> Lock(SelectorSlotsMutex);
++    MethnameRanges = Ranges;
++  }
++
+   return MethnameStrings;
+ }
+ 
+@@ -99,23 +139,242 @@ tryToFindSelectoViaFixedupContent(const MethnameMap &MethnameStrings,
+   return "";
+ }
+ 
++// Apple's ld synthesizes __TEXT,__objc_stubs entries for undefined
++// _objc_msgSend$<selector> symbols at final link time. The JIT path bypasses
++// that linker, so build the equivalent arm64 stubs here (before allocation).
++static void synthesizeObjCMsgSendStubs(
++    llvm::jitlink::LinkGraph &G,
++    llvm::DenseSet<uint64_t> &AlreadyRegisteredSelrefs) {
++  using namespace llvm::jitlink;
++
++  // Collect selectors from both undefined _objc_msgSend$ symbols and the
++  // __objc_methname section. Some references are created by later plugins
++  // (KotlinSymbolExternalizer), so external_symbols() alone is not enough.
++  llvm::StringSet<> Selectors;
++  for (auto *Sym : G.external_symbols())
++    if ((*Sym->getName()).starts_with("_objc_msgSend$"))
++      Selectors.insert((*Sym->getName()).drop_front(
++          llvm::StringRef("_objc_msgSend$").size()));
++  for (auto &Sec : G.sections())
++    if (Sec.getName().ends_with("__objc_methname"))
++      for (auto *B : Sec.blocks()) {
++        auto Content = B->getContent();
++        if (!Content.empty())
++          Selectors.insert(
++              llvm::StringRef(Content.data(),
++                              strnlen(Content.data(), Content.size())));
++      }
++  // Selector strings may live in __cstring rather than __objc_methname;
++  // recover them by following __objc_selrefs edges to the string blocks.
++  for (auto &Sec : G.sections())
++    if (Sec.getName().ends_with("__objc_selrefs"))
++      for (auto *B : Sec.blocks())
++        for (auto &E : B->edges())
++          if (E.getTarget().isDefined()) {
++            auto Content = E.getTarget().getBlock().getContent();
++            if (!Content.empty())
++              Selectors.insert(
++                  llvm::StringRef(Content.data(),
++                                  strnlen(Content.data(), Content.size())));
++          }
++  if (Selectors.empty())
++    return;
++
++  auto getOrCreateSection = [&](llvm::StringRef Name, llvm::orc::MemProt Prot) -> Section & {
++    if (auto *Sec = G.findSectionByName(Name))
++      return *Sec;
++    return G.createSection(Name, Prot);
++  };
++
++  auto prot = [](unsigned V) { return static_cast<llvm::orc::MemProt>(V); };
++  Section &StubsSec = getOrCreateSection(
++      "__TEXT,__objc_stubs",
++      prot(static_cast<unsigned>(llvm::orc::MemProt::Read) |
++           static_cast<unsigned>(llvm::orc::MemProt::Exec)));
++  Section &SelrefsSec = getOrCreateSection(
++      "__DATA,__objc_selrefs",
++      prot(static_cast<unsigned>(llvm::orc::MemProt::Read) |
++           static_cast<unsigned>(llvm::orc::MemProt::Write)));
++  Section &MethnameSec = getOrCreateSection("__TEXT,__objc_methname",
++                                            llvm::orc::MemProt::Read);
++
++  Symbol *MsgSend = G.findExternalSymbolByName(G.intern("_objc_msgSend"));
++  if (!MsgSend)
++    MsgSend = &G.addExternalSymbol("_objc_msgSend", 0, false);
++
++  // A direct `b _objc_msgSend` is limited to +/-128MB and libobjc may live
++  // outside that range, so load the target through an absolute data slot.
++  Section &PtrsSec = getOrCreateSection(
++      "__DATA,__kaldo_objc_msgSend_ptrs",
++      prot(static_cast<unsigned>(llvm::orc::MemProt::Read) |
++           static_cast<unsigned>(llvm::orc::MemProt::Write)));
++  auto &MsgSendPtrBlock = G.createMutableContentBlock(
++      PtrsSec, sizeof(void *), llvm::orc::ExecutorAddr(), sizeof(void *), 0);
++  auto &MsgSendPtrSym = G.addDefinedSymbol(
++      MsgSendPtrBlock, 0, G.intern("__kaldo_objc_msgSend_ptr"), sizeof(void *),
++      Linkage::Strong, Scope::Local, false, true);
++  MsgSendPtrBlock.addEdge(aarch64::Pointer64, 0, *MsgSend, 0);
++
++  llvm::DenseMap<llvm::StringRef, Symbol *> StubBySelector;
++  unsigned Counter = 0;
++  unsigned StubCount = 0;
++  unsigned MismatchCount = 0;
++
++  for (const auto &SelectorEntry : Selectors) {
++    llvm::StringRef Selector = SelectorEntry.getKey();
++    std::string FullName = ("_objc_msgSend$" + SelectorEntry.getKey()).str();
++    llvm::StringRef Name = FullName;
++    Symbol *Ext = G.findExternalSymbolByName(G.intern(FullName));
++
++    auto It = StubBySelector.find(Selector);
++    Symbol *StubSym = nullptr;
++    if (It != StubBySelector.end()) {
++      StubSym = It->second;
++    } else {
++      std::string Str = Selector.str();
++      Str.push_back('\0');
++      auto &MethBlock = G.createContentBlock(
++          MethnameSec, llvm::ArrayRef<char>(Str.data(), Str.size()),
++          llvm::orc::ExecutorAddr(), 1, 0);
++      auto &MethSym = G.addDefinedSymbol(
++          MethBlock, 0, G.intern(("__kaldo_selstr_" + llvm::Twine(Counter)).str()),
++          Str.size(), Linkage::Strong, Scope::Local, false, false);
++
++      // Embed the registered SEL as immediates: the JIT-written selref content
++      // is re-initialized by the guest's global init, so a data slot is not
++      // reliable for these synthesized stubs.
++      SEL RegisteredSel = sel_registerName(Str.c_str());
++      // Self-check: the stub's name suffix must match the selector it encodes.
++      ++StubCount;
++      if (const char *EncodedName = sel_getName(RegisteredSel)) {
++        if (Selector != EncodedName) {
++          ++MismatchCount;
++          llvm::dbgs() << "[kaldo] :: STUB-SEL MISMATCH name=_objc_msgSend$"
++                       << Selector << " encoded=" << EncodedName << "\n";
++        }
++        if (Selector == "notifyContainerWillAppearIfNeeded")
++          llvm::dbgs() << "[kaldo] :: STUB-SEL sample name=_objc_msgSend$"
++                       << Selector << " encoded=" << EncodedName << "\n";
++      } else {
++        ++MismatchCount;
++        llvm::dbgs() << "[kaldo] :: STUB-SEL UNMAPPED name=_objc_msgSend$"
++                     << Selector << "\n";
++      }
++      uint64_t Sel = (uint64_t)RegisteredSel;
++      llvm::dbgs() << "[kaldo] :: STUB-CREATE name=_objc_msgSend$" << Selector
++                   << " sel=0x" << llvm::Twine::utohexstr(Sel)
++                   << " selname=" << (sel_getName(RegisteredSel) ?: "?")
++                   << "\n";
++      uint32_t Code[7] = {
++          0xD2800001u | (uint32_t)((Sel & 0xFFFF) << 5),
++          0xF2A00001u | (uint32_t)(((Sel >> 16) & 0xFFFF) << 5),
++          0xF2C00001u | (uint32_t)(((Sel >> 32) & 0xFFFF) << 5),
++          0xF2E00001u | (uint32_t)(((Sel >> 48) & 0xFFFF) << 5),
++          0x90000009u, 0xF9400129u, 0xD61F0120u};
++      // Block content is not copied: it must outlive the graph. A stack buffer
++      // here made every synthesized stub share the last selector written.
++      auto CodeBuf = G.allocateBuffer(sizeof(Code));
++      memcpy(CodeBuf.data(), Code, sizeof(Code));
++      auto &StubBlock = G.createContentBlock(
++          StubsSec, CodeBuf, llvm::orc::ExecutorAddr(), 4, 0);
++      StubSym = &G.addDefinedSymbol(StubBlock, 0, Name, sizeof(Code),
++                                    Linkage::Strong, Scope::Default, true, true);
++      StubBlock.addEdge(aarch64::Page21, 16, MsgSendPtrSym, 0);
++      StubBlock.addEdge(aarch64::PageOffset12, 20, MsgSendPtrSym, 0);
++      StubBySelector[Selector] = StubSym;
++      ++Counter;
++    }
++
++    // Redirect every reference to the undefined per-selector symbol to the stub
++    // and drop the external entry so the defined stub is the only symbol with
++    // this name in the graph.
++    if (Ext) {
++      for (auto &Sec : G.sections())
++        for (auto *B : Sec.blocks())
++          for (auto &E : B->edges())
++            if (&E.getTarget() == Ext)
++              E.setTarget(*StubSym);
++      G.removeExternalSymbol(*Ext);
++    }
++  }
++  llvm::dbgs() << "[kaldo] :: STUB-SEL check: " << StubCount << " stubs, "
++               << MismatchCount << " mismatch\n";
++}
++
+ void llvm::kaldo::orc::plugin::ObjCSelectorFixupPlugin::modifyPassConfig(
+     llvm::orc::MaterializationResponsibility &MR, llvm::jitlink::LinkGraph &G,
+     llvm::jitlink::PassConfiguration &Config) {
+ 
++  auto RegisteredSelrefs = std::make_shared<llvm::DenseSet<uint64_t>>();
++
++  // Synthesize per-selector objc_msgSend stubs before memory is allocated.
++  Config.PostPrunePasses.emplace_back(
++      [RegisteredSelrefs](llvm::jitlink::LinkGraph &Graph) {
++        synthesizeObjCMsgSendStubs(Graph, *RegisteredSelrefs);
++        return llvm::Error::success();
++      });
++
++  // Optional perf map for symbolizing JIT frames: KALDO_PERF_MAP=1.
++  Config.PostFixupPasses.emplace_back([](llvm::jitlink::LinkGraph &Graph) {
++    if (::getenv("KALDO_PERF_MAP") == nullptr)
++      return llvm::Error::success();
++    std::string Out;
++    for (auto *Sym : Graph.defined_symbols()) {
++      if (Sym == nullptr || !Sym->isDefined() || Sym->getSize() == 0)
++        continue;
++      auto Name = Sym->getName();
++      if (!Name || (*Name).empty())
++        continue;
++      char Line[512];
++      snprintf(Line, sizeof(Line), "%llx %llx %s\n",
++               (unsigned long long)Sym->getAddress().getValue(),
++               (unsigned long long)Sym->getSize(), (*Name).str().c_str());
++      Out += Line;
++    }
++    std::string Path = "/tmp/perf-" + std::to_string(::getpid()) + ".map";
++    if (FILE *F = fopen(Path.c_str(), "a")) {
++      if (!Out.empty())
++        fwrite(Out.data(), 1, Out.size(), F);
++      fclose(F);
++    }
++    return llvm::Error::success();
++  });
++
+   // Add a post-fixup pass that runs after all relocations are applied.
+   // At this point, we can find and fix up ObjC selector references.
+-  Config.PostFixupPasses.emplace_back([](llvm::jitlink::LinkGraph &Graph) {
+-    auto *SelrefsSection = findObjCSelectorSection(Graph);
++  Config.PostFixupPasses.emplace_back([RegisteredSelrefs](llvm::jitlink::LinkGraph &Graph) {
++    auto SelrefsSections = findObjCSelectorSections(Graph);
+ 
+     // No selector references, nothing to do
+-    if (!SelrefsSection) {
++    if (SelrefsSections.empty()) {
+       return llvm::Error::success();
+     }
+ 
+     int FixedCount = 0;
+     const auto MethnameStrings = buildMethnameStringMap(Graph);
+ 
++    for (auto &Sec : Graph.sections()) {
++      if (!Sec.getName().contains("selref"))
++        continue;
++      uint64_t Lo = ~0ull, Hi = 0; unsigned N = 0;
++      for (auto *B : Sec.blocks()) {
++        auto A = B->getAddress().getValue();
++        if (A < Lo) Lo = A;
++        if (A + B->getSize() > Hi) Hi = A + B->getSize();
++        ++N;
++      }
++      if (N) {
++        std::lock_guard<std::mutex> Lock(SelectorSlotsMutex);
++        SelectorSectionRanges.emplace_back(Lo, Hi);
++      }
++      if (N)
++        dbgs() << "[kaldo] :: selref section " << Sec.getName() << " blocks=" << N
++               << " range=0x" << llvm::Twine::utohexstr(Lo) << "-0x"
++               << llvm::Twine::utohexstr(Hi) << "\n";
++    }
++
++
++    for (auto *SelrefsSection : SelrefsSections)
+     for (auto *Block : SelrefsSection->blocks()) {
+       auto BlockContent = Block->getContent();
+ 
+@@ -123,6 +382,10 @@ void llvm::kaldo::orc::plugin::ObjCSelectorFixupPlugin::modifyPassConfig(
+         continue;
+       }
+ 
++      if (RegisteredSelrefs->contains(Block->getAddress().getValue())) {
++        continue;
++      }
++
+       // Approach 1: Try to find selector via graph edges (more reliable)
+       std::string SelectorName =
+           tryToFindSelectoViaGraphEdges(MethnameStrings, Block);
+@@ -143,15 +406,183 @@ void llvm::kaldo::orc::plugin::ObjCSelectorFixupPlugin::modifyPassConfig(
+       // Register patched Objective-C selector to its runtime by
+       // updating the selector reference to use the registered selector.
+       SEL RegisteredSel = sel_registerName(SelectorName.c_str());
++      {
++        uint64_t RawString = 0;
++        memcpy(&RawString, BlockContent.data(), sizeof(RawString));
++        std::lock_guard<std::mutex> Lock(SelectorSlotsMutex);
++        SelectorSlots.push_back({Block->getAddress().getValue(), RawString,
++                                 (uint64_t)RegisteredSel,
++                                 SelrefsSection->getName().str()});
++      }
+       auto MutableContent = Block->getMutableContent(Graph);
++      if (MutableContent.data() == nullptr)
++        continue;
+       memcpy(MutableContent.data(), &RegisteredSel, sizeof(void *));
+ 
+       FixedCount++;
+     }
+ 
++    // Selector constants embedded outside __objc_selrefs. C++/ObjC++ call
++    // sites may hold a raw __objc_methname pointer in a data slot that dyld
++    // never fixes up in a JIT'd payload.
++    {
++      std::vector<Range> Ranges;
++      {
++        std::lock_guard<std::mutex> Lock(SelectorSlotsMutex);
++        Ranges = MethnameRanges;
++      }
++      std::sort(Ranges.begin(), Ranges.end());
++      auto InMethname = [&](uint64_t V) {
++        auto It = std::upper_bound(
++            Ranges.begin(), Ranges.end(), V,
++            [](uint64_t Val, const Range &R) { return Val < R.first; });
++        if (It == Ranges.begin())
++          return false;
++        --It;
++        return V >= It->first && V < It->second;
++      };
++
++      int Embedded = 0;
++      for (auto &Sec : Graph.sections()) {
++        auto SecName = Sec.getName();
++        if (!SecName.starts_with("__DATA"))
++          continue;
++        for (auto *B : Sec.blocks()) {
++          auto Content = B->getContent();
++          if (Content.data() == nullptr || Content.size() < sizeof(uint64_t))
++            continue;
++          auto Mutable = B->getMutableContent(Graph);
++          if (Mutable.data() == nullptr)
++            continue;
++          for (size_t I = 0; I + sizeof(uint64_t) <= Content.size();
++               I += sizeof(uint64_t)) {
++            uint64_t Raw;
++            memcpy(&Raw, Content.data() + I, sizeof(Raw));
++            if (Raw == 0 || !InMethname(Raw))
++              continue;
++            const char *Str = reinterpret_cast<const char *>(Raw);
++            size_t Len = strnlen(Str, 128);
++            if (Len == 0 || Len >= 128)
++              continue;
++            bool Printable = true;
++            for (size_t J = 0; J < Len; ++J) {
++              unsigned char C = (unsigned char)Str[J];
++              if (!(isalnum(C) || C == '_' || C == ':')) {
++                Printable = false;
++                break;
++              }
++            }
++            if (!Printable)
++              continue;
++            SEL Registered = sel_registerName(Str);
++            memcpy(Mutable.data() + I, &Registered, sizeof(Registered));
++            {
++              std::lock_guard<std::mutex> Lock(SelectorSlotsMutex);
++              EmbeddedSelectorSlots.push_back(
++                  {B->getAddress().getValue() + I, Raw,
++                   (uint64_t)Registered, SecName.str()});
++            }
++            ++Embedded;
++          }
++        }
++      }
++      if (Embedded)
++        dbgs() << "[kaldo] :: registered " << Embedded
++               << " embedded selector constants\n";
++    }
++
+     dbgs() << "[kaldo] :: ObjCSelectorFixupPlugin fixed " << FixedCount
+            << " selector references\n";
+ 
+     return llvm::Error::success();
+   });
+ }
++
++void llvm::kaldo::orc::plugin::registerPendingObjCSelectorRefs() {
++  std::lock_guard<std::mutex> Lock(SelectorSlotsMutex);
++  int Fixed = 0;
++  for (const auto &Slot : SelectorSlots) {
++    if (!Slot.Address)
++      continue;
++    auto *Value = reinterpret_cast<uint64_t *>(Slot.Address);
++    if (*Value != Slot.RawString)
++      continue;
++    *Value = Slot.RegisteredSel;
++    ++Fixed;
++  }
++
++  // Slots that no JITLink block covers (gaps inside the __objc_selrefs range)
++  // are still selector references; register them from the section range.
++  for (const auto &[Lo, Hi] : SelectorSectionRanges) {
++    for (uint64_t Addr = Lo; Addr + sizeof(uint64_t) <= Hi; Addr += sizeof(uint64_t)) {
++      auto *Value = reinterpret_cast<uint64_t *>(Addr);
++      uint64_t Current = *Value;
++      if (Current == 0)
++        continue;
++      const char *Str = reinterpret_cast<const char *>(Current);
++      size_t Len = strnlen(Str, 128);
++      if (Len == 0 || Len >= 128)
++        continue;
++      bool Printable = true;
++      for (size_t I = 0; I < Len; ++I) {
++        unsigned char C = (unsigned char)Str[I];
++        if (!(isalnum(C) || C == '_' || C == ':')) {
++          Printable = false;
++          break;
++        }
++      }
++      if (!Printable)
++        continue;
++      SEL Registered = sel_registerName(Str);
++      // Debug trace of the gap selectors; off unless KALDO_DEBUG_SELREFS=1.
++      static const bool DebugSelrefs = [] {
++        const char *V = ::getenv("KALDO_DEBUG_SELREFS");
++        return V != nullptr && V[0] == '1' && V[1] == '\0';
++      }();
++      if (DebugSelrefs) {
++        if (FILE *F = fopen("/tmp/gap-selrefs.log", "a")) {
++          fprintf(F, "%#llx %s\n", (unsigned long long)Addr, Str);
++          fclose(F);
++        }
++      }
++      *Value = (uint64_t)Registered;
++      ++Fixed;
++    }
++  }
++
++  // Embedded selector constants recorded at PostFixup: the runtime's global
++  // re-initialization can overwrite them with the original string pointers.
++  for (const auto &Slot : EmbeddedSelectorSlots) {
++    if (!Slot.Address)
++      continue;
++    auto *Value = reinterpret_cast<uint64_t *>(Slot.Address);
++    if (*Value != Slot.RawString)
++      continue;
++    *Value = Slot.RegisteredSel;
++    ++Fixed;
++  }
++
++  // Full check: every recorded slot must hold a registered selector now.
++  size_t Total = 0;
++  size_t Unmapped = 0;
++  for (const auto *List : {&SelectorSlots, &EmbeddedSelectorSlots}) {
++    for (const auto &Slot : *List) {
++      ++Total;
++      auto *Value = reinterpret_cast<uint64_t *>(Slot.Address);
++      if (*Value == Slot.RawString) {
++        ++Unmapped;
++        if (Unmapped <= 10) {
++          const char *Str = reinterpret_cast<const char *>(Slot.RawString);
++          llvm::dbgs() << "[kaldo] :: SELREF unmapped slot=0x"
++                       << llvm::Twine::utohexstr(Slot.Address) << " section="
++                       << Slot.Section << " string=" << Str << "\n";
++        }
++      }
++    }
++  }
++  llvm::dbgs() << "[kaldo] :: SELREF check: " << Total << " slots, " << Unmapped
++               << " unmapped\n";
++
++  llvm::dbgs() << "[kaldo] :: re-registered " << Fixed
++               << " selector references after runtime init\n";
++}
+diff --git a/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.hpp b/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.hpp
+index a6e02e09012f..283e00058f27 100644
+--- a/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.hpp
++++ b/llvm/tools/kaldo/plugins/ObjCSelectorFixupPlugin.hpp
+@@ -32,6 +32,11 @@ public:
+                                    llvm::orc::ResourceKey SrcKey) override {}
+ };
+ 
++/// Re-apply the registered selectors after the runtime re-initialized guest
++/// globals (the embedded payload's `__objc_selrefs` initializers overwrite the
++/// SELs written at link time).
++void registerPendingObjCSelectorRefs();
++
+ } // namespace llvm::kaldo::orc::plugin
+ 
+ #endif // LLVM_OBJCSELECTORFIXUPPLUGIN_H

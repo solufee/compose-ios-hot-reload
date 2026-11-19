@@ -1,0 +1,42 @@
+{
+  "interfaceVersion": 8,
+  "layout": "local",
+  "generatedAt": "<GENERATED_AT>",
+  "kotlin": {
+    "version": "2.5.255-SNAPSHOT",
+    "dist": "<KOTLIN_NATIVE_DIST>",
+    "kotlincNative": "<KOTLIN_NATIVE_DIST>/bin/kotlinc-native",
+    "compilerJar": "<KOTLIN_NATIVE_DIST>/konan/lib/kotlin-native-compiler-embeddable.jar",
+    "klibDir": "<KOTLIN_NATIVE_DIST>/klib",
+    "baseCommit": "8e53ee99fbc08e264828ab082aee3e448194eca8",
+    "patch": "kotlin-native-hot-reload.patch",
+    "patchSha256": "<SHA256_OF_KOTLIN_PATCH>"
+  },
+  "compose": {
+    "version": "1.13.0-beta01",
+    "pluginJar": "<COMPOSE_PLUGIN_JAR>",
+    "klibList": "<KLIBLIST>",
+    "baseCommit": "ee243c321ddff6b18fcf18916be1b96ef70e2363",
+    "patch": "compose-multiplatform-core-build.patch",
+    "patchSha256": "<SHA256_OF_COMPOSE_PATCH>"
+  },
+  "llvm": {
+    "baseCommit": "2f8844c2b35557baced9106c50b9b8758fa6a0de",
+    "kaldoIossim": "<KALDO_INSTALL>/lib/libKaldo.iossim.dylib",
+    "kaldoIossimSha256": "<SHA256_OF_LIBKALDO_IOSSIM>",
+    "patch": "llvm-kaldo.patch",
+    "patchSha256": "<SHA256_OF_LLVM_PATCH>"
+  },
+  "host": {
+    "xcode": "Xcode 27.2 Build version 27B52",
+    "iosRuntime": "iOS 27.2",
+    "arch": "arm64"
+  },
+  "runtime": {
+    "target": "ios_simulator_arm64",
+    "reloadPort": 5567,
+    "reloadPortEnv": "KONAN_HOT_RELOAD_PORT",
+    "singleObjectPerReload": true,
+    "mergeChangedObjectsWith": "ld -r"
+  }
+}

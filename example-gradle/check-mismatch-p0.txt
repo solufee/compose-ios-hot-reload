@@ -1,0 +1,19 @@
+# ./gradlew hotReloadCheckToolchain -Pcmp.hotreload.toolchainDir=<TMP> (manifest edited: interfaceVersion=1, old Kotlin base, wrong Compose patch hash)
+* What went wrong:
+Execution failed for task ':hotReloadCheckToolchain' (registered by plugin 'com.solufee.cmp.hotreload').
+> CMP hot reload: the toolchain does not match what plugin com.solufee.cmp.hotreload is pinned to.
+    manifest: <TMP>/toolchain.json
+    pinned:   interfaceVersion=2, Kotlin 2.5.255-SNAPSHOT@8e53ee99fbc0, Compose 1.13.0-beta01@ee243c321ddf, LLVM@2f8844c2b355, Xcode 27.2 Build version 27B52
+              patches: kotlin d37be3f07ca8, compose c1de7a107e3f, llvm 98d6a0bacbbf (sha256)
+    - interfaceVersion: expected 2, found 1
+        fix: rebuild the toolchain from the baselines in README.md and regenerate the manifest with scripts/gen-toolchain.sh (KOTLIN_DIST, COMPOSE_PLUGIN_JAR, KLIBLIST)
+    - kotlin.baseCommit: expected 8e53ee99fbc08e264828ab082aee3e448194eca8, found eb20031f74052276e9e436c1d922cf71bbdf9a0b
+        fix: build Kotlin/Native from JetBrains/kotlin@8e53ee99fbc0 + patches/kotlin-native-hot-reload.patch (README.md, step 2), then regenerate the manifest with scripts/gen-toolchain.sh (KOTLIN_DIST, COMPOSE_PLUGIN_JAR, KLIBLIST)
+    - compose.patchSha256: expected c1de7a107e3f15820ae7a9278e683a672ea5470aa3164861e6e17cd0a9ab2da6, found 0000000000000000000000000000000000000000000000000000000000000000
+        fix: build Compose from JetBrains/compose-multiplatform-core@ee243c321ddf + patches/compose-multiplatform-core-build.patch (README.md, step 3), then regenerate the manifest with scripts/gen-toolchain.sh (KOTLIN_DIST, COMPOSE_PLUGIN_JAR, KLIBLIST)
+
+
+* Try:
+# same build, real manifest
+CMP hot reload: toolchain OK (interfaceVersion 2, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-beta01, Xcode 27.2 Build version 27B52)
+BUILD SUCCESSFUL in 543ms

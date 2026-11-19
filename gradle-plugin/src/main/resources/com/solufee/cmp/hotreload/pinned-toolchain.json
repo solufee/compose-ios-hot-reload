@@ -1,0 +1,27 @@
+{
+  "comment": "The one toolchain this plugin version supports: public base commit + patch sha256 (docs/INTERFACE.md). Bump together with interfaceVersion.",
+  "interfaceVersion": 8,
+  "toolchainVersion": "2.5.255-hotreload.4",
+  "kotlin": {
+    "version": "2.5.255-SNAPSHOT",
+    "baseCommit": "8e53ee99fbc08e264828ab082aee3e448194eca8",
+    "patchSha256": "2d64f7af67499d9cea051dac421394012aa010108dd243cf27ea9e0d122d5ebf"
+  },
+  "compose": {
+    "version": "1.13.0-beta01",
+    "baseCommit": "ee243c321ddff6b18fcf18916be1b96ef70e2363",
+    "patchSha256": "c1de7a107e3f15820ae7a9278e683a672ea5470aa3164861e6e17cd0a9ab2da6"
+  },
+  "llvm": {
+    "baseCommit": "2f8844c2b35557baced9106c50b9b8758fa6a0de",
+    "patchSha256": "3bb8a987ca9182afff80ba35d0334d711652305ef7c46340e940ece439943db3"
+  },
+  "host": {
+    "xcode": "Xcode 27.2 Build version 27B52",
+    "iosRuntime": "iOS 27.2"
+  },
+  "runtime": {
+    "target": "ios_simulator_arm64",
+    "reloadPort": 5567
+  }
+}

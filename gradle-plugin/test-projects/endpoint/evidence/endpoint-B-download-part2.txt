@@ -1,0 +1,44 @@
+# source B: toolchain 2.5.255-hotreload.3 downloaded by the tester from the simulated Release (fetch-toolchain.py), only toolchainDir set, 2026-11-19 18:47:18
+package OK CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-beta01, Xcode 27.2 Build version 27B52)
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 208, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+compat: baseline written for app,ui (1271 ms)
+BUILD SUCCESSFUL in 2m 38s
+run CMP hot reload: app started (attempt 1, pid 45055, 5.1 s, port 5568, log <WORK>/scratch/endpoint/my-app/launch.log) BUILD SUCCESSFUL in 6s
+screen 402x874 points, app frame 320x480
+pid0 45055
+app[0] OK 6998ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app0-86342']
+app[1] OK 3837ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app1-86349']
+app[2] OK 4066ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app2-86353']
+app[3] OK 3927ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app3-86357']
+app[4] OK 2966ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app4-86361']
+app[5] OK 2962ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app5-86364']
+app[6] OK 2895ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app6-86367']
+app[7] OK 2917ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app7-86370']
+app[8] OK 3176ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app8-86373']
+app[9] OK 2942ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app9-86377']
+app[10] OK 2883ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app10-86379']
+app[11] OK 3139ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app11-86382']
+app[12] OK 2999ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app12-86386']
+app[13] OK 2908ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app13-86389']
+app[14] OK 2932ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app14-86392']
+app[15] OK 2933ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app15-86395']
+app[16] OK 3152ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app16-86398']
+app[17] OK 2954ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app17-86401']
+app[18] OK 3052ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app18-86404']
+app[19] OK 3054ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Counter app19-86407']
+both[0] OK 5345ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Edited in ui module (both0-86410)', 'Counter both0-86410']
+both[1] OK 4818ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Edited in ui module (both1-86415)', 'Counter both1-86415']
+both[2] OK 4960ms hot=True loaded=True on_screen=True pid 45055->45055 text=['Edited in ui module (both2-86420)', 'Counter both2-86420']
+warm[0] OK 53056ms add_class_hot=True warm=True pid 45055->48557 counter_before=0 WARM OK ms=48692 ms_package=42626 ms_relaunch=6066 page=- count=-
+taps-after-warm OK +:0->1 Go to page 2->True Back to page 1->True pid 48557->48557 crash=none
+cold[0] OK attempt=1 pid=48716 5.2s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+cold[1] OK attempt=1 pid=48800 4.9s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+cold[2] OK attempt=1 pid=48884 5.4s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+# sources restored
+=== summary ===
+app: ok=20/20 p50=2999ms p90=3927ms
+both: ok=3/3 p50=4960ms p90=5345ms
+warm: ok=1/1
+taps: ok=1/1
+cold: ok=3/3
+# exit=0

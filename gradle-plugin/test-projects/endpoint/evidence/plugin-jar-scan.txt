@@ -1,0 +1,7 @@
+# plugin jar scan: publishAllPublicationsToPagesRepository output of commit 7719e10, 2026-11-19 19:51:03
+jar sha256 df9672cb7eeeb435…, entries 125
+jar files containing a macOS home path ("/Us" "ers/"):        0
+jar files containing the internal product name (case-insensitive, export deny list):        0
+jar files containing an agent id ("agent-" + 8 hex):        0
+POM, module and marker POM containing any of them: 0
+pinned toolchainVersion: "toolchainVersion": "2.5.255-hotreload.4"

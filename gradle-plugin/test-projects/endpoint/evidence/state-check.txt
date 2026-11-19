@@ -1,0 +1,6 @@
+# TRYOUT §3 template, optional HrState: page 2 + counter 2, then a field change -> warm restart; the app must come back on page 2 with the counter kept.
+before warm, on screen: Page 2, counter kept: 2 pid 20232
+add class: ['compat: HOT (classifier 45 ms, waited 0 ms after the patch was ready)'] rc 0
+field change: ['compat: WARM (classifier 102 ms, patch built in 4177 ms; not sent)', 'WARM field-layout myui/StateCfg: constructor signature changed', "WARM field-layout myui/StateCfg: fields added=['b'] removed=[]", 'warm: restoring page=1 count=2', 'WARM OK ms=50706 ms_package=40622 ms_relaunch=10084 page=1 count=2'] rc 0
+after warm, on screen: Page 2, counter kept: 2 pid 22793
+Back -> Counter: 2

@@ -1,0 +1,65 @@
+# source B (.4): toolchain 2.5.255-hotreload.4 downloaded with scripts/fetch-toolchain.py from the simulated Release (file:// manifest), only toolchainDir set; plugin 0.1.0 from the local Pages dir (commit 7719e10), project = copy of the independent tester's my-app; 2026-11-19 19:42:01
+package OK CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-beta01, Xcode 27.2 Build version 27B52)
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 208, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+compat: baseline written for app,ui (1438 ms)
+BUILD SUCCESSFUL in 3m 40s
+run CMP hot reload: app started (attempt 1, pid 72963, 6.3 s, port 5568, log <WORK>/scratch/endpoint/my-app/launch.log) BUILD SUCCESSFUL in 7s
+screen 402x874 points, app frame 320x480
+pid0 72963
+ui[0] OK 8102ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui0-88750)']
+ui[1] OK 5727ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui1-88758)']
+ui[2] OK 5120ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui2-88764)']
+ui[3] OK 4854ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui3-88769)']
+ui[4] OK 4921ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui4-88774)']
+ui[5] OK 5023ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui5-88779)']
+ui[6] OK 5141ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui6-88784)']
+ui[7] OK 4881ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui7-88789)']
+ui[8] OK 4823ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui8-88794)']
+ui[9] OK 4183ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui9-88799)']
+ui[10] OK 4825ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui10-88803)']
+ui[11] OK 5102ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui11-88808)']
+ui[12] OK 5090ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui12-88813)']
+ui[13] OK 4817ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui13-88818)']
+ui[14] OK 5047ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui14-88823)']
+ui[15] OK 4966ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui15-88828)']
+ui[16] OK 4990ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui16-88833)']
+ui[17] OK 4834ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui17-88838)']
+ui[18] OK 5064ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui18-88843)']
+ui[19] OK 4925ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (ui19-88848)']
+app[0] OK 2877ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app0-88853']
+app[1] OK 4061ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app1-88856']
+app[2] OK 2855ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app2-88860']
+app[3] OK 3126ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app3-88863']
+app[4] OK 3984ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app4-88866']
+app[5] OK 3970ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app5-88870']
+app[6] OK 3752ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app6-88875']
+app[7] OK 3161ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app7-88878']
+app[8] OK 3120ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app8-88882']
+app[9] OK 3463ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app9-88885']
+app[10] OK 3676ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app10-88888']
+app[11] OK 3200ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app11-88892']
+app[12] OK 2884ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app12-88895']
+app[13] OK 3135ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app13-88898']
+app[14] OK 2934ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app14-88901']
+app[15] OK 3266ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app15-88904']
+app[16] OK 2871ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app16-88908']
+app[17] OK 3002ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app17-88911']
+app[18] OK 3186ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app18-88914']
+app[19] OK 3130ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Counter app19-88917']
+both[0] OK 5248ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (both0-88920)', 'Counter both0-88920']
+both[1] OK 4936ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (both1-88925)', 'Counter both1-88925']
+both[2] OK 4959ms hot=True loaded=True on_screen=True pid 72963->72963 text=['Edited in ui module (both2-88930)', 'Counter both2-88930']
+warm[0] OK 55358ms add_class_hot=True warm=True pid 72963->77657 counter_before=0 WARM OK ms=51318 ms_package=40789 ms_relaunch=10529 page=- count=-
+taps-after-warm OK +:0->1 Go to page 2->True Back to page 1->True pid 77657->77657 crash=none
+cold[0] OK attempt=1 pid=77848 5.2s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+cold[1] OK attempt=1 pid=77934 5.0s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+cold[2] OK attempt=1 pid=78035 10.7s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+# sources restored
+=== summary ===
+ui: ok=20/20 p50=4990ms p90=5141ms
+app: ok=20/20 p50=3161ms p90=3970ms
+both: ok=3/3 p50=4959ms p90=5248ms
+warm: ok=1/1
+taps: ok=1/1
+cold: ok=3/3
+# exit=0

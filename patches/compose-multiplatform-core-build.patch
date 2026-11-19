@@ -1,0 +1,315 @@
+diff --git a/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt b/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt
+index 343b12c0a..168a6e297 100644
+--- a/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt
++++ b/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt
+@@ -162,11 +162,16 @@ private fun configureComposeCompilerPlugin(project: Project) {
+         val isPlayground = ProjectLayoutType.isPlayground(project)
+         val compilerPluginVersion =
+             project.getVersionByName(if (isPlayground) "kotlin" else "composeCompilerPlugin")
++        println("DEBUG composeCompilerPlugin=$compilerPluginVersion isPlayground=$isPlayground")
+         // Create configuration that we'll use to load Compose compiler plugin
+         val configuration =
+             project.configurations.detachedConfiguration(
+                 project.dependencies.create(
+                     "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:$compilerPluginVersion"
++                ),
++                // Our local KGP publication's compiler jar omits ir.interpreter.
++                project.dependencies.create(
++                    "org.jetbrains.kotlin:kotlin-ir-interpreter:$compilerPluginVersion"
+                 )
+             )
+ 
+diff --git a/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt b/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt
+index f83fd8902..5260933e5 100644
+--- a/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt
++++ b/buildSrc-fork/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt
+@@ -14,6 +14,8 @@
+  * limitations under the License.
+  */
+ 
++@file:Suppress("DEPRECATION", "DEPRECATION_ERROR")
++
+ package androidx.build
+ 
+ import androidx.build.clang.AndroidXClang
+@@ -623,7 +625,6 @@ abstract class AndroidXMultiplatformExtension(val project: Project) {
+     @JvmOverloads
+     fun watchos(block: Action<KotlinNativeTarget>? = null): List<KotlinNativeTarget> {
+         return listOfNotNull(
+-            watchosArm32(block),
+             watchosArm64(block),
+             // TODO(https://youtrack.jetbrains.com/issue/CMP-9513) publish it
+             // watchosDeviceArm64()
+@@ -631,16 +632,6 @@ abstract class AndroidXMultiplatformExtension(val project: Project) {
+         )
+     }
+ 
+-    @JvmOverloads
+-    fun watchosArm32(block: Action<KotlinNativeTarget>? = null): KotlinNativeTarget? =
+-        potentiallyRedirecting("watchosArm32") {
+-            supportedPlatforms.add(PlatformIdentifier.WATCHOS_ARM_32)
+-            if (project.enableMac()) {
+-                kotlinExtension.watchosArm32 { block?.execute(this) }
+-            } else {
+-                null
+-            }
+-        }
+ 
+     @JvmOverloads
+     fun watchosArm64(block: Action<KotlinNativeTarget>? = null): KotlinNativeTarget? =
+diff --git a/buildSrc/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt b/buildSrc/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt
+index 1eaa0b08c..d91849718 100644
+--- a/buildSrc/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt
++++ b/buildSrc/private/src/main/kotlin/androidx/build/AndroidXComposeImplPlugin.kt
+@@ -159,11 +159,16 @@ private fun configureComposeCompilerPlugin(project: Project) {
+         val isPlayground = ProjectLayoutType.isPlayground(project)
+         val compilerPluginVersion =
+             project.getVersionByName(if (isPlayground) "kotlin" else "composeCompilerPlugin")
++        println("DEBUG composeCompilerPlugin=$compilerPluginVersion isPlayground=$isPlayground")
+         // Create configuration that we'll use to load Compose compiler plugin
+         val configuration =
+             project.configurations.detachedConfiguration(
+                 project.dependencies.create(
+                     "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:$compilerPluginVersion"
++                ),
++                // Our local KGP publication's compiler jar omits ir.interpreter.
++                project.dependencies.create(
++                    "org.jetbrains.kotlin:kotlin-ir-interpreter:$compilerPluginVersion"
+                 )
+             )
+ 
+diff --git a/buildSrc/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt b/buildSrc/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt
+index 932526411..598850877 100644
+--- a/buildSrc/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt
++++ b/buildSrc/private/src/main/kotlin/androidx/build/AndroidXMultiplatformExtension.kt
+@@ -14,6 +14,8 @@
+  * limitations under the License.
+  */
+ 
++@file:Suppress("DEPRECATION", "DEPRECATION_ERROR")
++
+ package androidx.build
+ 
+ import androidx.build.clang.AndroidXClang
+@@ -624,7 +626,6 @@ abstract class AndroidXMultiplatformExtension(val project: Project) {
+     @JvmOverloads
+     fun watchos(block: Action<KotlinNativeTarget>? = null): List<KotlinNativeTarget> {
+         return listOfNotNull(
+-            watchosArm32(block),
+             watchosArm64(block),
+             // TODO(https://youtrack.jetbrains.com/issue/CMP-9513) publish it
+             // watchosDeviceArm64()
+@@ -632,16 +633,6 @@ abstract class AndroidXMultiplatformExtension(val project: Project) {
+         )
+     }
+ 
+-    @JvmOverloads
+-    fun watchosArm32(block: Action<KotlinNativeTarget>? = null): KotlinNativeTarget? =
+-        potentiallyRedirecting("watchosArm32") {
+-            supportedPlatforms.add(PlatformIdentifier.WATCHOS_ARM_32)
+-            if (project.enableMac()) {
+-                kotlinExtension.watchosArm32 { block?.execute(this) }
+-            } else {
+-                null
+-            }
+-        }
+ 
+     @JvmOverloads
+     fun watchosArm64(block: Action<KotlinNativeTarget>? = null): KotlinNativeTarget? =
+diff --git a/compose/ui/ui-uikit/src/iosMain/objc/CMPUIKitUtils/CMPUIKitUtils.xcodeproj/project.pbxproj b/compose/ui/ui-uikit/src/iosMain/objc/CMPUIKitUtils/CMPUIKitUtils.xcodeproj/project.pbxproj
+index 62275db0f..6d803513f 100644
+--- a/compose/ui/ui-uikit/src/iosMain/objc/CMPUIKitUtils/CMPUIKitUtils.xcodeproj/project.pbxproj
++++ b/compose/ui/ui-uikit/src/iosMain/objc/CMPUIKitUtils/CMPUIKitUtils.xcodeproj/project.pbxproj
+@@ -646,7 +646,7 @@
+ 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+ 				CODE_SIGN_STYLE = Automatic;
+ 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				OTHER_LDFLAGS = "-ObjC";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				SKIP_INSTALL = YES;
+@@ -661,7 +661,7 @@
+ 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = NO;
+ 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+ 				CODE_SIGN_STYLE = Automatic;
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				OTHER_LDFLAGS = "-ObjC";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				SKIP_INSTALL = YES;
+@@ -723,7 +723,7 @@
+ 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+ 				GCC_WARN_UNUSED_FUNCTION = YES;
+ 				GCC_WARN_UNUSED_VARIABLE = YES;
+-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+ 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+ 				MTL_FAST_MATH = YES;
+@@ -781,7 +781,7 @@
+ 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+ 				GCC_WARN_UNUSED_FUNCTION = YES;
+ 				GCC_WARN_UNUSED_VARIABLE = YES;
+-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+ 				MTL_ENABLE_DEBUG_INFO = NO;
+ 				MTL_FAST_MATH = YES;
+@@ -803,7 +803,7 @@
+ 					"$(inderited)",
+ 					"CMPUIKitObjcUtils/**",
+ 				);
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				MARKETING_VERSION = 1.0;
+ 				PRODUCT_BUNDLE_IDENTIFIER = JetBrains.CMPUIKitUtilsTests;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+@@ -827,7 +827,7 @@
+ 					"$(inderited)",
+ 					"CMPUIKitObjcUtils/**",
+ 				);
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				MARKETING_VERSION = 1.0;
+ 				PRODUCT_BUNDLE_IDENTIFIER = JetBrains.CMPUIKitUtilsTests;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+@@ -856,7 +856,7 @@
+ 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+ 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+ 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				LD_RUNPATH_SEARCH_PATHS = (
+ 					"$(inherited)",
+ 					"@executable_path/Frameworks",
+@@ -889,7 +889,7 @@
+ 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+ 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+ 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				LD_RUNPATH_SEARCH_PATHS = (
+ 					"$(inherited)",
+ 					"@executable_path/Frameworks",
+@@ -912,7 +912,7 @@
+ 				CLANG_ENABLE_MODULES = YES;
+ 				CODE_SIGN_STYLE = Automatic;
+ 				DEFINES_MODULE = YES;
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				OTHER_LDFLAGS = "-ObjC";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				SKIP_INSTALL = NO;
+@@ -934,7 +934,7 @@
+ 				CLANG_ENABLE_MODULES = YES;
+ 				CODE_SIGN_STYLE = Automatic;
+ 				DEFINES_MODULE = YES;
+-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+ 				OTHER_LDFLAGS = "-ObjC";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				SKIP_INSTALL = NO;
+diff --git a/gradle.properties b/gradle.properties
+index 32e9bf344..44287fc91 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -135,4 +135,6 @@ kotlinx.atomicfu.enableNativeIrTransformation=true
+ 
+ # A special workaround introduced in Kotlin 2.3.20 to support the Compose redirects.
+ # See https://youtrack.jetbrains.com/issue/KT-83917
+-kotlin.internal.kmp.allowMatchingByRequestedCoordinatesInMetadataTransformations=true
+\ No newline at end of file
++kotlin.internal.kmp.allowMatchingByRequestedCoordinatesInMetadataTransformations=true
++# Local Kotlin 2.5.255-SNAPSHOT split-capable distribution
++kotlin.native.home=<KOTLIN_NATIVE_DIST>
+diff --git a/gradle/libs-fork.versions.toml b/gradle/libs-fork.versions.toml
+index c05f2c735..e37e16c21 100644
+--- a/gradle/libs-fork.versions.toml
++++ b/gradle/libs-fork.versions.toml
+@@ -33,7 +33,7 @@ builder = "8.6.0-alpha05"
+ byteBuddy = "1.14.9"
+ asm = "9.7"
+ cmake = "3.22.1"
+-composeCompilerPlugin = "2.4.20"
++composeCompilerPlugin = "2.5.255-SNAPSHOT"
+ dagger = "2.57.1"
+ datetime = "0.7.1"
+ dependencyAnalysisGradlePlugin = "2.11.0"
+@@ -55,10 +55,10 @@ kotlin21 = "2.1.20"
+ kotlin22 = "2.2.20"
+ kotlin23 = "2.3.20"
+ kotlin24 = "2.4.20"
+-kotlin = "2.4.20"
++kotlin = "2.5.255-SNAPSHOT"
+ kotlinBenchmark = "0.4.14"
+-kotlinGradlePluginAnnotations = "2.3.10"
+-kotlinGradlePluginApi = "2.3.0"
++kotlinGradlePluginAnnotations = "2.5.255-SNAPSHOT"
++kotlinGradlePluginApi = "2.5.255-SNAPSHOT"
+ kotlinCompileTesting = "1.4.9"
+ kotlinCoroutines = "1.9.0"
+ kotlinNativeUtils = "2.3.10"
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index b58dc53e3..f64d43e69 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -33,7 +33,7 @@ builder = "8.6.0-alpha05"
+ byteBuddy = "1.14.9"
+ asm = "9.7"
+ cmake = "3.22.1"
+-composeCompilerPlugin = "2.4.20"
++composeCompilerPlugin = "2.5.255-SNAPSHOT"
+ dagger = "2.57.1"
+ datetime = "0.7.1"
+ dependencyAnalysisGradlePlugin = "2.11.0"
+@@ -55,10 +55,10 @@ kotlin21 = "2.1.20"
+ kotlin22 = "2.2.20"
+ kotlin23 = "2.3.20"
+ kotlin24 = "2.4.20"
+-kotlin = "2.4.20"
++kotlin = "2.5.255-SNAPSHOT"
+ kotlinBenchmark = "0.4.14"
+-kotlinGradlePluginAnnotations = "2.3.10"
+-kotlinGradlePluginApi = "2.3.0"
++kotlinGradlePluginAnnotations = "2.5.255-SNAPSHOT"
++kotlinGradlePluginApi = "2.5.255-SNAPSHOT"
+ kotlinCompileTesting = "1.4.9"
+ kotlinCoroutines = "1.9.0"
+ kotlinNativeUtils = "2.3.10"
+diff --git a/graphics/graphics-shapes/build.gradle b/graphics/graphics-shapes/build.gradle
+index b21dbcd1e..c8db944c7 100644
+--- a/graphics/graphics-shapes/build.gradle
++++ b/graphics/graphics-shapes/build.gradle
+@@ -54,7 +54,6 @@ kotlin {
+     wasmJs()
+ 
+     watchosArm64()
+-    watchosArm32()
+     watchosSimulatorArm64()
+     tvosArm64()
+     tvosSimulatorArm64()
+diff --git a/performance/performance-annotation/build.gradle b/performance/performance-annotation/build.gradle
+index ea5f961ad..42cedd62c 100644
+--- a/performance/performance-annotation/build.gradle
++++ b/performance/performance-annotation/build.gradle
+@@ -46,7 +46,6 @@ kotlin {
+     wasmJs()
+ 
+     watchosArm64()
+-    watchosArm32()
+     watchosSimulatorArm64()
+     tvosArm64()
+     tvosSimulatorArm64()
+diff --git a/settings-plugin-management-fork.gradle b/settings-plugin-management-fork.gradle
+index 80515239b..e20be5a92 100644
+--- a/settings-plugin-management-fork.gradle
++++ b/settings-plugin-management-fork.gradle
+@@ -1,6 +1,7 @@
+ ext.configureForkPluginManagement = { PluginManagementSpec pluginManagement ->
+     pluginManagement.with {
+         repositories {
++            mavenLocal()
+             mavenCentral {
+                 url = "https://cache-redirector.jetbrains.com/maven-central"
+             }

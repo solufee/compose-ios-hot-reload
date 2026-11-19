@@ -1,0 +1,24 @@
+pid0 22479
+core[0] OK 11389ms symbols: core defined=10 kept_in_merged=10 others_unchanged=True pid=22479
+core[1] OK 7992ms symbols: core defined=10 kept_in_merged=10 others_unchanged=True pid=22479
+core[2] OK 6948ms symbols: core defined=10 kept_in_merged=10 others_unchanged=True pid=22479
+core[3] OK 5993ms symbols: core defined=10 kept_in_merged=10 others_unchanged=True pid=22479
+core[4] OK 6951ms symbols: core defined=10 kept_in_merged=10 others_unchanged=True pid=22479
+ui[0] OK 4945ms symbols: ui defined=9 kept_in_merged=9 others_unchanged=True pid=22479
+ui[1] OK 4946ms symbols: ui defined=9 kept_in_merged=9 others_unchanged=True pid=22479
+ui[2] OK 4911ms symbols: ui defined=9 kept_in_merged=9 others_unchanged=True pid=22479
+ui[3] OK 4931ms symbols: ui defined=9 kept_in_merged=9 others_unchanged=True pid=22479
+ui[4] OK 5003ms symbols: ui defined=9 kept_in_merged=9 others_unchanged=True pid=22479
+app[0] OK 3916ms symbols: app defined=96 kept_in_merged=96 others_unchanged=True pid=22479
+app[1] OK 3983ms symbols: app defined=96 kept_in_merged=96 others_unchanged=True pid=22479
+app[2] OK 3896ms symbols: app defined=96 kept_in_merged=96 others_unchanged=True pid=22479
+app[3] OK 3973ms symbols: app defined=96 kept_in_merged=96 others_unchanged=True pid=22479
+app[4] OK 3947ms symbols: app defined=96 kept_in_merged=96 others_unchanged=True pid=22479
+all[0] OK 6974ms first_ticks={'core': ['91'], 'ui': ['91'], 'app': ['91']} same_tick=True symbols={'app': 96, 'core': 10, 'ui': 9} pid=22479
+all[1] OK 6946ms first_ticks={'core': ['98'], 'ui': ['98'], 'app': ['98']} same_tick=True symbols={'app': 96, 'core': 10, 'ui': 9} pid=22479
+all[2] OK 6945ms first_ticks={'core': ['105'], 'ui': ['105'], 'app': ['105']} same_tick=True symbols={'app': 96, 'core': 10, 'ui': 9} pid=22479
+=== summary ===
+core: ok=5/5 p50=6951ms
+ui: ok=5/5 p50=4945ms
+app: ok=5/5 p50=3947ms
+all: ok=3/3 p50=6946ms

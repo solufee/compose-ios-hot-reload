@@ -1,0 +1,51 @@
+# 构建产物与本地缓存
+*.kexe
+*.kexe.dSYM/
+*.o
+*.a
+*.bc
+*.dylib
+*.app/
+*.jar
+*.klib
+*.ll
+*.log
+*.jfr
+*.png
+!evidence/accept-final.png
+!evidence/*.log
+!evidence/*.txt
+!patches/*.log
+!example-gradle/*.txt
+!example-gradle/gradle/wrapper/gradle-wrapper.jar
+
+# 增量编译 / 自动缓存
+ic/
+ic-*/
+auto-cache/
+auto-cache-*/
+empty-auto-cache/
+
+# 合并与补丁中间产物
+merged-bootstrap.o
+merged-*.o
+patch-current/
+patch.o
+ComposeHR-patch.*
+ComposeHR-base.*
+
+# 守护进程
+.hr/
+hr-daemon.log
+
+__pycache__/
+
+# Xcode / macOS
+.DS_Store
+xcuserdata/
+build/
+
+# Gradle
+.gradle/
+.kotlin/
+local.properties
