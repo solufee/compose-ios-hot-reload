@@ -1,0 +1,13 @@
+# two more warm restarts on the same project (plugin 0.1.1, toolchain .4): each run packages (merge cache warm), launches, adds a class (hot), then a field (warm restart) and taps.
+package OK CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+run CMP hot reload: app started (attempt 1, pid 41188, 9.1 s, port 5568, log <WORK>/scratch/endpoint/my-app/launch.log) BUILD SUCCESSFUL in 10s
+warm[0] OK 21438ms add_class_hot=True warm=True pid 41188->41561 counter_before=0 WARM OK ms=16616 ms_package=10303 ms_relaunch=6313 page=- count=-
+taps-after-warm OK +:0->1 Go to page 2->True Back to page 1->True pid 41561->41561 crash=none
+warm: ok=1/1
+taps: ok=1/1
+package OK CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+run CMP hot reload: app started (attempt 1, pid 41885, 5.4 s, port 5568, log <WORK>/scratch/endpoint/my-app/launch.log) BUILD SUCCESSFUL in 6s
+warm[0] OK 21441ms add_class_hot=True warm=True pid 41885->42238 counter_before=0 WARM OK ms=16948 ms_package=10857 ms_relaunch=6091 page=- count=-
+taps-after-warm OK +:0->1 Go to page 2->True Back to page 1->True pid 42238->42238 crash=none
+warm: ok=1/1
+taps: ok=1/1

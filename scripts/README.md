@@ -27,6 +27,7 @@
 | `publish-toolchain.py` | 校验后 dry-run 打印发布命令；`--local-repo` 做本地镜像；只有 `--publish --confirm-repo` 才上传（draft release） | `gh` |
 | `fetch-toolchain.py` | 消费端：下载、校验 sha256、解包、下载公开 klib、本地化、写 `env.sh`；不读 Gradle 缓存；网络错误自动重试（指数退避） | `zstd`、`curl` |
 | `test-fetch-toolchain.py` | `fetch-toolchain.py` 的重试和错误提示测试（不需要网络） | — |
+| `test-merge-payloads.py` | `example-gradle/tools/merge-payloads.py` 的批量 `nm` 和逐 archive 缓存测试（不需要模拟器） | Xcode（clang、nm） |
 
 ## klibs.txt 格式
 

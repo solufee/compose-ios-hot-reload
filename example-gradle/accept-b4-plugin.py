@@ -9,6 +9,7 @@ Only two steps differ from accept-b4.py:
 Usage: UDID=<udid> python3 accept-b4-plugin.py    (after ./gradlew hotReloadPackage)
 """
 import os
+import re
 import subprocess
 import sys
 import time
@@ -53,8 +54,24 @@ def reload_once(warm_expected):
     return True, out, (before, before, t0), b4.pid()
 
 
+_check_warm = b4.check_warm
+
+
+def check_warm(case, expected_shot, out, marks, p_before):
+    """Same check as accept-b4.py, plus the plugin's WARM OK timing line in the detail."""
+    good, detail, s, p_after = _check_warm(case, expected_shot, out, marks, p_before)
+    m = re.search(r"WARM OK ms=(\d+) ms_package=(\d+) ms_relaunch=(\d+)", out)
+    if m:
+        detail += f" warm_ms={m.group(1)} package_ms={m.group(2)} relaunch_ms={m.group(3)}"
+    p = re.search(r"package timing ms=(\d+) compile=(\d+) merge=(\d+) embed\+bundle=(\d+)", out)
+    if p:
+        detail += f" [compile={p.group(2)} merge={p.group(3)} embed+bundle={p.group(4)}]"
+    return good, detail, s, p_after
+
+
 b4.start_fresh = start_fresh
 b4.reload_once = reload_once
+b4.check_warm = check_warm
 
 if __name__ == "__main__":
     sys.exit(b4.main())

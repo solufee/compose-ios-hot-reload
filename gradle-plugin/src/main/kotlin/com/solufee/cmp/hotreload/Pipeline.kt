@@ -62,7 +62,14 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
 
     // ---------------------------------------------------------------- compile
 
-    private fun compile(args: List<String>, daemonSocket: String?, kind: String, cacheOnly: Boolean, daemons: Daemons?) {
+    /**
+     * [retryDirectOnError]: when the daemon reports a failure, run the same compile once with kotlinc-native
+     * (package via the klib daemon, INTERFACE §5: a real compile error then shows up with the compiler's own output).
+     */
+    private fun compile(
+        args: List<String>, daemonSocket: String?, kind: String, cacheOnly: Boolean, daemons: Daemons?,
+        retryDirectOnError: Boolean = false,
+    ) {
         if (daemonSocket != null && daemons != null) {
             val offset = daemons.logSize(kind)
             when (val r = CompileDaemonClient.request(daemonSocket, args)) {
@@ -70,9 +77,13 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
                     logger.lifecycle("compile: daemon $kind OK ${r.ms} ms")
                     return
                 }
-                is CompileResult.Err -> throw GradleException(
-                    "CMP hot reload: compilation failed (${r.code}, ${r.ms} ms):\n" + compilerMessages(daemons.logSince(kind, offset)),
-                )
+                is CompileResult.Err -> if (retryDirectOnError) {
+                    logger.lifecycle("CMP hot reload: compile via the $kind daemon failed (${r.code}, ${r.ms} ms); retrying with kotlinc-native")
+                } else {
+                    throw GradleException(
+                        "CMP hot reload: compilation failed (${r.code}, ${r.ms} ms):\n" + compilerMessages(daemons.logSince(kind, offset)),
+                    )
+                }
                 is CompileResult.Unreachable -> logger.warn("CMP hot reload: daemon $kind unreachable (${r.reason}); compiling directly")
             }
         }
@@ -93,7 +104,11 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         put("KALDO_HOT_SYMBOLS_OUT", s.hotSymbols.path)
         if (s.keepCompactUnwind) put("KALDO_KEEP_COMPACT_UNWIND", "1")
         s.llvmHome?.let { put("KONAN_LLVM_HOME", it) }
+        // INTERFACE §3.1: per-archive results of unchanged library archives are reused (hotReloadClean deletes it).
+        put("KALDO_MERGE_CACHE_DIR", mergeCacheDir.path)
     }
+
+    val mergeCacheDir: File get() = File(work, "merge-cache")
 
     /** Daemon log lines that look like compiler diagnostics, without the daemon's own bookkeeping. */
     private fun compilerMessages(log: String): String =
@@ -141,20 +156,30 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
 
     fun appBundle(info: AppInfo = appInfo()): File = File(work, "${info.executable}.app")
 
-    fun packageApp(tools: Tools) {
+    /**
+     * [daemons]: compile through the klib daemon (it never runs cache-only, INTERFACE §5), falling back to
+     * kotlinc-native when it is unreachable or fails.
+     */
+    fun packageApp(tools: Tools, daemons: Daemons? = null) {
+        val t0 = System.currentTimeMillis()
         val info = appInfo()
         val app = s.appDir.apply { mkdirs() }
         listOf("ic", "auto-cache").forEach { File(work, it).mkdirs() }
         // The program's module name comes from its output name and prefixes the exported ObjC classes
         // (e.g. ComposeHRBase*). Keep the reference driver's names: a bare "base" collides at bootstrap.
         val base = File(app, "${info.executable}-base.kexe")
-        compile(programArgs(base, null), null, "program", cacheOnly = false, daemons = null)
+        base.delete()
+        compile(programArgs(base, null), if (daemons != null) s.klibSocket else null, "klib", cacheOnly = false, daemons = daemons,
+            retryDirectOnError = true)
+        if (!base.isFile) throw GradleException("CMP hot reload: the package compile reported success but ${base.path} is missing")
+        val tCompile = System.currentTimeMillis()
 
         val merged = File(app, "merged-bootstrap.o")
         val packages = hotPackages()
         val env = mergeEnvironment(packages)
         logger.lifecycle("hot packages: ${packages.joinToString(",").ifEmpty { "<none>" }}; keep compact unwind: ${s.keepCompactUnwind}")
         Proc.check(listOf("python3", "-I", tools.mergePayloads.path, base.path, merged.path), env, logger = logger, echo = false)
+        val tMerge = System.currentTimeMillis()
         logger.lifecycle("hot symbols: ${s.hotSymbols.readLines().count { it.isNotBlank() }}")
         val exe = File(app, "${info.executable}.kexe")
         Proc.check(
@@ -178,7 +203,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         }
         Proc.check(listOf("codesign", "--force", "--deep", "--sign", "-", bundle.path), echo = false)
         verifyBundle(bundle, info, merged)
+        val tEnd = System.currentTimeMillis()
         logger.lifecycle("package: ${bundle.path} (ad-hoc signed)")
+        logger.lifecycle("package timing ms=${tEnd - t0} compile=${tCompile - t0} merge=${tMerge - tCompile} embed+bundle=${tEnd - tMerge}")
     }
 
     // ---------------------------------------------------------------- reload

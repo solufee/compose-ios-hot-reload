@@ -27,7 +27,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.1.0"
+    id("com.solufee.cmp.hotreload") version "0.1.1"
 }
 
 cmpHotReload {
@@ -68,10 +68,11 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 |---|---|
 | `hotReloadCheckToolchain` | 读 `toolchain.json`，与插件钉死的版本逐项比对，检查 Xcode、模拟器 runtime 和所需文件；通过结果按清单、Xcode、klib 列表缓存 |
 | `hotReloadCompileKlib<Module>` | 每个库模块一个任务，编成 klib；源码和依赖 klib 不变时 UP-TO-DATE |
-| `hotReloadPackage` | split 编译 app → `merge-payloads.py`（热符号集按各模块源码里的 package 自动生成）→ `embed-merged.py` → 组装 `.app` |
+| `hotReloadPackage` | split 编译 app（走 klib 守护进程；它不可用或编译失败时改用 `kotlinc-native` 重跑，并打印一行提示）→ `merge-payloads.py`（热符号集按各模块源码里的 package 自动生成；不变的库 archive 的处理结果缓存在 `build/hotreload/merge-cache/`）→ `embed-merged.py` → 组装 `.app`。日志最后一行 `package timing ms=… compile=… merge=… embed+bundle=…` |
 | `hotReload` | 先分类（见下文“分类器与温重启”）；可热替换时：守护进程 cache-only 编译 → 按 mtime 取本次重建的对象 → 按 `_kfun:<package>` 归到模块 → `ld -r` → 逐模块符号检查 → 发送。`--no-warm`：需要温重启时只报原因并失败 |
 | `hotReloadRun` | 安装并启动；首帧标记（`readyMarker`）出现或 Kotlin main 运行 3 s 即算启动成功，失败最多重试 3 次。`--args="..."` 传给 app（如 `--hr-state=2,3`） |
 | `hotReloadDaemonStart` / `hotReloadDaemonStop` | 启动或复用、停止本项目的两个编译守护进程 |
+| `hotReloadClean` | 停掉本项目的守护进程，删除 `build/hotreload/`（app、编译缓存、merge 缓存、分类器快照）；下次 `hotReloadPackage` 从头建 |
 | `hotReloadVerifyRelease` | release 零改动校验：见下文 |
 
 ## DSL
@@ -128,7 +129,7 @@ pluginManagement {
 }
 // build.gradle.kts（根项目）
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.1.0"
+    id("com.solufee.cmp.hotreload") version "0.1.1"
 }
 ```
 
@@ -158,7 +159,7 @@ CMP hot reload: the toolchain does not match what plugin com.solufee.cmp.hotrelo
 ## 与底层的边界
 
 - **随插件分发的工具**：构建插件时，把 `example-gradle/tools/merge-payloads.py`、`embed-merged.py`、
-  `daemon/HrCompileDaemon.java` 原样打进 jar，sha256 记在 jar 里的 `tools-manifest.properties`；
+  `daemon/HrCompileDaemon.java`、`scripts/compat-classify.py` 原样打进 jar，sha256 记在 jar 里的 `tools-manifest.properties`；
   运行时解到 `build/hotreload/tools/<hash>/`，并逐个校验哈希。日志里会有一行
   `tools from plugin jar (sha256 …)`，说明这次用的是哪一份。
 - **插件自己实现的协议**：守护进程客户端（INTERFACE §2.1）和发送（§4.1、§6）。契约测试
@@ -218,9 +219,23 @@ bundle 检查（`Pipeline.verifyBundle`）每次 `hotReloadPackage` 都跑，任
 ../example-gradle/gradlew -p . test -Pcmp.hotreload.toolchainDir=<KOTLIN_NATIVE_DIST>
 ```
 
-- `ToolchainValidatorTest`：版本、commit、补丁哈希、Xcode、缺文件。
-- `PipelineTest`：模块归类（最长包名匹配、根包）、源码 package 读取、内置工具哈希。
-- `ProtocolContractTest`：见上；不给工具链时，连真实守护进程的那一项跳过。
-- `PluginFunctionalTest`（TestKit）：报错文本、debug 开关、DSL 配错时其它任务照常运行、configuration cache。
+共 37 个测试；不给工具链时，需要真实编译器的两项跳过，其余照常运行。
 
-`test-projects/three-modules/` 是三模块（app → ui → core）的验收工程，验收脚本是 `accept-three.py`。
+| 测试类 | 数量 | 内容 |
+|---|---|---|
+| `ToolchainValidatorTest` | 9 | 版本、基线 commit、补丁哈希、libKaldo 实际哈希、Xcode、缺文件、bundle 布局拒绝 |
+| `PipelineTest` | 5 | 模块归类（最长包名匹配、根包）、源码 package 读取、内置工具哈希、工具位置的查找顺序（显式设置 → 清单 `tools` → 下载布局 → `tools/`） |
+| `PackagerDutiesTest` | 4 | INTERFACE §3.3 的打包方义务（合并开关、启动开关、`CACHE_ONLY` 不漏进完整构建） |
+| `ProtocolContractTest` | 4 | 钉住的 `interfaceVersion`；守护进程回复解析；发送协议逐字节；连真实 `HrCompileDaemon` 编译成功和语法错误（要工具链） |
+| `CompatContractTest` | 7 | 分类器随 jar 分发且哈希一致；非快照输入不会判成 HOT；用真实 klib 验证“只改函数体退出 0、加字段退出 3”（要工具链）；`hr-state.json` 解析；带参数启动时找 app 进程；已启动模拟器列表；dist 旁边的 klib 会被链接 |
+| `PluginFunctionalTest` | 8 | TestKit：版本不匹配和下载版旧工具链的报错、没配工具链、DSL 配错时其它任务照常、debug 开关、应用插件前后 `tasks --all` 一致、`warmRestart` 与 `--no-warm`、任务都在自己的组里 |
+
+## 验收脚本与证据
+
+| 脚本 | 用途 | 证据 |
+|---|---|---|
+| `test-projects/endpoint/endpoint.py` | 使用者视角的终点验收：改代码 → `hotReload` → 读模拟器屏幕上的文字（AXe）；温重启后真实点击；冷启动看 EH 检查 | `test-projects/endpoint/evidence/`（见其中的 README：全新工程两种工具链来源、模板工程、状态恢复、发布后冒烟、插件 jar 扫描） |
+| `example-gradle/accept-b4-plugin.py` | 分类器回归：16 种改动加温重启后点击，结果须与参考实现一致 | `example-gradle/accept-plugin-p2a-b4.txt`、`accept-plugin-p2a-v8-smoke.txt` |
+| `example-gradle/accept-p1-full.sh` | 示例工程的完整矩阵（ui/app/both、多文件、点击翻页、冷启动、三模块、release） | `example-gradle/accept-plugin-p1-v7full-*.txt` |
+| `example-gradle/accept-release.sh` | release 零改动校验 | `example-gradle/accept-plugin-p1-release*.txt` |
+| `test-projects/three-modules/accept-three.py` | 三模块（app → ui → core） | `test-projects/three-modules/accept-three.txt` |

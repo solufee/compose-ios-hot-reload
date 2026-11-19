@@ -4,7 +4,7 @@
 不重启、不丢状态（页面、`remember` 计数器都在），UI 直接更新。底层是 Kotlin/Native 的
 split 编译 + libKaldo（LLVM ORC/JITLink）+ 合成 `__eh_frame`，不是 dlopen，也不是解释器。
 
-> **实验性质，0.1.0。**
+> **实验性质，0.1.1。**
 > - 只支持 **Apple Silicon Mac + iOS 模拟器**（arm64），不支持真机。
 > - 工具链版本固定：打过补丁的 Kotlin/Native、Compose Multiplatform 和 LLVM/libKaldo，插件只认这一套
 >   （Xcode 27.2、iOS 27.2 模拟器 runtime）。只用于 debug，不要用于发布构建。
@@ -356,8 +356,8 @@ ui 4,953 ms、app 3,919 ms、两个 5,290 ms，与关分类器交替对照 ui +2
 - 只支持 debug / split 构建；release 不经过这些分支。
 - 多模块（app + ui）和同一模块多文件同时改动都支持，一次原子发送、同一 tick 生效。
 - 类字段布局、函数签名、inline、suspend、新增顶层属性的改动会被兼容性分类器拦下并自动温重启；
-  温重启恢复页面和计数器（`--hr-state`），其它 `remember` 瞬态不恢复；一次温重启约 64 s，
-  其中约 53 s 是完整重新打包。见 docs/LIMITATIONS.md。
+  温重启恢复页面和计数器（`--hr-state`），其它 `remember` 瞬态不恢复；参考脚本一次温重启约 16 s，
+  其中约 10.5 s 是完整重新打包；插件 0.1.1 接入了同样的提速，温重启约 17 s（0.1.0 约 50 s）。见 docs/LIMITATIONS.md。
 - plist 里的 `NSNumber` 布尔值桥接：启动时的严格检查暂时关闭。
 - 长会话（3.5 小时 / 上万次重组）后发送段会慢约 1 s，原因未定位。
 - 启动稳定性靠收窄的 `KALDO_HOT_SYMBOLS`（`run.sh` 默认传）：30/30；不收窄时约 20% 在 `Konan_constructors` 前崩溃。

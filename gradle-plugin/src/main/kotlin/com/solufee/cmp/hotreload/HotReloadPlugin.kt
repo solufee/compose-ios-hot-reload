@@ -1,6 +1,7 @@
 package com.solufee.cmp.hotreload
 
 import com.solufee.cmp.hotreload.tasks.CheckToolchainTask
+import com.solufee.cmp.hotreload.tasks.CleanTask
 import com.solufee.cmp.hotreload.tasks.CompileKlibTask
 import com.solufee.cmp.hotreload.tasks.DaemonStartTask
 import com.solufee.cmp.hotreload.tasks.DaemonStopTask
@@ -88,7 +89,7 @@ class HotReloadPlugin : Plugin<Project> {
 
         val enabled = ext.enabled
         project.tasks.withType(HotReloadTask::class.java).configureEach {
-            if (this !is DaemonStopTask) dependsOn(check)
+            if (this !is DaemonStopTask && this !is CleanTask) dependsOn(check)
             onlyIf("cmpHotReload.enabled is true") { enabled.get() }
         }
         project.tasks.withType(CheckToolchainTask::class.java).configureEach {
@@ -210,6 +211,11 @@ class HotReloadPlugin : Plugin<Project> {
             project.tasks.register("hotReloadDaemonStart", DaemonStartTask::class.java) {
                 group = GROUP
                 description = "Start the compile daemons, or reuse them when they answer"
+                this.settings.set(settings)
+            }
+            project.tasks.register("hotReloadClean", CleanTask::class.java) {
+                group = GROUP
+                description = "Stop this project's compile daemons and delete build/hotreload (including the merge cache)"
                 this.settings.set(settings)
             }
             project.tasks.register("hotReloadDaemonStop", DaemonStopTask::class.java) {

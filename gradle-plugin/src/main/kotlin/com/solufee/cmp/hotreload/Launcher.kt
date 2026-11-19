@@ -34,6 +34,7 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         val udid = s.udid
         if (udid == "booted") requireSingleBootedSimulator()
         Proc.run(listOf("xcrun", "simctl", "terminate", udid, info.bundleId), echo = false)
+        requireFreePort()
         if (s.reinstall) {
             Proc.run(listOf("xcrun", "simctl", "uninstall", udid, info.bundleId), echo = false)
             Proc.check(listOf("xcrun", "simctl", "install", udid, bundle.path), logger = logger)
@@ -59,6 +60,11 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
             var upSince = 0L
             while (System.currentTimeMillis() < deadline) {
                 val text = log.readText()
+                if (text.contains("HR server: Start() failed")) {
+                    Proc.run(listOf("xcrun", "simctl", "terminate", udid, info.bundleId), echo = false)
+                    throw GradleException("CMP hot reload: the app could not open its reload port ${s.port} (\"HR server: Start() failed\" in ${log.path}); " +
+                        "another app or process is using it. " + portHint())
+                }
                 val pid = appPid(info.executable)
                 val ready = if (readyTokens.isNotEmpty()) {
                     text.replace('\r', '\n').lines().any { l -> (s.readyMarker == null || l.contains(s.readyMarker)) && l.trim().split(Regex("\\s+")).containsAll(readyTokens) }
@@ -107,6 +113,28 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         /** Starts argv[1:] as the leader of a new session (own process group). */
         private const val SETSID_EXEC = "import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])"
     }
+
+    /**
+     * The simulator shares the host's network: an app of another project (or a stale one) that still listens on the
+     * reload port makes this app's reload server fail, and every hot reload then times out.
+     */
+    private fun requireFreePort() {
+        repeat(10) {
+            val holder = portHolder() ?: return
+            if (it == 9) throw GradleException("CMP hot reload: port ${s.port} is already in use by $holder. " + portHint())
+            Thread.sleep(300)   // our own app may still be shutting down
+        }
+    }
+
+    private fun portHolder(): String? {
+        val out = Proc.run(listOf("lsof", "-nP", "-iTCP:${s.port}", "-sTCP:LISTEN", "-Fpc"), echo = false).output
+        val pid = out.lines().firstOrNull { it.startsWith("p") }?.drop(1) ?: return null
+        val cmd = out.lines().firstOrNull { it.startsWith("c") }?.drop(1) ?: "?"
+        return "$cmd (pid $pid)"
+    }
+
+    private fun portHint() =
+        "Stop that app (xcrun simctl terminate <UDID> <its bundle id>) or give this project another port: cmp.hotreload.port=<port> in local.properties."
 
     /** "booted" is ambiguous unless exactly one simulator is booted; say which ones and how to choose. */
     private fun requireSingleBootedSimulator() {

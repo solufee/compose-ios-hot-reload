@@ -210,6 +210,8 @@ ui-klib)
   ;;
 
 package)
+  T_PKG0=$(now_ms); T_LAST=$T_PKG0; PKG_STEPS=""
+  pkg_step() { local t; t=$(now_ms); PKG_STEPS="$PKG_STEPS $1=$((t - T_LAST))"; T_LAST=$t; }
   # A stale ui.klib would build the app (and the compat baseline) from old UI
   # code. Gradle's packageApp depends on compileKlib; a manual run may not.
   if [ ! -f "$BUILD/ui/ui.klib" ] || \
@@ -217,6 +219,7 @@ package)
     echo "package: ui.klib stale; rebuilding"
     "$ROOT/hotreload.sh" ui-klib
   fi
+  pkg_step ui_klib
   mkdir -p "$BUILD/app" "$AUTO_CACHE" "$IC_DIR"
   # package must do the real host link; the editor-path cache-only switch
   # from hotreload.env applies to reload only.
@@ -240,14 +243,32 @@ package)
     exit 1
   fi
   echo "kaldo: $KALDO_DYLIB sha256=${KALDO_SHA:0:12}${WANT_SHA:+ (matches manifest)}"
-  # shellcheck disable=SC2046
-  "$KC" $(common_args) "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" \
-    -o "$BUILD/app/ComposeHR-base.kexe" "$APP_SRC"
+  PKG_ARGS=($(common_args) "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" \
+    -o "$BUILD/app/ComposeHR-base.kexe" "$APP_SRC")
+  # The ordinary compile daemon (hr-klib.sock, never cache-only) saves the JVM
+  # start and warm-up (~3 s). It cannot see per-call environment, so
+  # KONAN_SPLIT_MERGED_BOOTSTRAP still goes to kotlinc-native; on a daemon
+  # failure kotlinc-native reruns the compile and prints the full message.
+  if [ -S "$HRC_KLIB_SOCKET" ] && [ -z "${KONAN_SPLIT_MERGED_BOOTSTRAP:-}" ]; then
+    echo "package: compile via daemon $HRC_KLIB_SOCKET"
+    if ! python3 "$ROOT/tools/hrc.py" "$HRC_KLIB_SOCKET" "${PKG_ARGS[@]}" >/dev/null; then
+      echo "package: daemon compile failed; rerunning with kotlinc-native" >&2
+      "$KC" "${PKG_ARGS[@]}"
+    fi
+  else
+    "$KC" "${PKG_ARGS[@]}"
+  fi
+  pkg_step compile
+  # merge-cache keeps the processed library archives between packages (they
+  # do not change), which takes the merge from ~6 s to ~2 s.
+  KALDO_MERGE_CACHE_DIR=${KALDO_MERGE_CACHE_DIR:-$BUILD/merge-cache} \
   KALDO_HOT_PACKAGES=${KALDO_HOT_PACKAGES:-expui} \
   KALDO_HOT_SYMBOLS_OUT="$BUILD/app/hot-symbols.txt" \
     python3 "$ROOT/tools/merge-payloads.py" "$BUILD/app/ComposeHR-base.kexe" "$BUILD/app/merged-bootstrap.o"
   echo "hot symbols: $(wc -l < "$BUILD/app/hot-symbols.txt" | tr -d ' ')"
+  pkg_step merge
   python3 "$ROOT/tools/embed-merged.py" "$BUILD/app/ComposeHR-base.kexe" "$BUILD/app/merged-bootstrap.o" "$OUT.kexe"
+  pkg_step embed
   APP="$OUT.app"
   mkdir -p "$APP/Frameworks"
   cp "$OUT.kexe" "$APP/ComposeHR"
@@ -263,7 +284,10 @@ package)
   done < <(otool -l "$APP/ComposeHR" | awk '/LC_RPATH/{f=1;next} f&&/path /{print $2; f=0}')
   codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
   echo "package: $APP"
+  pkg_step bundle
   compat_baseline
+  pkg_step baseline
+  echo "PACKAGE ms=$(( $(now_ms) - T_PKG0 ))$PKG_STEPS"
   ;;
 
 reload)
@@ -344,7 +368,7 @@ warm)
   WARM_LOG=${WARM_LOG:-$ROOT/launch.log}
   : > "$WARM_LOG"
   APP_ARGS="--hr-state=$PAGE,$COUNT" LAUNCH_LOG="$WARM_LOG" \
-    nohup "$ROOT/run.sh" >/dev/null 2>&1 &
+    nohup "$ROOT/run.sh" >"$BUILD/warm-run.out" 2>&1 &
   deadline=$((SECONDS + 90)); ok=0
   while [ "$SECONDS" -lt "$deadline" ]; do
     if grep -q "count=$COUNT page=$PAGE" "$WARM_LOG" 2>/dev/null && \
@@ -353,7 +377,7 @@ warm)
   done
   END=$(python3 -c 'import time; print(int(time.time()*1000))')
   if [ "$ok" != 1 ]; then
-    echo "warm: app did not come back with page=$PAGE count=$COUNT (log $WARM_LOG)" >&2
+    echo "warm: app did not come back with page=$PAGE count=$COUNT (log $WARM_LOG, run.sh output $BUILD/warm-run.out)" >&2
     exit 1
   fi
   echo "WARM OK ms=$((END - START)) ms_package=$((PKG_DONE - START)) ms_relaunch=$((END - PKG_DONE)) page=$PAGE count=$COUNT"

@@ -1,0 +1,7 @@
+# plugin 0.1.1 jar scan (publishAllPublicationsToPagesRepository), 2026-11-19 21:03:25
+jar sha256 e630620e4e939f92…, entries 128
+jar files containing a macOS home path ("/Us" "ers/"): 0
+jar files containing the internal product name (case-insensitive, export deny list): 0
+jar files containing an agent id ("agent-" + 8 hex): 0
+POM, module and marker POM containing any of them: 0
+bundled merge-payloads.py sha256 9ee1f5aa4b45 (repo: 9ee1f5aa4b45)

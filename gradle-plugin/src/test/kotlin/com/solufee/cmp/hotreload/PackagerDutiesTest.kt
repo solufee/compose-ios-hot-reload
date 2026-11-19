@@ -24,6 +24,7 @@ class PackagerDutiesTest {
         val env = Pipeline(settings(), logger).mergeEnvironment(listOf("expui"))
         assertEquals("1", env["KALDO_KEEP_COMPACT_UNWIND"])
         assertEquals("expui", env["KALDO_HOT_PACKAGES"])
+        assertEquals("/p/build/hotreload/merge-cache", env["KALDO_MERGE_CACHE_DIR"])
         assertFalse("KALDO_KEEP_COMPACT_UNWIND" in Pipeline(settings(keep = false), logger).mergeEnvironment(emptyList()))
     }
 

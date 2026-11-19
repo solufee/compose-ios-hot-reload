@@ -8,7 +8,10 @@ result is embedded as the only payload; reloads still send per-file user objects
 
 Usage: merge-payloads.py <kexe> <out.o>
 """
+import hashlib
+import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -183,7 +186,42 @@ def objc_member_is_host_backed(member_path, host):
     return bool(classes) and classes <= host
 
 
-def collect_hot_symbols(members, out_path):
+NM_BATCH = 400
+
+
+def nm_global_lines(paths):
+    """`nm -g` output lines per file, one nm process per batch of files.
+
+    Same output as one `nm -g <file>` per file (that cost ~10 ms per object, so
+    ~20 s for the ~3000 cache members of a Compose app). nm runs in each file's
+    directory with the bare name, so a "<name>:" line is exactly a file header.
+    A file nm cannot read gets no lines, as before.
+    """
+    by_dir = {}
+    for p in paths:
+        by_dir.setdefault(os.path.dirname(p), []).append(os.path.basename(p))
+    result = {}
+    for d, names in by_dir.items():
+        for i in range(0, len(names), NM_BATCH):
+            batch = names[i:i + NM_BATCH]
+            out = subprocess.run(["nm", "-g"] + batch, cwd=d or None,
+                                 capture_output=True, text=True,
+                                 errors="replace").stdout
+            want = set(batch)
+            cur = batch[0] if len(batch) == 1 else None
+            for line in out.splitlines():
+                if len(batch) > 1 and line.endswith(":") and line[:-1] in want:
+                    cur = line[:-1]
+                    continue
+                if cur is not None:
+                    result.setdefault(os.path.join(d, cur), []).append(line)
+    for lines in result.values():  # the blank line nm prints before the next header
+        while lines and lines[-1] == "":
+            lines.pop()
+    return result
+
+
+def collect_hot_symbols(members):
     """Record the Kotlin symbols of the user module (the object that defines `#main`).
 
     Only these need redirectable stubs: a reload replaces just the user module.
@@ -192,15 +230,12 @@ def collect_hot_symbols(members, out_path):
     """
     names = set()
     hit = False
-    for m in members:
-        p = os.path.join(os.path.dirname(m), m) if not os.path.isabs(m) else m
-        if not os.path.isfile(p):
+    paths = [m if os.path.isabs(m) else os.path.join(os.path.dirname(m), m) for m in members]
+    lines = nm_global_lines([p for p in paths if os.path.isfile(p)])
+    for p in paths:
+        if p not in lines:
             continue
-        try:
-            out = subprocess.run(["nm", "-g", p], capture_output=True, text=True).stdout
-        except Exception:
-            continue
-        syms = [line.split()[-1] for line in out.splitlines() if len(line.split()) >= 2]
+        syms = [line.split()[-1] for line in lines[p] if len(line.split()) >= 2]
         is_user_module = any(s.startswith("_kfun:#main") or s.startswith("_kfun:main") for s in syms)
         if not is_user_module:
             for pkg in HOT_PACKAGES:
@@ -210,16 +245,22 @@ def collect_hot_symbols(members, out_path):
         if is_user_module:
             hit = True
             names.update(s for s in syms if s.startswith("_kfun:"))
-    if not hit:
-        return 0
-    with open(out_path, "a") as f:
-        for n in sorted(names):
+    return sorted(names) if hit else []
+
+
+def write_hot_symbols(names, src):
+    if not names:
+        return
+    with open(HOT_SYMBOLS_OUT, "a") as f:
+        for n in names:
             f.write(n + "\n")
-    return len(names)
+    print(f"hot symbols: {len(names)} (from {os.path.basename(src)})")
 
 
 def dedup_archive(src, dst):
+    """Returns (hot symbol names, whether the host image was consulted)."""
     global skipped_objc
+    host_used = False
     tmp = tempfile.mkdtemp(prefix="dedup-")
     try:
         subprocess.run(["ar", "x", src], cwd=tmp, check=True,
@@ -229,6 +270,8 @@ def dedup_archive(src, dst):
             kept = []
             for m in members:
                 p = os.path.join(tmp, m)
+                if m.startswith(SKIP_OBJC_PREFIX) and m.endswith(".o"):
+                    host_used = True
                 if (m.startswith(SKIP_OBJC_PREFIX) and m.endswith(".o")
                         and objc_member_is_host_backed(p, host_symbol_table(HOST_KEXE))):
                     skipped_objc += 1
@@ -240,14 +283,67 @@ def dedup_archive(src, dst):
                 else:
                     kept.append(m)
             members = kept
-        hot = collect_hot_symbols([os.path.join(tmp, m) for m in members],
-                                  HOT_SYMBOLS_OUT)
-        if hot:
-            print(f"hot symbols: {hot} (from {os.path.basename(src)})")
+        hot = collect_hot_symbols([os.path.join(tmp, m) for m in members])
         subprocess.run(["ar", "rcs", dst] + members, cwd=tmp, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     finally:
         shutil.rmtree(tmp)
+    return hot, host_used
+
+
+# Per-archive result cache (KALDO_MERGE_CACHE_DIR, off when unset). Library
+# cache archives are identical from one package to the next; their processed
+# form (deduplicated, ui duplicate weakened) and hot symbols are kept under
+# sha256(this script, flags, archive bytes). Archives whose processing looked at
+# the host image (ObjC members) are never cached. After a successful merge,
+# entries this merge did not use are removed, so the cache holds one app's set.
+MERGE_CACHE = os.environ.get("KALDO_MERGE_CACHE_DIR", "")
+CACHE_ENTRY = re.compile(r"^[0-9a-f]{64}\.(a|json)$")
+
+
+def cache_key(data):
+    h = hashlib.sha256()
+    h.update(open(os.path.abspath(__file__), "rb").read())
+    h.update(repr((os.environ.get("KALDO_GUEST_KEEP_OBJC"),
+                   os.environ.get("KALDO_GUEST_DROP_CXX"), HOT_PACKAGES)).encode())
+    h.update(data)
+    return h.hexdigest()
+
+
+def cache_get(key):
+    a = os.path.join(MERGE_CACHE, key + ".a")
+    meta = os.path.join(MERGE_CACHE, key + ".json")
+    if not (os.path.isfile(a) and os.path.isfile(meta)):
+        return None
+    try:
+        return a, json.load(open(meta))
+    except (OSError, ValueError):
+        return None
+
+
+def cache_put(key, archive, meta):
+    """Moves the processed archive into the cache; returns its new path."""
+    os.makedirs(MERGE_CACHE, exist_ok=True)
+    dst = os.path.join(MERGE_CACHE, key + ".a")
+    tmp = f"{dst}.{os.getpid()}.tmp"
+    try:
+        os.replace(archive, tmp)
+    except OSError:  # another volume
+        shutil.copyfile(archive, tmp)
+    os.replace(tmp, dst)
+    mtmp = os.path.join(MERGE_CACHE, f"{key}.json.{os.getpid()}.tmp")
+    with open(mtmp, "w") as f:
+        json.dump(meta, f)
+    os.replace(mtmp, os.path.join(MERGE_CACHE, key + ".json"))
+    return dst
+
+
+def cache_prune(used):
+    if not MERGE_CACHE or not os.path.isdir(MERGE_CACHE):
+        return
+    for f in os.listdir(MERGE_CACHE):
+        if (CACHE_ENTRY.match(f) or f.endswith(".tmp")) and f.split(".")[0] not in used:
+            os.remove(os.path.join(MERGE_CACHE, f))
 
 
 def main():
@@ -276,12 +372,15 @@ def _merge(kexe, out, work):
     blob = open(raw, "rb").read()
     entries, base = parse_manifest(blob)
     payloads = []
+    keys = {}
     for i, (kind, o, s) in enumerate(entries):
         data = blob[base + o:base + o + s]
         ext = "o" if kind == 0 else "a"
         p = os.path.join(work, f"p{i:02d}.{ext}")
         open(p, "wb").write(data)
         payloads.append(p)
+        if MERGE_CACHE and ext == "a":
+            keys[p] = cache_key(data)
     print(f"payloads: {len(payloads)}, total {sum(os.path.getsize(p) for p in payloads)} bytes")
 
     inputs = []
@@ -292,10 +391,23 @@ def _merge(kexe, out, work):
         inputs.append(shim)
         print(f"shim: {shim}")
     weakened = 0
+    used, reused = set(), 0
     for p in payloads:
         if p.endswith(".a"):
+            key = keys.get(p)
+            hit = cache_get(key) if key else None
+            if hit:
+                cached, meta = hit
+                write_hot_symbols(meta["hot"], p)
+                weakened += meta["weakened"]
+                inputs.append(cached)
+                used.add(key)
+                reused += 1
+                continue
             dedup = os.path.join(work, "d-" + os.path.basename(p))
-            dedup_archive(p, dedup)
+            hot, host_used = dedup_archive(p, dedup)
+            write_hot_symbols(hot, p)
+            weak_here = 0
             # Patch the duplicate in the ui cache's member object.
             members = subprocess.check_output(["ar", "t", dedup]).decode("utf-8", "replace")
             if any(DUP_ARCHIVE_MARKER in m for m in members.splitlines()):
@@ -303,13 +415,19 @@ def _merge(kexe, out, work):
                 subprocess.run(["ar", "x", dedup], cwd=tmp, check=True)
                 for m in os.listdir(tmp):
                     if m.endswith(".o"):
-                        weakened += weaken_macho_symbol(os.path.join(tmp, m), DUP_SYMBOL)
+                        weak_here += weaken_macho_symbol(os.path.join(tmp, m), DUP_SYMBOL)
                 members = sorted(m for m in os.listdir(tmp) if not m.startswith("__.SYMDEF"))
                 subprocess.run(["ar", "rcs", dedup] + members, cwd=tmp, check=True)
                 shutil.rmtree(tmp)
+            weakened += weak_here
+            if key and not host_used:
+                dedup = cache_put(key, dedup, {"hot": hot, "weakened": weak_here})
+                used.add(key)
             inputs.append(dedup)
         else:
             inputs.append(p)
+    if MERGE_CACHE:
+        print(f"merge cache: {reused}/{len(keys)} archives reused ({MERGE_CACHE})")
 
     ld = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "-f", "ld"]).decode().strip()
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"]).decode().strip()
@@ -326,6 +444,7 @@ def _merge(kexe, out, work):
     # ld -r demotes the ObjC export adapter tables (N_PEXT in the payloads) to
     # local symbols, so the JIT cannot resolve them by name and Kaldo reads the
     # zero-filled weak fallback instead. Globalize them back to private-external.
+    globalize = []
     for sym in ("___isPlatformVersionAtLeast", "___isOSVersionAtLeast",
                 "_Kotlin_ObjCInterop_uniquePrefix",
                 "_Kotlin_ObjCExport_sortedClassAdapters",
@@ -334,8 +453,10 @@ def _merge(kexe, out, work):
                 "_Kotlin_ObjCExport_sortedProtocolAdaptersNum",
                 "_Kotlin_ObjCExport_sortedCategoryAdapters",
                 "_Kotlin_ObjCExport_sortedCategoryAdaptersNum"):
-        subprocess.run([LLVM_OBJCOPY, "--globalize-symbol", sym, out],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        globalize += ["--globalize-symbol", sym]
+    # One pass over the ~130 MB object instead of one per symbol.
+    subprocess.run([LLVM_OBJCOPY] + globalize + [out],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # JITLink fails on compact-unwind records whose DWARF FDE was dropped by
     # ld -r ("needs DWARF, but no FDE was found"). Remove the section; JITLink
     # then relies on __eh_frame (or no unwind info) instead.
@@ -347,6 +468,7 @@ def _merge(kexe, out, work):
     else:
         run([LLVM_OBJCOPY, "--remove-section", "__LD,__compact_unwind", out])
     print(f"merged: {out} ({os.path.getsize(out)} bytes)")
+    cache_prune(used)
     return 0
 
 

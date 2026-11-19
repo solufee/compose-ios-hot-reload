@@ -293,6 +293,9 @@ finally:
     for f, s in ORIG.items():
         open(os.path.join(P, f), "w").write(s)
     out("# sources restored")
+    # leave the reload port free for the next project on this simulator
+    subprocess.run(["xcrun", "simctl", "terminate", a.udid, a.bundle], capture_output=True)
+    out("# app stopped")
 
 out("=== summary ===")
 failed = 0

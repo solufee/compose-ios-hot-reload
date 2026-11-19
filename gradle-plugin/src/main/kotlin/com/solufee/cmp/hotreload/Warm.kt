@@ -30,7 +30,7 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
             else "warm: the app saved no state (Documents/hr-state.json); restarting from its first page",
         )
         Proc.run(listOf("xcrun", "simctl", "terminate", s.udid, info.bundleId), echo = false)
-        pipeline.packageApp(tools)
+        pipeline.packageApp(tools, daemons)
         compat.baseline(daemons)
         val tPkg = System.currentTimeMillis()
         val launcher = Launcher(s, logger)

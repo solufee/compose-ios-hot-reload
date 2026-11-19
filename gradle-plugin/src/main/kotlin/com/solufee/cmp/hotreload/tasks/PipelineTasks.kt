@@ -72,10 +72,11 @@ abstract class PackageTask : HotReloadTask() {
     fun pkg() {
         val s = settings.get()
         val tools = tools(s)
+        val daemons = daemons(s, tools)
         val pipeline = Pipeline(s, logger)
-        pipeline.packageApp(tools)
+        pipeline.packageApp(tools, daemons)
         // INTERFACE §10.2: package ends with the classifier's baseline snapshots of what it built.
-        Compat(s, logger, pipeline, tools).baseline(daemons(s, tools))
+        Compat(s, logger, pipeline, tools).baseline(daemons)
     }
 }
 
@@ -170,6 +171,23 @@ abstract class DaemonStartTask : HotReloadTask() {
     fun start() {
         val s = settings.get()
         Daemons(s, logger).ensure(tools(s))
+    }
+}
+
+/** Stops this project's daemons and deletes build/hotreload (app, caches, merge cache, classifier snapshots). */
+abstract class CleanTask : HotReloadTask() {
+    init {
+        outputs.upToDateWhen { false }
+    }
+
+    @TaskAction
+    fun clean() {
+        val s = settings.get()
+        Daemons(s, logger).stop()
+        val work = File(s.workDir)
+        val mb = if (work.exists()) work.walkTopDown().filter { it.isFile }.sumOf { it.length() } / (1024 * 1024) else 0
+        work.deleteRecursively()
+        logger.lifecycle("CMP hot reload: deleted ${work.path} ($mb MB)")
     }
 }
 

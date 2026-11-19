@@ -1,4 +1,4 @@
-# 试用指南（0.1.0，实验性）
+# 试用指南（0.1.1，实验性）
 
 这份指南带你在自己的 Mac 上，从一个空目录开始，把 Compose Multiplatform 的 iOS 模拟器热重载接进一个 app + ui
 双模块工程：改 Kotlin 代码、执行一条命令，正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。
@@ -97,7 +97,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.1.0"
+    id("com.solufee.cmp.hotreload") version "0.1.1"
 }
 
 cmpHotReload {
@@ -290,7 +290,7 @@ fun main(args: Array<String>) {
 （启动后的**第一次**热重载要 9–10 秒，因为编译守护进程刚起来还要预热，之后才是 5–6 秒）；
 计数器的值、所在页面都不变，进程也不重启。改 `main.kt` 里 `Text("Counter: $count")` 的文字也一样，大约 4–5 秒。
 
-改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（约 50 秒）：
+改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（约 17 秒，其中重新打包约 11 秒）：
 类的字段布局、函数签名、`inline` 函数、`suspend` 函数，以及新增顶层属性。输出里会逐行列出 `WARM …` 原因，最后是
 `WARM OK ms=…`。
 
@@ -302,6 +302,8 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 ./gradlew --stop                                           # 可选：停掉 Gradle 自己的守护进程
 ```
 
+`./gradlew hotReloadClean` 会停掉编译守护进程并删除 `build/hotreload/`（约 1 GB，包括打包缓存），下次打包从头建，约 2 分钟。
+
 编译守护进程闲着时不占 CPU，下次 `hotReload` 会自动复用；只有换了工具链或插件版本时，插件才会自己重启它们。
 
 ## 5. 已知限制
@@ -309,7 +311,7 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
 - 工具链版本固定，插件只认 2.5.255-hotreload.4。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
-- 温重启约 64 s，其中约 53 s 是重新打包；温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
+- 温重启约 17 s（实测 17–24 s），其中约 11 s 是重新打包；清理过 `build/hotreload`（`hotReloadClean`）后的第一次打包要重建缓存，约 2 分钟。温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
 - 兼容性检查（判断能不能热替换）和编译同时进行。只改 app 时检查本身约 0.6 s，但被编译时间盖住，端到端只多十几毫秒。
 - 被替换的 `@Composable` 要在下一次重组时真的被执行，新代码才会显示。Compose 会跳过参数没变、也不读任何 state 的 composable：只传一个会变的参数还不够，**函数体里必须读到它**（或者读一个 `State`），否则热替换已经生效，画面却要等这块被重新绘制（例如翻页再回来）才会变。
 - 长时间运行（几个小时、上万次重组）后，热替换会慢 1 s 左右，重启 app 就恢复。
@@ -327,6 +329,7 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 | `hotReload` 报编译错误 | 修好代码后再执行一次 `hotReload`，不用重新打包；编译守护进程不会因此退出 |
 | 怀疑状态乱了 | `./gradlew hotReloadDaemonStop`，删掉 `build/hotreload/`，再 `hotReloadPackage` 和 `hotReloadRun` |
 | `hotReload` 成功、画面没变 | 被改的 composable 这次没有重新执行：它读的值都没变（见第 5 节）。按第 3 节模板让它读 `tick`，或者翻页再回来看 |
+| `hotReloadRun` 报 `port … is already in use by …` | 同一台模拟器上另一个 app（别的工程，或者没停掉的旧 app）占着热重载端口；停掉它（`xcrun simctl terminate <UDID> <它的 bundle id>`），或者给这个工程换端口：`local.properties` 里写 `cmp.hotreload.port=<端口>` |
 | 输出里有 `no reaction from the app … within 5 s` | 补丁发出去了，但 app 没有反应：app 没在运行，或者端口不对。先 `./gradlew hotReloadRun` |
 
 打包日志里的 `hot packages: myui` 列的是库模块的包名（以及 app 里写了 `package` 的包）。app 模块不写 `package` 时不会出现在这一行，

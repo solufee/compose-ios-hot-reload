@@ -116,7 +116,7 @@ include("app", "ui")
         setup(null)
         val r = runner("tasks", "--all").build()
         val hot = r.output.substringAfter("Hot reload tasks").substringBefore("\n\n")
-        listOf("hotReload ", "hotReloadPackage", "hotReloadRun", "hotReloadCheckToolchain", "hotReloadDaemonStart", "hotReloadDaemonStop", "hotReloadCompileKlibUi", "hotReloadCompileKlibs")
+        listOf("hotReload ", "hotReloadPackage", "hotReloadRun", "hotReloadCheckToolchain", "hotReloadDaemonStart", "hotReloadDaemonStop", "hotReloadClean", "hotReloadCompileKlibUi", "hotReloadCompileKlibs")
             .forEach { assertTrue(it in hot, "missing $it in:\n$hot") }
     }
 }

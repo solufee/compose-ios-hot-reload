@@ -1,0 +1,28 @@
+# plugin 0.1.1 from the local Pages dir; copy of the independent tester's my-app (version 0.1.1 in build.gradle.kts); toolchain 2.5.255-hotreload.4 downloaded from the simulated Release, only toolchainDir; 2026-11-19 20:57:15
+package OK CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-beta01, Xcode 27.2 Build version 27B52)
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 208, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+compat: baseline written for app,ui (674 ms)
+BUILD SUCCESSFUL in 1m 50s
+run CMP hot reload: app started (attempt 1, pid 39834, 4.9 s, port 5568, log <WORK>/scratch/endpoint/my-app/launch.log) BUILD SUCCESSFUL in 5s
+screen 402x874 points, app frame 320x480
+pid0 39834
+ui[0] OK 7584ms hot=True loaded=True on_screen=True pid 39834->39834 text=['Edited in ui module (ui0-93152)']
+ui[1] OK 5034ms hot=True loaded=True on_screen=True pid 39834->39834 text=['Edited in ui module (ui1-93160)']
+app[0] OK 3021ms hot=True loaded=True on_screen=True pid 39834->39834 text=['Counter app0-93165']
+app[1] OK 2982ms hot=True loaded=True on_screen=True pid 39834->39834 text=['Counter app1-93168']
+both[0] OK 5105ms hot=True loaded=True on_screen=True pid 39834->39834 text=['Edited in ui module (both0-93171)', 'Counter both0-93171']
+warm[0] OK 27564ms add_class_hot=True warm=True pid 39834->40399 counter_before=0 WARM OK ms=23580 ms_package=11073 ms_relaunch=12507 page=- count=-
+taps-after-warm OK +:0->1 Go to page 2->True Back to page 1->True pid 40399->40399 crash=none
+cold[0] OK attempt=1 pid=40600 5.2s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+cold[1] OK attempt=1 pid=40682 5.2s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+cold[2] OK attempt=1 pid=40774 5.1s EH=126545 FDE/3799 lsda/0+0 out/0 unresolved eh_ok=True
+# sources restored
+# app stopped
+=== summary ===
+ui: ok=2/2 p50=5034ms p90=7584ms
+app: ok=2/2 p50=2982ms p90=3021ms
+both: ok=1/1 p50=5105ms p90=5105ms
+warm: ok=1/1
+taps: ok=1/1
+cold: ok=3/3
+# exit=0

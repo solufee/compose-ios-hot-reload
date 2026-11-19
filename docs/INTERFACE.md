@@ -150,7 +150,15 @@ merge-payloads.py <base.kexe> <out.o>
   - `KALDO_HOT_SYMBOLS_OUT`：热符号清单路径
   - `KALDO_GUEST_KEEP_OBJC=1`：不丢弃 host 已定义的 ObjC 成员（默认丢弃）
   - `KALDO_GUEST_DROP_CXX=1`：丢弃只含 C++ 的成员（默认保留）
+  - `KALDO_MERGE_CACHE_DIR`（可选，首发后新增）：逐 archive 的结果缓存目录。库的 cache archive 每次打包都一样，
+    处理结果（去重、ui 重复符号弱化）和热符号按 `sha256(脚本, 开关, archive 内容)` 存下，下次直接用；处理时查过
+    host 镜像的 archive（含 `CMP*` ObjC 成员）不缓存。合并成功后删除本次没用到的条目，目录里只留一套（参考 app 约 180 MB）。
+    不设就不缓存，行为与以前相同。`hotreload.sh package` 默认设为 `$BUILD/merge-cache`。
 - 退出码：0 成功；2 参数个数不对；其它非 0 表示链接/复制失败。
+- 输出：合并结果与不带缓存时相同（符号表、load command、热符号清单逐项一致）；不同的只有调试 stab 里的临时路径和
+  mtime（以前两次运行之间也不同），以及符号表里两个被 globalize 的符号的先后次序。
+- 首发后提速（不改契约）：热符号收集改为每个 archive 一次 `nm`（以前每个成员一次，约 3000 次、20 s）；
+  9 个 `--globalize-symbol` 合成一次 `llvm-objcopy`。
 
 - 工作目录 `$TMPDIR/kaldo-merge-*`（约 600 MB）在任何退出路径上都会删除（v8 起 `try/finally`；v7 及以前只在成功时删，失败或被杀会留下）。调试时设 `KALDO_MERGE_KEEP=1` 保留，并在 stderr 打印路径。
 
@@ -210,7 +218,7 @@ hotreload.sh ui-klib | package | reload
 | 子命令 | 作用 | 关键环境变量 |
 |---|---|---|
 | `ui-klib` | 把 ui 源目录编成 `build/ui/ui.klib` | `KOTLIN_DIST`、`COMPOSE_PLUGIN_JAR`、`KLIBLIST`、`KLIB_AUTO_CACHE_FROM`、`UIKIT_UTILS`、`BUILD_DIR`、`UI_SRC_DIR`、`HRC_KLIB_SOCKET` |
-| `package` | split 编译 app + 合并 payload + 嵌入 guest + 组装 `.app` | 上面的 + `IC_DIR`、`AUTO_CACHE`、`APP_SRC`、`OUT`、`KALDO_HOT_PACKAGES`；libKaldo 取 `KALDO_DYLIB`，未设时取 `$KOTLIN_DIST/toolchain.json` 的 `llvm.kaldoIossim`，都没有就退出 1；与清单 `kaldoIossimSha256` 不一致也退出 1 |
+| `package` | split 编译 app（`hr-klib.sock` 在就走它，失败时改用 `kotlinc-native` 重跑；设了 `KONAN_SPLIT_MERGED_BOOTSTRAP` 时直接用 `kotlinc-native`）+ 合并 payload + 嵌入 guest + 组装 `.app` | 上面的 + `IC_DIR`、`AUTO_CACHE`、`APP_SRC`、`OUT`、`KALDO_HOT_PACKAGES`、`KALDO_MERGE_CACHE_DIR`（默认 `$BUILD/merge-cache`）；libKaldo 取 `KALDO_DYLIB`，未设时取 `$KOTLIN_DIST/toolchain.json` 的 `llvm.kaldoIossim`，都没有就退出 1；与清单 `kaldoIossimSha256` 不一致也退出 1 |
 | `reload` | 分类（v7；v8 起与编译**并行**）+ cache-only 编译 → 过滤本次重建的 archive → `nm` 分类 → `ld -r` → 符号检查 → **等分类结论** → 发送；需要温重启时默认自动 `warm`，`--no-warm` 时只拦截并退出 3 | 上面的 + `HRC_SOCKET`、`HRC_SOCKET_DIR`、`COMPAT_DIR`、`COMPAT_CLASSIFIER`、`KLIB_TOOL` |
 | `warm` | 读取 app 状态 → `package` → 用 `--hr-state` 重启 → 等 `EH OK` 与目标页/计数器，打印 `WARM OK ms=...` | `UDID`、`BUNDLE`、`WARM_LOG` |
 
@@ -264,7 +272,7 @@ hotreload.sh ui-klib | package | reload
 | 5 | 2026-11-19 | 编译器直接从 `<KALDO_INSTALL>/lib` 链接 libKaldo：Kotlin 补丁里 `konan.properties` 的 `kaldoLinkerFlags.*` 改为 `-L<KALDO_INSTALL>/lib …`（macOS 另加 `-rpath <KALDO_INSTALL>/lib`），LLVM 安装目录里不再放 libKaldo（v4 的符号链接取消）。`KALDO_SYNTH_EH_FRAME` 改为按值判断（未设/空/`0` 为关）。`kotlin.patchSha256`、`llvm.patchSha256`、`llvm.kaldoIossimSha256` 随之变化，字段格式不变。不兼容点：沿用 v4 dist 的 `konan.properties`（`-lKaldo.iossim` 无 `-L`）且 LLVM 安装目录已无 libKaldo 时链接失败；依赖 `KALDO_SYNTH_EH_FRAME=0` 仍开启的行为会变成关闭 |
 | 6 | 2026-11-19 | 分发（B6）：`toolchain.json` 增加 `layout`（`local`/`bundle`）；bundle 清单带 `toolchainVersion`、`components`（文件、字节数、sha256、解包目录、`release` 或 `maven` 下载信息）、`tools`（`llvmTools`/`orcRuntime`/`uikitUtils`）和 `llvm.llvmHome`（`konan-dependency` + 依赖名）。新脚本 `gen-bundle-manifest.py`、`publish-toolchain.py`（只有 dry-run 和本地仓库两种模式）、`fetch-toolchain.py`，见 §9。`hotreload.sh` 的 `KLIBLIST` 规则通用化，新增 `KLIB_AUTO_CACHE_FROM`、`UIKIT_UTILS`；`run.sh` 新增 `ORC_RUNTIME`。兼容：local 清单只多一个 `layout` 字段；旧的 `KLIBLIST` 选出的 klib 不变 |
 | 7 | 2026-11-19 | B4：新增 `scripts/compat-classify.py`（`snapshot`/`classify`，退出码 0/3/2）；`hotreload.sh reload` 先分类，`reload --no-warm` 只拦截不发送，新增 `warm` 子命令；参考 app 支持 `--hr-state=page,count` 与 `Documents/hr-state.json`，见 §10。只新增工具、参数和退出码，已有命令与清单格式不变 |
-| 8 | 2026-11-19 | B10：分类器提速。守护进程新增 `@klib` 工具请求（§2.1）；`compat-classify.py` 新增 `baseline`/`check` 子命令和 `--daemon`、`--cache-dir`，快照增加 `klibSha256`（§10.1）；`reload` 的分类改为与 cache-only 编译并行、发送前等结论，app library klib 走 `hr-klib.sock`（§10.2）。**行为变化**：`hr-compile.sock` 有默认路径 `$HRC_SOCKET_DIR/hr-compile.sock`（`HRC_SOCKET_DIR` 默认 `<工程>/.hr`），存在就用，不再要求显式导出 `HRC_SOCKET`（§2.3）；`reload --no-warm` 在退出 3 前会先完成编译（仍不发送）。`merge-payloads.py` 在任何退出路径上删除工作目录，`KALDO_MERGE_KEEP=1` 保留（§3.1）。`fetch-toolchain.py` 接受 interfaceVersion 6–8 的 bundle 清单（v7 时它仍只认 6，下载 v7 清单会被拒，这是 v7 的遗漏）。清单字段不变。B11：libKaldo 只在 `KALDO_DEBUG_SELREFS=1` 时写 `/tmp/gap-selrefs.log`（§7；以前每次启动都写，首发前必修），`llvm.patchSha256` 变为 `3bb8a987…`、`llvm.kaldoIossimSha256` 变为 `8ed50386…`（macOS 版 libKaldo 同步重建），字段格式不变。公开 klib（v8，0.1.0）：bundle 清单新增 `externalKlibs`、`bundledKlibs`（§9.2），新增组件 `bundled-klibs`，新脚本 `gen-external-klibs.py`；`fetch-toolchain.py` 下载并校验公开 klib，不再读 Gradle 缓存，`--auto-cache-from` 默认为空；`compose-compiler-plugin` 改为 Release 附件；每个组件附 LICENSE 和 NOTICE；fetch 生成的 local 清单带 `tools`（绝对路径） |
+| 8 | 2026-11-19 | B10：分类器提速。守护进程新增 `@klib` 工具请求（§2.1）；`compat-classify.py` 新增 `baseline`/`check` 子命令和 `--daemon`、`--cache-dir`，快照增加 `klibSha256`（§10.1）；`reload` 的分类改为与 cache-only 编译并行、发送前等结论，app library klib 走 `hr-klib.sock`（§10.2）。**行为变化**：`hr-compile.sock` 有默认路径 `$HRC_SOCKET_DIR/hr-compile.sock`（`HRC_SOCKET_DIR` 默认 `<工程>/.hr`），存在就用，不再要求显式导出 `HRC_SOCKET`（§2.3）；`reload --no-warm` 在退出 3 前会先完成编译（仍不发送）。`merge-payloads.py` 在任何退出路径上删除工作目录，`KALDO_MERGE_KEEP=1` 保留（§3.1）。`fetch-toolchain.py` 接受 interfaceVersion 6–8 的 bundle 清单（v7 时它仍只认 6，下载 v7 清单会被拒，这是 v7 的遗漏）。清单字段不变。B11：libKaldo 只在 `KALDO_DEBUG_SELREFS=1` 时写 `/tmp/gap-selrefs.log`（§7；以前每次启动都写，首发前必修），`llvm.patchSha256` 变为 `3bb8a987…`、`llvm.kaldoIossimSha256` 变为 `8ed50386…`（macOS 版 libKaldo 同步重建），字段格式不变。公开 klib（v8，0.1.0）：bundle 清单新增 `externalKlibs`、`bundledKlibs`（§9.2），新增组件 `bundled-klibs`，新脚本 `gen-external-klibs.py`；`fetch-toolchain.py` 下载并校验公开 klib，不再读 Gradle 缓存，`--auto-cache-from` 默认为空；`compose-compiler-plugin` 改为 Release 附件；每个组件附 LICENSE 和 NOTICE；fetch 生成的 local 清单带 `tools`（绝对路径）。首发后（不升版本，只新增可选项）：`fetch-toolchain.py` 下载重试；温重启提速——`merge-payloads.py` 新增可选 `KALDO_MERGE_CACHE_DIR`（§3.1），`hotreload.sh package` 的编译走 `hr-klib.sock`、打印 `PACKAGE ms=…` 诊断行（§5、§10.2） |
 
 ## 9. 分发：打包 → 发布 → 下载（v6）
 
@@ -413,6 +421,8 @@ v8 新增（`snapshot`/`classify` 的行为和退出码不变）：
   重启 app → 等到 `RENDER_APP ... page=<page> count=<count>` 和 `EH OK`，打印
   `WARM OK ms=<总耗时> ms_package=<打包> ms_relaunch=<重启到恢复> page=<page> count=<count>`。
 - 分类器退出 2 时 `reload` 也退出 2，补丁不发送。
+- `package` 结束时打印 `PACKAGE ms=<合计> ui_klib=<ms> compile=<ms> merge=<ms> embed=<ms> bundle=<ms> baseline=<ms>`（诊断输出，不属于契约）；
+  `warm` 把 `run.sh` 的输出写到 `$BUILD/warm-run.out`（以前丢弃），排查重启失败时看它和 `WARM_LOG`。
 - 每次分类后 `reload` 在 stdout 打印 `compat: timing ms=<合计> ui_snapshot=<ms> app_snapshot=<ms> classify=<ms> ui=<same|hit|dump> app=<...>`
   和 `compat: wait ms=<发送前为等分类而阻塞的时间>`（v8）。这些是诊断输出，**不属于契约**，格式可能变化，插件不要依赖它们。
 
