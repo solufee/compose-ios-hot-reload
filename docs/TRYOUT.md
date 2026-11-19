@@ -48,7 +48,7 @@ python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
 | `external-klibs/`、`bundled-klibs/` | 公开依赖 klib（见下） |
 | `klibs.txt` | 编译用的全部 klib 清单 |
 
-sha256 对不上时脚本会删掉文件并以退出码 3 结束，不会留下没校验过的文件。
+sha256 对不上时脚本会删掉文件并以退出码 3 结束，不会留下没校验过的文件。网络中断时脚本会自动重试几次；如果最后仍然失败（退出码 5），检查网络后重新运行同一条命令即可，已经下载并校验过的部分会跳过。
 
 脚本最后会提示 `source …/env.sh`：那是给仓库里的参考脚本（`example-gradle/hotreload.sh`）用的，用 Gradle 插件不需要。
 
@@ -286,7 +286,8 @@ fun main(args: Array<String>) {
 ```
 
 成功时输出里依次有 `compat: HOT …`（这次改动能热替换）、`sent …`（补丁已发给 app）和
-`app loaded the patch (… ms)`（app 已经装上）。从执行命令到模拟器上变成 “Hi, hot reload (… s)”，实测 5–6 秒；
+`app loaded the patch (… ms)`（app 已经装上）。从执行命令到模拟器上变成 “Hi, hot reload (… s)”，实测 5–6 秒
+（启动后的**第一次**热重载要 9–10 秒，因为编译守护进程刚起来还要预热，之后才是 5–6 秒）；
 计数器的值、所在页面都不变，进程也不重启。改 `main.kt` 里 `Text("Counter: $count")` 的文字也一样，大约 4–5 秒。
 
 改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（约 50 秒）：

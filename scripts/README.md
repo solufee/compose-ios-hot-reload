@@ -25,7 +25,8 @@
 | `pack-toolchain.sh` | 打预构建工具链的组件（最多 9 个）tar.zst + 哈希清单（不发布），每个组件附 LICENSE 和 NOTICE | `KOTLIN_DIST`、`COMPOSE_KLIB_CACHE`、`COMPOSE_PLUGIN_JAR`、`KALDO_IOSSIM`、`KALDO_MACOS`、`ORC_RUNTIME`、`UIKIT_UTILS`、`LLVM_TOOLS_FROM`、`EXTERNAL_KLIBS`、`OUT_DIR` |
 | `gen-bundle-manifest.py` | 生成发布清单（layout bundle，全部相对路径；`--channel release`、`--external-klibs`） | — |
 | `publish-toolchain.py` | 校验后 dry-run 打印发布命令；`--local-repo` 做本地镜像；只有 `--publish --confirm-repo` 才上传（draft release） | `gh` |
-| `fetch-toolchain.py` | 消费端：下载、校验 sha256、解包、下载公开 klib、本地化、写 `env.sh`；不读 Gradle 缓存 | `zstd`、`curl` |
+| `fetch-toolchain.py` | 消费端：下载、校验 sha256、解包、下载公开 klib、本地化、写 `env.sh`；不读 Gradle 缓存；网络错误自动重试（指数退避） | `zstd`、`curl` |
+| `test-fetch-toolchain.py` | `fetch-toolchain.py` 的重试和错误提示测试（不需要网络） | — |
 
 ## klibs.txt 格式
 

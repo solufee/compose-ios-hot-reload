@@ -345,7 +345,8 @@ fetch-toolchain.py MANIFEST --cache DIR [--llvm-home official|PATH] [--extra-kli
 - local 清单（v8）带 `tools`：`llvmTools`（目录，含 `bin/llvm-objcopy`、`bin/llvm-nm`）、`orcRuntime`、`uikitUtils`，都是**绝对路径**，和 local 清单里其它路径一样；插件只配 `toolchainDir` 就能找到它们。
 - `env.sh` 导出：`KOTLIN_DIST`、`COMPOSE_PLUGIN_JAR`、`KLIBLIST`、`KLIB_AUTO_CACHE_FROM`、`KONAN_LLVM_HOME`、
   `ORC_RUNTIME`、`UIKIT_UTILS`，source 之后可以直接用 `hotreload.sh` 和 `run.sh`。
-- 退出码：0 成功；2 清单或参数不对；3 字节数或 sha256 不一致；4 缺 `zstd` 或解包失败；5 下载失败。
+- 退出码：0 成功；1 其他错误（只打印一行原因；设 `FETCH_DEBUG=1` 才显示完整堆栈）；2 清单或参数不对（包括清单不是有效 JSON）；3 字节数或 sha256 不一致；4 缺 `zstd` 或解包失败；5 下载失败。
+- 重试：清单和 GitHub API 请求最多尝试 `FETCH_RETRIES` 次（默认 4），间隔按指数增长（`FETCH_BACKOFF`，默认 1 s：1、2、4 s）。传输中断、超时、连接错误和 HTTP 408/429/5xx 会重试，404 等不会。每次重试和最终失败都打印中英文短提示，不打印 Python 堆栈。组件和公开 klib 用 `curl` 下载（自带重试和断点续传）。测试：`scripts/test-fetch-toolchain.py`。
 - 公开仓库的 Release 附件和公开 klib 都不需要 token。设了 `$GITHUB_TOKEN` 时，Release 附件会带上它（私有仓库通过 GitHub API 按 tag 查 asset id）。
   Release 走 https 这条路在首次公开发布时第一次实测；公开 klib 的 https 下载已经实测（Maven Central、Google Maven）。
 - `KLIB_AUTO_CACHE_FROM` 只包含工具链自己的 klib 目录（`compose-klibs`、`external-klibs`、`bundled-klibs`），`--auto-cache-from` 默认为空（v7 及以前默认是 `~/.gradle/caches`）。

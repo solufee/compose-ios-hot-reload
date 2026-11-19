@@ -42,6 +42,7 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -71,18 +72,57 @@ def open_url(url, accept=None):
     return urllib.request.urlopen(req, timeout=120)
 
 
+RETRYABLE_HTTP = {408, 429, 500, 502, 503, 504}
+
+
+def fetch_bytes(url, accept=None, attempts=None, backoff=None):
+    """GET with retries and exponential backoff (FETCH_RETRIES, default 4 attempts;
+    FETCH_BACKOFF, default 1 s: waits 1, 2, 4 s). Transient failures (a transfer cut
+    short, timeouts, connection errors, HTTP 408/429/5xx) are retried; other HTTP
+    errors (404 ...) are not. A final failure exits 5 with a short message."""
+    import http.client
+    import time
+    attempts = attempts or int(os.environ.get("FETCH_RETRIES", "4"))
+    backoff = float(os.environ.get("FETCH_BACKOFF", "1")) if backoff is None else backoff
+    last = None
+    for i in range(1, attempts + 1):
+        try:
+            with open_url(url, accept) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            last = f"HTTP {e.code}"
+            if e.code not in RETRYABLE_HTTP:
+                die(5, f"下载失败（服务器返回 {e.code}）/ download failed (HTTP {e.code}): {url}")
+        except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError, ConnectionError,
+                OSError) as e:
+            last = type(e).__name__ + (f": {e.reason}" if getattr(e, "reason", None) else "")
+        if i < attempts:
+            wait = backoff * (2 ** (i - 1))
+            print(f"fetch: 下载中断（{last}），{wait:g} s 后重试（第 {i + 1}/{attempts} 次）/ "
+                  f"download interrupted ({last}), retrying in {wait:g} s (attempt {i + 1}/{attempts})",
+                  file=sys.stderr)
+            time.sleep(wait)
+    die(5, f"下载失败（已重试 {attempts} 次，{last}）/ download failed after {attempts} attempts ({last}): {url}\n"
+           "       请检查网络后重新运行 / check the network and run again")
+
+
 def read_manifest(src):
-    if src.startswith(("file://", "https://")):
-        with open_url(src) as r:
-            return json.loads(r.read())
-    return json.load(open(src))
+    if src.startswith("https://"):
+        data = fetch_bytes(src)
+    elif src.startswith("file://"):
+        data = open(urllib.parse.unquote(src[len("file://"):]), "rb").read()
+    else:
+        data = open(src, "rb").read()
+    try:
+        return json.loads(data)
+    except ValueError:
+        die(2, f"清单不是有效的 JSON / the manifest is not valid JSON: {src}")
 
 
 def resolve_release_asset(d):
     """Private repos: browser download URLs need the API asset endpoint."""
     api = f"https://api.github.com/repos/{d['repo']}/releases/tags/{urllib.parse.quote(d['tag'])}"
-    with open_url(api, "application/vnd.github+json") as r:
-        rel = json.loads(r.read())
+    rel = json.loads(fetch_bytes(api, "application/vnd.github+json"))
     for asset in rel.get("assets", []):
         if asset["name"] == d["asset"]:
             return asset["url"], "application/octet-stream"
@@ -114,7 +154,9 @@ def download(comp, dest):
     except Exception as e:  # noqa: BLE001 - report any transport error the same way
         if os.path.exists(tmp):
             os.remove(tmp)
-        die(5, f"{comp['id']}: download failed from {url}: {e}")
+        die(5, f"{comp['id']}: 下载失败 / download failed from {url}: {e}\n"
+               "       请检查网络后重新运行（已下载并校验过的组件会跳过）/ check the network and run again "
+               "(verified components are skipped)")
     size = os.path.getsize(tmp)
     digest = sha256(tmp)
     if size != comp["bytes"] or digest != comp["sha256"]:
@@ -285,4 +327,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        die(130, "已中断 / interrupted")
+    except Exception as e:  # noqa: BLE001 - a short message instead of a stack trace
+        if os.environ.get("FETCH_DEBUG") == "1":
+            raise
+        die(1, f"出错 / failed: {type(e).__name__}: {e}\n"
+               "       设 FETCH_DEBUG=1 可以看到完整堆栈 / set FETCH_DEBUG=1 for the full traceback")

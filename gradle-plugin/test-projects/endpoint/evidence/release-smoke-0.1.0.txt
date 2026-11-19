@@ -1,0 +1,23 @@
+# post-release smoke 2026-11-19 19:59:22: public repo clone (192d611), toolchain fetched anonymously over https from the Release, plugin 0.1.0 from https://solufee.github.io/compose-ios-hot-reload/maven/, fresh GRADLE_USER_HOME, empty environment (no tokens), project made only from the public docs/TRYOUT.md section 3
+package OK CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-beta01, Xcode 27.2 Build version 27B52)
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 236, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+compat: baseline written for app,ui (1812 ms)
+BUILD SUCCESSFUL in 4m 10s
+run CMP hot reload: app started (attempt 1, pid 88368, 7.7 s, port 5568, log <WORK>/scratch/release-smoke/my-app/launch.log) BUILD SUCCESSFUL in 9s
+screen 402x874 points, app frame 402x874
+pid0 88368
+ui[0] OK 9866ms hot=True loaded=True on_screen=True pid 88368->88368 text=['Hi ui0-89824']
+app[0] OK 3983ms hot=True loaded=True on_screen=True pid 88368->88368 text=['Counter app0-89834']
+warm[0] OK 48299ms add_class_hot=True warm=True pid 88368->91053 counter_before=0 WARM OK ms=43673 ms_package=37693 ms_relaunch=5980 page=0 count=0
+taps-after-warm OK +:0->1 Next->True Back->True pid 91053->91053 crash=none
+cold[0] OK attempt=1 pid=91221 5.6s EH=126570 FDE/3800 lsda/0+0 out/0 unresolved eh_ok=True
+# sources restored
+=== summary ===
+ui: ok=1/1 p50=9866ms p90=9866ms
+app: ok=1/1 p50=3983ms p90=3983ms
+warm: ok=1/1
+taps: ok=1/1
+cold: ok=1/1
+# exit=0
+# plugin resolution: the fresh GRADLE_USER_HOME's modules-2 cache holds com.solufee.cmp (plugin jar) and com.solufee.cmp.hotreload (marker), downloaded from the Pages URL above
+# fetch: 9 components verified + 'fetched 21 public klibs from their Maven repositories (sha256 ok)', 25 s, no token in the environment
