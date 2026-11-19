@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.solufee.cmp.hotreload</groupId>
+  <artifactId>com.solufee.cmp.hotreload.gradle.plugin</artifactId>
+  <version>0.1.0</version>
+  <packaging>pom</packaging>
+  <name>Compose Multiplatform iOS hot reload</name>
+  <description>Gradle plugin for hot reload of Compose Multiplatform on the iOS simulator (experimental, pinned toolchain).</description>
+  <url>https://github.com/solufee/compose-ios-hot-reload</url>
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>solufee</id>
+      <name>solufee</name>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/solufee/compose-ios-hot-reload.git</connection>
+    <url>https://github.com/solufee/compose-ios-hot-reload</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>com.solufee.cmp</groupId>
+      <artifactId>cmp-hot-reload-gradle-plugin</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+  </dependencies>
+</project>
