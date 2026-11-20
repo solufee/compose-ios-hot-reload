@@ -162,7 +162,15 @@ libKaldo 的 `KotlinSymbolExternalizer` plugin 对每个“热”函数做两件
 `Konan_constructors` 之前 SIGSEGV，崩溃栈在 ORC 的 `ExecutionSession::simplifyDepGroups`。改成只外部化用户模块的符号：
 `merge-payloads.py` 从定义 `#main` 的 archive 和 `KALDO_HOT_PACKAGES` 列出的用户包收集符号，写成 `hot-symbols.txt`；
 启动 app 时通过 `KALDO_HOT_SYMBOLS` 传进去。启动时外部化的符号从 115,982 个降到 157 个，冷启动 30/30 成功、0 次重试。
-ORC 里的根因没有修，这是规避。代价是只有热符号集里的模块能热替换，Compose 等依赖库的代码不能。
+这在当时是规避；代价是只有热符号集里的模块能热替换，Compose 等依赖库的代码不能。
+
+**根因（LLVM 补丁，随工具链 .6 发布）**：`ObjCSelectorFixupPlugin` 合成的 `_objc_msgSend$…` stub 等定义是 `Scope::Default`，
+却没有登记到 MaterializationResponsibility。本地对 `LinkGraphLinkingLayer.cpp` 的改动只把这类“额外定义”从 `notifyResolved`
+的结果里删掉，`registerDependencies` 仍把它们放进 SymbolDependenceGroup；`ExecutionSession::simplifyDepGroups` 对每个组里的符号
+做 `MR.getSymbols().find(sym)`，找不到时仍取 `->second`（release 构建没有 assert），是越界读，是否崩取决于越界处有没有映射。
+临时加计数的构建显示：每次 bootstrap 有 658 个这样的定义，收窄与否都一样。修法：`registerDependencies` 只放 MR 拥有的符号
+（没有定义的块按匿名块处理，依赖照常传给使用它的块）；`simplifyDepGroups` 跳过 MR 不拥有的符号，不再解引用 `end()`。
+修复后不收窄（116,025 个符号全部外部化）、不重试，冷启动 30/30；收窄仍是默认（启动 p50 5.3 s 对 6.5 s）。
 
 外部化 plugin 原先对每个符号都扫一遍整张图的边（符号数 × 边数），十一万个函数时跑 10 分钟以上也没结束。
 改成用一个 `DenseMap<Symbol*, Symbol*>` 先算出每个目标、再遍历一次边之后，几秒内完成。
@@ -177,10 +185,34 @@ ORC 里的根因没有修，这是规避。代价是只有热符号集里的模�
 于是界面每秒重组一次。函数入口被重定向之后，下一次重组执行的就是新代码。组合树、`remember` 状态都在同一个进程里，
 没有被拆掉重建，所以页面和计数器保留。
 
-这带来一个限制：如果一个被替换的 `@Composable` 既没有参数、也不读任何 state，Compose 会跳过它，旧画面不变，
-看起来像热重载没生效。给它传一个会变的参数，或者让它读一个 `State`。参数全是静态值（常量字符串、Compose 生成的单例 lambda）
-的**已有**调用点也一样会被跳过：改已有 lambda 的正文、或删掉几个并列 lambda 中的一个之后，屏幕可能保留旧内容
-（`example-gradle/accept-singletons.txt`：最终源码是 A2、C、B2，屏幕是 A、B、B2）；新加的调用点会正常执行和显示。
+工具链 .5 及以前有一个限制：如果一个被替换的 `@Composable` 既没有参数、也不读任何 state，Compose 会跳过它，旧画面不变，
+看起来像热重载没生效。参数全是静态值（常量字符串、Compose 生成的单例 lambda）的**已有**调用点也一样会被跳过：改已有 lambda
+的正文、或删掉几个并列 lambda 中的一个之后，屏幕可能保留旧内容（`example-gradle/accept-singletons.txt`：最终源码是 A2、C、B2，
+屏幕是 A、B、B2）。
+
+**工具链 .6 起：reload 成功后强制完整重组**（`compose/ui/ui/src/iosMain/.../scene/HotReloadRecompose.ios.kt`，在 Compose 补丁里）。
+Compose runtime 用的是 Google 发布的 `androidx.compose.runtime:runtime` klib（公开 klib，我们不重编），所以改动只放在我们从源码
+构建的 `ui` 模块里，只用 runtime 的公开 API：
+
+1. 每个场景组合（根组合和 Dialog/Popup 层，都经过 `ComposeSceneMediator.setContent`）第一次组合时调用
+   `Composer.collectParameterInformation()`。之后这个 composer 给**每个**可重启的 group 保留重组作用域，而不只是读过 state 的那些；
+   在它下面创建的组合（层、LazyColumn 的条目、SubcomposeLayout）通过 `CompositionContext` 继承这一设置。
+2. runtime 在 reload 成功后调用 `HotReload.addReloadSuccessHandler` 注册的回调（在 reload 线程上）。回调把工作派到主线程
+   （`Dispatchers.Main`，主线程也是跑 Recomposer 的线程，所以不会落在一次 composition 或 apply 的中间）；在主线程上通过
+   `RecomposerInfo.observe()` 拿到每个运行中的 Recomposer 的全部组合，任何一个正在组合或有未应用的改动就重新排到主线程、打一行
+   `deferred` 日志；否则对每个组合调 `ControlledComposition.invalidateAll()`。下一帧里每个可重启函数都用调用方**现在**传的参数重新执行，
+   静态参数也不例外。slot table 不拆，`remember`、`rememberSaveable` 的状态都保留。
+
+只调 `invalidateAll()` 不够（11-20 的原型）：不读 state 的 group 默认不保留作用域，`invalidateAll()` 碰不到它们，父函数重跑时它们照样被跳过；
+所以第 1 步必不可少。runtime 里另一条路 `composer.forceRecomposeScopes()`（Live Edit 用的 `forciblyRecompose`）是 internal 的，
+要改 runtime 才能用，没有走。
+
+每次 reload 打一行 `HR forceRecompose recomposers=… compositions=… invalidated=… recomposed=… dispatchMs=… forceMs=… frameMs=… totalMs=…`，
+`invalidated` 是被失效的作用域数，`recomposed` 是强制那一帧里实际进入的作用域数，`totalMs` 是从 reload 成功到所有 Recomposer 重组并应用完。
+只在 debug 二进制里生效（`Platform.isDebugBinary`；热重载构建都带 `-g`）；app 环境里 `KONAN_HR_FORCE_RECOMPOSE=0` 关闭两步
+（INTERFACE §7）。`remember { … }` 里算出来的值不会重算（这是 `remember` 的语义），要随代码变化的值不要放进 `remember`。
+回归：`example-gradle/accept-stale.py`（首页、滚动过的 LazyColumn、Popup、翻页、600 行的大列表，以及开关两种模式的耗时）、
+`example-gradle/accept-singletons.sh`（开着时检查屏幕上的 lambda 与源码一致）。
 
 **对象与单例在热替换时怎么处理**（2026-11-19 核实，代码加实测）：
 
@@ -615,7 +647,7 @@ app 的分类（约 0.6 s，主要是编 app library klib）完全藏在约 2.5 
 | 首次布局时 skia `TextStyle::TextStyle()` 解引用空指针 | skiko 的 C++ 代码被 JIT 进 guest，C++ 静态初始化没执行 | libKaldo 收集 `__mod_init_func` 并在 bootstrap 后执行（第 1.3 节第 5 步） |
 | 首帧 `IrLinkageError`、C++ ABI 不匹配引起的崩溃，或运行的是旧版 Compose 的类 | klib 版本混用（skiko、Compose runtime 版本和编译时不一致），或旧的自动缓存因模块名相同被复用 | 用和 Compose 源码锁定一致的 klib；换新缓存目录重建；构建前检查每个 klib 的名字、编译器版本、哈希，缺失或重复就失败 |
 | 补丁发出后新实现查找失败（`failed to lookup implementation symbol ...$knhr`） | 对象名含 `-cache.a`，被外部化跳过 | 发送前改名为 `patch.o`（第 1.4 节） |
-| 冷启动约 20% 在 `Konan_constructors` 前 SIGSEGV | 全部 Kotlin 符号外部化，ORC `simplifyDepGroups` 崩溃 | 收窄热符号集（第 1.5 节）；根因未修 |
+| 冷启动约 20% 在 `Konan_constructors` 前 SIGSEGV | 未登记的合成定义进了 dependency group，`simplifyDepGroups` 越界读 | LLVM 补丁修复（.6，第 1.5 节）；之前靠收窄热符号集规避 |
 | 模拟器以 `codesign invalid-page` 拒绝启动 | 可执行文件里有指向 `.app` 外部 LLVM 安装目录的绝对 rpath | 打包时删除所有绝对 rpath，只留 `@executable_path/Frameworks`，再对 `.app` ad-hoc 重签 |
 | 用 `simctl` 启动后 ORC 初始化失败（`No such file or directory`） | `simctl` 不转发父进程的环境变量，ORC runtime 路径落到了一个不存在的默认位置 | 环境变量加 `SIMCTL_CHILD_` 前缀传给 app（如 `SIMCTL_CHILD_KONAN_ORC_RUNTIME_PATH`） |
 
@@ -630,6 +662,8 @@ EH 合成、热符号集分别由 `KALDO_KEEP_COMPACT_UNWIND`、`KALDO_SYNTH_EH_
 整文件差 320 字节，落在调试信息和字符串表里（缓存路径长度不同）。同一个编译器连续编两次，整文件 md5 也不同
 （`LC_UUID`、`__objc_methname`、`__LINKEDIT`），所以比对 release 产物应比较各 section 大小、符号表和 `__text` 内容，
 不要用整文件 md5。
+
+工具链 .6 的强制重组在 Compose `ui` klib 里（§1.6）。工程的 release 构建由 Kotlin Gradle 插件从 Maven 解析 Compose，用不到这个 klib；用普通 Compose Multiplatform 工程离线编 release 验证过，产物里没有 `forceRecomposeAllForHotReload`（REPORT §29.4）。用工具链自带 klib 编出的 -opt 产物里有这段代码，但只在 `Platform.isDebugBinary` 为真时执行。
 
 ---
 
@@ -701,5 +735,4 @@ ui 和 app 两个模块都是 `commonMain → iosMain → iosSimulatorArm64Main`
 ## 12. 已知限制
 
 现状和已知问题统一维护在 [docs/LIMITATIONS.md](LIMITATIONS.md)。要点：只支持 iOS 模拟器（arm64）和 debug / split 构建，
-真机未做；温重启只恢复可序列化的状态，而且比热替换慢（参考脚本约 16 s）；分类器对少数改动偏保守；启动稳定性依赖收窄的热符号集，
-ORC 里的根因没修；长时间运行（约 3.5 小时）后发送到首帧会从约 0.9 s 涨到约 1.86 s，原因未定位；plist 布尔值桥接已在工具链 .5 修复（§1.8）；runtime 一次只处理一个请求，上一次热重载没完成时再保存的行为没有验证。
+真机未做；温重启只恢复可序列化的状态，而且比热替换慢（参考脚本约 16 s）；分类器对少数改动偏保守；启动偶发崩溃的根因已在 LLVM 补丁里修复（.6，§1.5）；长时间运行（约 3.5 小时）后发送到首帧会从约 0.9 s 涨到约 1.86 s，原因未定位；plist 布尔值桥接已在工具链 .5 修复（§1.8）；runtime 一次只处理一个请求，上一次热重载没完成时再保存的行为没有验证。

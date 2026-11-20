@@ -7,7 +7,7 @@
 |---|---|---|---|
 | `kotlin-native-hot-reload.patch` | https://github.com/JetBrains/kotlin | `8e53ee99fbc08e264828ab082aee3e448194eca8` | 三个未合并 PR 的完整改动 + 本项目的改动 |
 | `llvm-kaldo.patch` | https://github.com/gabryon99/llvm-project-kotlin | `2f8844c2b35557baced9106c50b9b8758fa6a0de` | libKaldo 插件（selector 修复、compact-unwind→eh_frame、EH 注册、模块初始化器、符号外部化） |
-| `compose-multiplatform-core-build.patch` | https://github.com/JetBrains/compose-multiplatform-core | `ee243c321ddff6b18fcf18916be1b96ef70e2363` | 只改构建接线，让 Compose 用 2.5.255-SNAPSHOT 出 klib；不改 Compose runtime 源码 |
+| `compose-multiplatform-core-build.patch` | https://github.com/JetBrains/compose-multiplatform-core | `ee243c321ddff6b18fcf18916be1b96ef70e2363` | 构建接线，让 Compose 用 2.5.255-SNAPSHOT 出 klib；工具链 .6 起另含 `ui` 模块 iOS 源码的一处改动：热重载成功后强制完整重组（新文件 `compose/ui/ui/src/iosMain/.../scene/HotReloadRecompose.ios.kt`，`ComposeSceneMediator.ios.kt` 包一层，TECHNICAL-NOTES §1.6）。不改 Compose runtime（runtime 用 Google 发布的 klib） |
 
 ## Kotlin 补丁包含的 PR
 
@@ -81,6 +81,8 @@ ee243c321ddff6b18fcf18916be1b96ef70e2363
 $ git -C /tmp/verify-compose apply --check patches/compose-multiplatform-core-build.patch
 （无输出，退出码 0）
 ```
+
+工具链 .6（2026-11-20，`compose-multiplatform-core-build.patch` sha256 `335d7a32…`，新增 `ui` 的强制重组）：在 JetBrains/compose-multiplatform-core 的基线 `ee243c321ddf` 上用临时 index 检查，`git apply --cached --check` 通过（`patches/apply-check.log`）。
 
 B11（2026-11-19，`llvm-kaldo.patch` sha256 `3bb8a987…`）：在 gabryon99/llvm-project-kotlin 的基线提交上，用临时 index
 （`GIT_INDEX_FILE=<tmp> git read-tree 2f8844c2b355…`，不动工作区）检查：

@@ -15,7 +15,9 @@
 #   LLVM_TOOLS_FROM      dir whose bin/ has llvm-objcopy and llvm-nm (use a build
 #                        that links only system libraries, e.g. the official
 #                        JetBrains llvm-21-aarch64-macos-dev-97)
-#   EXTERNAL_KLIBS       gen-external-klibs.py output; its bundledKlibs become a component
+#   EXTERNAL_KLIBS       gen-external-klibs.py output; its bundledKlibs become a component.
+#                        Packing stops unless COMPOSE_KLIB_CACHE + these klibs + the dist
+#                        form a closed set (check-klib-deps.py).
 #   OUT_DIR              output dir (default: <repo>/../toolchain-dist)
 #   TOOLCHAIN_VERSION    version string (default: 2.5.255-hotreload.1)
 #
@@ -116,6 +118,19 @@ stage_kotlin() {
   cp -R "$KOTLIN_DIST/klib/common" "$d/klib/common"
   cp -R "$KOTLIN_DIST/klib/platform/ios_simulator_arm64" "$d/klib/platform/"
 }
+
+# Klib dependency gate (toolchain .6): every depends= entry of every Compose klib,
+# external klib and bundled klib must be the unique_name of a klib in the set or in
+# the Kotlin dist. A missing one links fine (partial linkage) and fails only at run
+# time with IrLinkageError (.5 shipped without navigationevent-compose: Dialog crashed).
+echo "checking klib dependencies..."
+if ! python3 "$REPO_ROOT/scripts/check-klib-deps.py" --dist "$KOTLIN_DIST" \
+    ${EXTERNAL_KLIBS:+--external-klibs "$EXTERNAL_KLIBS"} "$COMPOSE_KLIB_CACHE" > "$STAGE/.deps.out" 2>&1; then
+  echo "pack: the klib set is not closed (nothing packed):" >&2
+  cat "$STAGE/.deps.out" >&2
+  exit 1
+fi
+sed 's/^/  /' "$STAGE/.deps.out"
 
 echo "staging Kotlin/Native subset..."
 stage_kotlin "$STAGE/kotlin-native"

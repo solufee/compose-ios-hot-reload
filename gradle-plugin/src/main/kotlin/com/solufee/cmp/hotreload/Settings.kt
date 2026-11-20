@@ -64,13 +64,18 @@ data class HrSettings(
     val reinstall: Boolean,
     // compatibility classifier / warm restart (INTERFACE §10)
     val warmRestart: Boolean,
+    /** KONAN_HR_FORCE_RECOMPOSE for the app (toolchain .6+, INTERFACE §7). */
+    val forceRecompose: Boolean = true,
     // 0.2.0: Kotlin Multiplatform projects
     /** Klibs from the modules' Gradle dependencies, after the toolchain's own copies were taken out. */
     val extraKlibs: List<String> = emptyList(),
     /** `pkg.Function` returning a UIViewController; set when the app has no Kotlin main (KMP template). */
     val iosEntry: String? = null,
-    /** Compose resources assembled for iosSimulatorArm64 (copied into the .app as compose-resources/). */
-    val composeResources: String? = null,
+    /**
+     * Compose resources assembled for iosSimulatorArm64, one directory per module that has them (app and
+     * libraries); all are copied into the .app's compose-resources/ (each module's files sit in its own package dir).
+     */
+    val composeResources: List<String> = emptyList(),
     /** Info.plist to write at [infoPlist] when the app module has none (KMP template). */
     val infoPlistContent: String? = null,
 ) : Serializable {

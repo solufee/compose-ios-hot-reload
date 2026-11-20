@@ -10,14 +10,19 @@
 # Every step must be: reload exit 0, no WARM line, same PID, no crash text in the
 # log, exactly one `UICOUNTER init` (the file's objects are rebuilt by every reload,
 # see TECHNICAL-NOTES §1.6), and on an add step the new lambda must run.
-# Known, recorded but not failed: call sites whose arguments are all static (constant
-# strings, singleton lambdas) are skipped by Compose, so edits inside an existing
-# lambda and removals can leave old content on screen (LIMITATIONS 11).
+# Screen content: with forced recomposition on (toolchain .6+, default; see
+# KONAN_HR_FORCE_RECOMPOSE in INTERFACE) every reload re-runs every lambda, so the
+# lambdas printed after a reload must be exactly the ones in the source. With
+# KONAN_HR_FORCE_RECOMPOSE=0 that is only recorded: call sites whose arguments are all
+# static are skipped and can leave old content on screen (LIMITATIONS 11).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 UDID=${UDID:-0B879832-98D9-49A5-AC00-8BAB579AFBB2}
 ROUNDS=${ROUNDS:-1}
+FORCE=${KONAN_HR_FORCE_RECOMPOSE:-1}
+# The app process on this simulator only (another simulator may run the same app).
+app_pid() { pgrep -n -f "Devices/$UDID/.*ComposeHR\.app/ComposeHR"; }
 U=ui/src/main/kotlin/ui.kt
 OUTDIR=build/regression/singletons
 mkdir -p "$OUTDIR"
@@ -66,20 +71,20 @@ xcrun simctl terminate "$UDID" com.example.composehr 2>/dev/null
 nohup bash "$HERE/run.sh" > "$OUTDIR/run.out" 2>&1 &
 for _ in $(seq 1 150); do grep -q '^EH OK' launch.log 2>/dev/null && break; sleep 0.4; done
 sleep 3
-PID0=$(pgrep -n -f 'ComposeHR.app/ComposeHR')
+PID0=$(app_pid)
 grep -q '^EH OK' launch.log && [ -n "$PID0" ] || { echo "FAIL launch"; exit 1; }
 echo "launched pid=$PID0"
 
 pass=0; total=0
 step() { # step <label> <new lambda shown or -> <sed expression>
-  local label=$1 want=$2 expr=$3 L0 rc new pid inits crash shown ok=1 why=""
+  local label=$1 want=$2 expr=$3 L0 rc new pid inits crash shown src forced ok=1 why=""
   sed -i '' "$expr" "$U"
   L0=$(wc -l < launch.log)
   bash hotreload.sh ui-klib > "$OUTDIR/$label.out" 2>&1 && bash hotreload.sh reload --no-warm >> "$OUTDIR/$label.out" 2>&1
   rc=$?
   sleep 3.5
   new=$(tr -d '\r' < launch.log | tail -n +$((L0 + 1)))
-  pid=$(pgrep -n -f 'ComposeHR.app/ComposeHR')
+  pid=$(app_pid)
   inits=$(printf '%s\n' "$new" | grep -c 'UICOUNTER init')
   crash=$(printf '%s\n' "$new" | grep -c -E 'SIGSEGV|EXC_BAD|Uncaught|terminating|Hot-Reload failed')
   shown=$(printf '%s\n' "$new" | grep '^SHOW' | sed 's/^SHOW //' | sort -u | tr '\n' ' ')
@@ -89,8 +94,14 @@ step() { # step <label> <new lambda shown or -> <sed expression>
   [ "$crash" = 0 ] || { ok=0; why="$why crash"; }
   [ "$inits" = 1 ] || { ok=0; why="$why inits=$inits"; }
   if [ "$want" != - ]; then case " $shown " in *" $want "*) ;; *) ok=0; why="$why $want-not-run";; esac; fi
+  src=$(grep -o '"SHOW LAMBDA-[A-Z0-9]*"' "$U" | tr -d '"' | sed 's/^SHOW //' | sort -u | tr '\n' ' ')
+  forced=$(printf '%s\n' "$new" | grep -o 'HR forceRecompose recomposers=.*' | tail -1 | grep -o -E '(invalidated|recomposed|frameMs)=[^ ]*' | tr '\n' ' ')
+  if [ "$FORCE" != 0 ]; then
+    [ -n "$forced" ] || { ok=0; why="$why no-force-log"; }
+    [ "$shown" = "$src" ] || { ok=0; why="$why screen=[${shown% }]!=source=[${src% }]"; }
+  fi
   total=$((total + 1)); [ "$ok" = 1 ] && pass=$((pass + 1))
-  echo "$label $([ "$ok" = 1 ] && echo PASS || echo "FAIL:$why") rc=$rc pid=$pid inits=$inits shown=[${shown% }]"
+  echo "$label $([ "$ok" = 1 ] && echo PASS || echo "FAIL:$why") rc=$rc pid=$pid inits=$inits shown=[${shown% }] source=[${src% }] ${forced% }"
 }
 add() { echo "s#//SLOT#Wrap(\"$1\") { println(\"SHOW LAMBDA-$1\"); Text(\"LAMBDA-$1\", color = Color.White) }\\n        //SLOT#"; }
 
@@ -106,7 +117,8 @@ done
 
 xcrun simctl io "$UDID" screenshot "$OUTDIR/final.png" >/dev/null 2>&1
 echo "final source lambdas: $(grep -o '"LAMBDA-[A-Z0-9]*"' "$U" | tr -d '"' | tr '\n' ' ')"
-echo "screen (known, not checked): $OUTDIR/final.png; static call sites may still show older content"
+if [ "$FORCE" != 0 ]; then echo "screen: $OUTDIR/final.png (forced recomposition on: must show the final source lambdas)"
+else echo "screen (KONAN_HR_FORCE_RECOMPOSE=0, not checked): $OUTDIR/final.png; static call sites may still show older content"; fi
 echo "summary: $pass/$total passed (same process $PID0)"
 echo "note: ui.kt restored; run 'hotreload.sh package' before other tests"
 [ "$pass" = "$total" ]

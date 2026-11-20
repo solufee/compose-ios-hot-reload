@@ -6,6 +6,7 @@ repository, URL, sha256, size and license, verified against the repositories.
 
 <list> has one klib path per line as Gradle stores it:
   .../modules-2/files-2.1/<group>/<artifact>/<version>/<sha1>/<file name>
+(<sha1> without leading zeros, as Gradle writes it).
 Lines outside a Gradle cache (for example the bundled Compose klibs) are skipped.
 
 For every klib:
@@ -16,6 +17,8 @@ For every klib:
   3. the file is downloaded from that URL and must match the local sha256 and
      the published sha256 (all three equal);
   4. the POM gives the license names.
+Every entry also records the klib's "uniqueName" and "depends" (from its
+manifest) for check-klib-deps.py; gen-bundle-manifest.py does not publish them.
 Klibs found in neither repository go to "bundledKlibs" (with the local source
 path, used only by pack-toolchain.sh; gen-bundle-manifest.py drops it), the
 license taken from the POM in the same Gradle cache. Exit 1 only if a file does
@@ -31,13 +34,28 @@ import sys
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 
 REPOS = [
     ("maven-central", "https://repo1.maven.org/maven2"),
     ("google", "https://dl.google.com/dl/android/maven2"),
 ]
-GRADLE_PATH = re.compile(r"/modules-2/files-2\.1/([^/]+)/([^/]+)/([^/]+)/([0-9a-f]{40})/([^/]+)$")
+# Gradle names the directory after the file's SHA-1 without leading zeros (39 hex digits for
+# about one file in 16), so the length is 1-40.
+GRADLE_PATH = re.compile(r"/modules-2/files-2\.1/([^/]+)/([^/]+)/([^/]+)/([0-9a-f]{1,40})/([^/]+)$")
 UA = {"User-Agent": "compose-ios-hot-reload-toolchain/1"}
+
+
+def klib_identity(path):
+    """(unique_name, depends) from the klib's default/manifest, for check-klib-deps.py."""
+    with zipfile.ZipFile(path) as z:
+        name = min((n for n in z.namelist() if n.endswith("default/manifest")), key=len)
+        text = z.read(name).decode("utf-8")
+
+    def prop(key):
+        m = re.search(rf"^{key}=(.*)$", text, re.M)
+        return m.group(1).replace("\\:", ":").strip() if m else ""
+    return prop("unique_name"), [d for d in prop("depends").split() if d]
 
 
 def get(url, attempts=4):
@@ -132,11 +150,14 @@ def main():
         path = line.strip()
         m = GRADLE_PATH.search(path)
         if not m:
+            if path.endswith(".klib") and "/modules-2/" in path:
+                bad.append(f"{path}: looks like a Gradle cache klib but its path was not recognised")
             continue
         g, art, ver, sha1_dir, name = m.groups()
         data = open(path, "rb").read()
         sha256, sha1 = hashes(data)
-        if sha1 != sha1_dir:
+        unique_name, depends = klib_identity(path)
+        if sha1.lstrip("0") != sha1_dir.lstrip("0"):
             bad.append(f"{g}:{art}:{ver} {name}: local SHA-1 {sha1} != cache directory {sha1_dir}")
             continue
         r = resolve(g, art, ver, name)
@@ -147,6 +168,7 @@ def main():
                 "path": f"bundled-klibs/{g}/{art}/{ver}/{name}",
                 "sha256": sha256, "bytes": len(data),
                 "license": local_pom_licenses(path, art, ver), "source": path,
+                "uniqueName": unique_name, "depends": depends,
             })
             print(f"bnd {bundled[-1]['coordinate']:<80} {'(bundle)':<13} {len(data):>9} {sha256[:12]}")
             continue
@@ -166,7 +188,7 @@ def main():
             "coordinate": f"{g}:{art}:{ver}" + (f":{classifier}" if classifier else ""),
             "repository": repo_id, "repositoryUrl": repo_url, "url": url,
             "file": remote_file, "sha256": sha256, "bytes": len(data),
-            "license": lic,
+            "license": lic, "uniqueName": unique_name, "depends": depends,
         })
         print(f"ok  {entries[-1]['coordinate']:<80} {repo_id:<13} {len(data):>9} {sha256[:12]}")
     entries.sort(key=lambda e: e["coordinate"])

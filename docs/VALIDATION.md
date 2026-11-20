@@ -76,6 +76,21 @@ Gradle 插件的数字见第 7 节。每轮另外检查：补丁里每个改过�
 开分类器这组和上一张表不是同一次构建，测试时机器上还有别的构建在跑，绝对值不宜直接比；分类器的代价看同一轮里的交替对照。
 早期测得的“只改 app 约 2.6 s”是在打包没保留 compact unwind、EH 合成实际没生效时测的，不能和本节比较。
 
+### 2.1 热重载后强制完整重组（工具链 .6）
+
+`example-gradle/accept-stale.py`：测试 app 的每个页面都通过参数全是静态值的调用点显示一个标记，改标记后热重载，看屏幕是否更新、
+状态是否保留。状态先用真实点击设好（`remember` 计数 3，`rememberSaveable` 计数 2）。2026-11-20，.6 候选工具链：
+
+| 测试内容 | 结果 | 备注 |
+|---|---|---|
+| 首页、LazyColumn（滑动过，条目进出复用池）、Popup、Dialog、翻页、带 `BackHandler` 的页面、600 行大列表 | 12/12，同一 PID，两种 state 全程保留 | 每步截图；Dialog/BackHandler 在 .5 上报 `IrLinkageError`（对照） |
+| 返回事件交给 reload 后的 `BackHandler` | 通过 | 用 `DirectNavigationEventInput` 发；合成的左边缘滑动在模拟器上没被识别，真机手势没测 |
+| 开关各 10 次：reload 成功→新帧应用完（中位 / 最大） | 列表 28 / 34 ms，大列表 56 / 71 ms | reload 命令本身开关两种没有差别；关掉时 0/10 上屏（.5 的行为） |
+| `accept-singletons.sh`（增删改 composable lambda） | 7/7，屏幕上的 lambda 与源码一致 | .5 时屏幕停在旧内容（只记录不判失败） |
+| release：普通 Compose Multiplatform 工程离线编 release | 产物里没有 `forceRecomposeAllForHotReload` | 对照：.6 的 debug 缓存里有（`example-gradle/accept-release6.txt`） |
+
+细节和逐项数字见 REPORT §29。
+
 ---
 
 ## 3. 启动
@@ -84,7 +99,8 @@ Gradle 插件的数字见第 7 节。每轮另外检查：补丁里每个改过�
 
 | 测试内容 | 次数 | 结果 | 备注 |
 |---|---|---|---|
-| 不收窄热符号集（所有 Kotlin 符号都可替换） | 30 | 24/30，6 次 SIGSEGV | 崩在 LLVM ORC 的 `simplifyDepGroups`；根因未修，靠收窄规避 |
+| 不收窄热符号集（所有 Kotlin 符号都可替换） | 30 | 24/30，6 次 SIGSEGV | 崩在 LLVM ORC 的 `simplifyDepGroups`；当时靠收窄规避 |
+| 不收窄，LLVM 补丁修复后（.6 的 libKaldo） | 30 | 30/30，没有崩溃报告、不重试 | `example-gradle/accept-1a.txt`；根因见 TECHNICAL-NOTES §1.5 |
 | 收窄热符号集（只含 app、ui 两个用户模块） | 30 | 30/30，0 次重试 | 启动时可替换的符号从 115,982 个降到 157 个；当时 EH 合成还没实际生效 |
 | 收窄 + EH 合成生效 | 10 | 10/10，0 次重试 | 打包开始保留 compact unwind 之后 |
 | 收窄 + EH 合成 + 启动探针（当前推荐配置） | 10 | 10/10，0 次重试，10/10 有 `EH OK` | 见第 4 节 |

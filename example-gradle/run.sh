@@ -27,6 +27,7 @@ for attempt in $(seq 1 "$RETRIES"); do
   SIMCTL_CHILD_KALDO_SYNTH_EH_FRAME=${KALDO_SYNTH_EH_FRAME:-1} \
   SIMCTL_CHILD_KALDO_HOT_SYMBOLS=$PWD/build/app/hot-symbols.txt \
   SIMCTL_CHILD_KONAN_HOT_RELOAD_PORT=${KONAN_HOT_RELOAD_PORT:-5567} \
+  SIMCTL_CHILD_KONAN_HR_FORCE_RECOMPOSE=${KONAN_HR_FORCE_RECOMPOSE:-1} \
     xcrun simctl launch --console-pty "$UDID" "$BUNDLE" ${APP_ARGS:-} 2>&1 | tee -a "$LOG" &
   LP=$!
   ok=0; alive=1

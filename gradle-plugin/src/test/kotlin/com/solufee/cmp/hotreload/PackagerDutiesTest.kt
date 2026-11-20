@@ -35,6 +35,9 @@ class PackagerDutiesTest {
         assertEquals("1", env["SIMCTL_CHILD_KALDO_SYNTH_EH_FRAME"])
         assertEquals(s.hotSymbols.path, env["SIMCTL_CHILD_KALDO_HOT_SYMBOLS"])
         assertEquals("5568", env["SIMCTL_CHILD_KONAN_HOT_RELOAD_PORT"])
+        // forceRecompose (0.2.1, toolchain .6): on by default, passed explicitly; off gives 0.
+        assertEquals("1", env["SIMCTL_CHILD_KONAN_HR_FORCE_RECOMPOSE"])
+        assertEquals("0", Launcher(s.copy(forceRecompose = false), logger).appEnvironment()["SIMCTL_CHILD_KONAN_HR_FORCE_RECOMPOSE"])
     }
 
     @Test

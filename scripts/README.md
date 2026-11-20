@@ -21,8 +21,10 @@
 | `daemon/daemon-memtest.sh` | 连续 N 次编译，记录 RSS 与 GC 后堆 | — |
 | `gen-toolchain.sh` | 生成 `toolchain.json`（公开基线 + 补丁 sha256） | `KOTLIN_DIST`、`COMPOSE_PLUGIN_JAR`、`KLIBLIST`、`PATCHES_DIR` |
 | `compat-classify.py` | 兼容性分类器：`snapshot` 生成 klib 快照，`classify` 比较两份快照（退出码 0 热替换 / 3 温重启 / 2 错误）；v8 起 `baseline`/`check` 一个进程处理全部模块，`--daemon` 在守护进程里 dump，`--cache-dir` 按 klib 哈希缓存 | `KOTLIN_DIST`/`--klib-tool` |
-| `gen-external-klibs.py` | 把公开 klib 固定下来：从 Maven Central / Google Maven 的模块元数据取真实 URL 和发布的 sha256，下载核对，POM 取许可证；仓库里没有的标为随包分发 | 网络 |
+| `gen-external-klibs.py` | 把公开 klib 固定下来：从 Maven Central / Google Maven 的模块元数据取真实 URL 和发布的 sha256，下载核对，POM 取许可证；仓库里没有的标为随包分发。每条另记 klib 的 `uniqueName`、`depends`（给 `check-klib-deps.py`，不发布）。Gradle 缓存目录名是去掉前导 0 的 SHA-1，.6 起按此识别，认不出的 klib 路径报错而不是静默跳过 | 网络 |
 | `pack-toolchain.sh` | 打预构建工具链的组件（最多 9 个）tar.zst + 哈希清单（不发布），每个组件附 LICENSE 和 NOTICE | `KOTLIN_DIST`、`COMPOSE_KLIB_CACHE`、`COMPOSE_PLUGIN_JAR`、`KALDO_IOSSIM`、`KALDO_MACOS`、`ORC_RUNTIME`、`UIKIT_UTILS`、`LLVM_TOOLS_FROM`、`EXTERNAL_KLIBS`、`OUT_DIR` |
+| `check-klib-deps.py` | klib 集合是否闭合：每个 klib 的 `depends=` 都要是集合里（或 Kotlin dist 里）某个 klib 的 `unique_name`，同名出现两次也报错。缺依赖时 Kotlin/Native 照样链接（partial linkage），到运行时才 `IrLinkageError`；`pack-toolchain.sh` 打包前必跑，不闭合就不打包（工具链 .6 起） | — |
+| `test-check-klib-deps.py` | 上一条的测试（假 klib，含缺依赖、重名、外部清单字段缺失等反例） | — |
 | `gen-bundle-manifest.py` | 生成发布清单（layout bundle，全部相对路径；`--channel release`、`--external-klibs`） | — |
 | `publish-toolchain.py` | 校验后 dry-run 打印发布命令；`--local-repo` 做本地镜像；只有 `--publish --confirm-repo` 才上传（draft release） | `gh` |
 | `fetch-toolchain.py` | 消费端：下载、校验 sha256、解包、下载公开 klib、本地化、写 `env.sh`；不读 Gradle 缓存；网络错误自动重试（指数退避） | `zstd`、`curl` |

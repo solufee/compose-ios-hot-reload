@@ -13,7 +13,8 @@ EX=$(pwd)
 THREE=$EX/../gradle-plugin/test-projects/three-modules
 P=accept-plugin-p1-$TAG
 H_DIR=$(cd ~ && pwd)   # home directory, replaced by a placeholder in the evidence files
-clean() { sed -e "s#${H_DIR}#<HOME>#g"; }
+REPO_DIR=$(cd "$(dirname "$0")/.." && pwd)   # this repository, replaced by <REPO> in the evidence files
+clean() { sed -e "s#${REPO_DIR}#<REPO>#g" -e "s#${H_DIR}#<HOME>#g"; }
 # restore only the module source folders the tests edit
 restore() { (cd "$1" && git checkout -q -- */src && echo "# sources restored: $(git status --short -- */src | wc -l | tr -d ' ') files under */src differ from git"); }
 bid() { /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Info.plist" 2>/dev/null; }

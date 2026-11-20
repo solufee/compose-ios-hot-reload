@@ -20,6 +20,15 @@ import java.util.concurrent.ExecutionException
  * `app.stamp` the time of the app sources that app.json describes; `cache/` the snapshot cache.
  */
 /**
+ * Warm-restart reason for Compose resources (strings, drawables, fonts) that changed since the app was packaged:
+ * they are copied into the .app at package time, so only a repackage (warm restart) shows them.
+ */
+fun resourceReasons(changed: List<String>): List<String> =
+    if (changed.isEmpty()) emptyList()
+    else listOf("WARM compose-resources: ${changed.size} file(s) changed since packaging (${changed.take(3).joinToString()}" +
+        (if (changed.size > 3) ", ..." else "") + "); resources are copied into the app when it is packaged")
+
+/**
  * Warm-restart reasons for expect/actual pairs added or removed between two sets of `expect` declarations
  * ("kind name", from [expectDeclarations]). Only the presence of a pair is judged here; a changed signature
  * is caught by the classifier (compat-classify.py) like any other signature change.
@@ -82,9 +91,9 @@ class Compat(private val s: HrSettings, private val logger: Logger, private val 
         val r = Proc.run(command("check", modules, daemons), env = env(), echo = false)
         val ms = System.currentTimeMillis() - t0
         // An expect/actual pair added or removed: warm restart (Kotlin Multiplatform, 0.2.0).
-        val expectReasons = if (expectFile.isFile) {
+        val expectReasons = (if (expectFile.isFile) {
             expectActualReasons(expectFile.readLines().filter { it.isNotBlank() }.toSet(), expectDeclarations())
-        } else emptyList()
+        } else emptyList()) + resourceReasons(pipeline.resourceChanges())
         when (r.exit) {
             0 -> if (expectReasons.isEmpty()) Result(Verdict.HOT, emptyList(), ms) else Result(Verdict.WARM, expectReasons, ms)
             3 -> Result(Verdict.WARM, r.output.lines().filter { it.startsWith("WARM ") } + expectReasons, ms)

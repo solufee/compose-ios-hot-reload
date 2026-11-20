@@ -1,3 +1,20 @@
+# Plugin 0.2.1 (toolchain 2.5.255-hotreload.6) - evidence
+
+Toolchain **2.5.255-hotreload.6** installed with `scripts/fetch-toolchain.py` (components and public klibs identical to the packed
+`toolchain-dist-6`, `toolchain.json` e6644591...); plugin pinned to kotlin 40c81628 / compose 335d7a32 / llvm ad6137ad.
+
+| File | What | Result |
+|---|---|---|
+| `accept-kmp-toolchain6.txt` | `accept-kmp.py --multi --force-recompose --dialog` on the wizard template, **sources unchanged**: everything of 0.2.0, plus two more KMP modules (shared -> core -> base: library HOT/WARM, expect/actual in core, core's Compose string resource, a resource-only change warm-restarts), forced recomposition (static call site and an existing lambda update without taps; control run with `forceRecompose=false` stays stale; back on the default the next change shows), a Dialog (opens before/after reloads with new content, an open Dialog updates, no IrLinkageError), release baseline recorded on .6 and verified by `__text` digest | 63/63 |
+| `accept-kmp-toolchain6-run1.txt` | first .6 run: the two failures were the script's control step (the app prints `HR forceRecompose: off` at startup; `hotReloadRun` reinstalls the last packaged app); fixed in the script | 61/63 |
+| `accept-kmp-multi-toolchain5.txt` | the three-module run on .5 (before the .6 pin), resource change warm-restarting | 53/53 |
+| `unit-tests-toolchain6.txt` | unit tests on .6, incl. `ProjectDependenciesTest`, the forceRecompose environment, resource-change warm reason, generated entry owned by the app with several modules | 56/56 |
+| `../../classifier-cases/evidence/cases-toolchain6.txt` | classifier case table on .6 | 48/48 |
+| `example-gradle/accept-plugin-p1-021-tc6-*.txt` | example project full matrix on .6: launch EH OK, ui/app/both 20/20/3, multi-file 3, real-tap navigation 3, cold start 10/10, three modules 5/5/5 + 3, release re-recorded and verified by digest (in Gradle and `env -i`) | all OK |
+| `example-gradle/accept-plugin-021-tc6-b4.txt` | B4 on .6: 16 change cases + taps after a warm restart; STUB-SEL 0 mismatch, EH, `HR forceRecompose: on` | 17/17 |
+
+---
+
 # Plugin 0.2.0 (Kotlin Multiplatform) - evidence
 
 All final runs use toolchain **2.5.255-hotreload.5** (downloaded with `scripts/fetch-toolchain.py`; its 9 components are

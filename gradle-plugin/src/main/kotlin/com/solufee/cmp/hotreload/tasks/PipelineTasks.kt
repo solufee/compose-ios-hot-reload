@@ -48,7 +48,8 @@ abstract class HotReloadTask : DefaultTask() {
     abstract val composeVersion: Property<String>
 
     /** Settings with the dependency klibs that are linked (the toolchain's own copies taken out). */
-    protected fun effectiveSettings(): HrSettings {
+    /** [report]: print the dependency summary (only the package, reload and release tasks do; library compiles stay quiet). */
+    protected fun effectiveSettings(report: Boolean = true): HrSettings {
         val s = settings.get()
         val ids = externalKlibIds.getOrElse(emptyList())
         if (ids.isEmpty()) return s
@@ -56,7 +57,7 @@ abstract class HotReloadTask : DefaultTask() {
         val deps = ids.map { val parts = it.split("|", limit = 2); com.solufee.cmp.hotreload.Kmp.Dependency(parts[0], File(parts[1]), via[parts[0]]) }
             .filter { it.file.name.endsWith(".klib") || it.file.isDirectory }
         val toolchain = Pipeline.externalKlibs(File(s.klibList).readLines(), File(s.dist))
-        val sel = com.solufee.cmp.hotreload.Kmp.selectKlibs(toolchain, File(s.dist, "klib/common/stdlib"), deps, composeVersion.get(), logger)
+        val sel = com.solufee.cmp.hotreload.Kmp.selectKlibs(toolchain, File(s.dist, "klib/common/stdlib"), deps, composeVersion.get(), if (report) logger else null)
         return s.copy(extraKlibs = sel.klibs)
     }
 
@@ -88,7 +89,7 @@ abstract class CompileKlibTask : HotReloadTask() {
 
     @TaskAction
     fun compile() {
-        val s = effectiveSettings()
+        val s = effectiveSettings(report = false)
         val m = s.modules.single { it.path == modulePath.get() }
         val tools = tools(s)
         Pipeline(s, logger).compileLibrary(m, daemons(s, tools))

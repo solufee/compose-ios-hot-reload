@@ -46,6 +46,7 @@ class HotReloadPlugin : Plugin<Project> {
         ext.useDaemon.convention(prop("cmp.hotreload.useDaemon").map { it.toBoolean() }.orElse(true))
         ext.keepCompactUnwind.convention(prop("cmp.hotreload.keepCompactUnwind").map { it.toBoolean() }.orElse(true))
         ext.warmRestart.convention(prop("cmp.hotreload.warmRestart").map { it.toBoolean() }.orElse(true))
+        ext.forceRecompose.convention(prop("cmp.hotreload.forceRecompose").map { it.toBoolean() }.orElse(true))
         // No fixed default here: see resolveBinaries (toolchain download layout first, then tools/).
         ext.orcRuntime.convention(project.layout.file(prop("cmp.hotreload.orcRuntime").map { File(home(it)) }))
         ext.objcUtilsLib.convention(project.layout.file(prop("cmp.hotreload.objcUtilsLib").map { File(home(it)) }))
@@ -123,9 +124,14 @@ class HotReloadPlugin : Plugin<Project> {
                     ?: "com.example.${exe.lowercase()}.hotreload"
                 Kmp.infoPlist(exe, bundleId)
             } else null
-            // Compose Multiplatform resources assembled for iosSimulatorArm64 (when the app uses them).
-            val composeResTask = appProject?.tasks?.findByName("assembleIosSimulatorArm64MainResources")
-            val composeResources = composeResTask?.let { File(appProject.layout.buildDirectory.get().asFile, "generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path }
+            // Compose Multiplatform resources assembled for iosSimulatorArm64, of the app and of every library module
+            // that has them (a library's strings and drawables are looked up in the same bundle directory).
+            val composeResProjects = modules.mapNotNull { m -> project.findProject(m.path) }
+                .mapNotNull { p -> p.tasks.findByName("assembleIosSimulatorArm64MainResources")?.let { p to it } }
+            val composeResTasks = composeResProjects.map { it.second }
+            val composeResources = composeResProjects.map { (p, _) ->
+                File(p.layout.buildDirectory.get().asFile, "generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path
+            }
             val linkerOptions = appSpec?.linkerOptions?.get() ?: DEFAULT_LINKER_OPTIONS
             val socketDir = socketDir(rootDir)
             val tc = manifest.getOrElse(emptyMap())
@@ -180,6 +186,7 @@ class HotReloadPlugin : Plugin<Project> {
                     launchRetries = ext.simulator.launchRetries.get(),
                     reinstall = ext.simulator.reinstall.get(),
                     warmRestart = ext.warmRestart.get(),
+                    forceRecompose = ext.forceRecompose.get(),
                     iosEntry = iosEntry,
                     composeResources = composeResources,
                     infoPlistContent = plistContent,
@@ -209,7 +216,7 @@ class HotReloadPlugin : Plugin<Project> {
                     composeVersion.set(PinnedToolchain.current.composeVersion)
                     // Generated KMP sources (Compose resource accessors, ...) are built before any compile.
                     kmp.dirSets.values.flatten().forEach { dependsOn(it) }
-                    composeResTask?.let { dependsOn(it) }
+                    composeResTasks.forEach { dependsOn(it) }
                 }
             }
             val toolchainKey: Provider<String> = manifest.map { "${it["compilerJar"]}|${it["pluginJar"]}|${it["klibList"]}" }
@@ -291,11 +298,25 @@ class HotReloadPlugin : Plugin<Project> {
             val dirSets = mutableMapOf<String, List<Any>>()
         }
 
-        /** Project dependencies of [p]'s iosSimulatorArm64 compilation (KMP), in declaration order. */
-        private fun projectDependencies(p: Project): List<Project> =
-            p.configurations.findByName(Kmp.DEPENDENCY_CONFIGURATION)?.allDependencies
+        /**
+         * Project dependencies of [p]'s iosSimulatorArm64 compilation (KMP), transitively, each after the projects
+         * it depends on (so libraries come in dependency order); cycles are ignored.
+         */
+        internal fun projectDependencies(p: Project): List<Project> {
+            val out = LinkedHashSet<Project>()
+            fun direct(q: Project) = q.configurations.findByName(Kmp.DEPENDENCY_CONFIGURATION)?.allDependencies
                 ?.withType(org.gradle.api.artifacts.ProjectDependency::class.java)
-                ?.mapNotNull { p.findProject(it.path) }?.distinct() ?: emptyList()
+                ?.mapNotNull { q.findProject(it.path) }?.distinct() ?: emptyList()
+            fun visit(q: Project, stack: Set<Project>) {
+                for (d in direct(q)) {
+                    if (d == p || d in stack || d in out) continue
+                    visit(d, stack + d)
+                    out += d
+                }
+            }
+            visit(p, setOf(p))
+            return out.toList()
+        }
 
         /**
          * Declared modules, or - when none are declared - discovered ones:

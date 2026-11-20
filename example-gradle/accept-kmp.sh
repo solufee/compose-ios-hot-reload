@@ -22,6 +22,8 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 UDID=${UDID:-0B879832-98D9-49A5-AC00-8BAB579AFBB2}
+# The app process on this simulator only (another simulator may run the same app).
+app_pid() { pgrep -n -f "Devices/$UDID/.*ComposeHR\.app/ComposeHR"; }
 export UI_FRAGMENTS="commonMain iosMain iosSimulatorArm64Main"
 export UI_FRAGMENT_REFINES="iosMain:commonMain iosSimulatorArm64Main:iosMain"
 export UI_FRAGMENT_ROOT=$HERE/ui-kmp/src
@@ -78,7 +80,7 @@ xcrun simctl terminate "$UDID" com.example.composehr 2>/dev/null
 nohup bash "$HERE/run.sh" > "$OUTDIR/run.out" 2>&1 &
 for _ in $(seq 1 150); do grep -q '^EH OK' launch.log 2>/dev/null && break; sleep 0.4; done
 sleep 3
-PID0=$(pgrep -n -f 'ComposeHR.app/ComposeHR')
+PID0=$(app_pid)
 EH=$(tr -d '\r' < launch.log | grep -o 'EH check: [0-9]* FDE' | head -1)
 ULINE=$(tr -d '\r' < launch.log | grep -E "$UI_LINE" | tail -1)
 ALINE=$(tr -d '\r' < launch.log | grep -E "$APP_LINE" | tail -1 | grep -o 'APPKMP\[.*\]')
@@ -101,7 +103,7 @@ PY
   bash hotreload.sh ui-klib > "$OUTDIR/$label.out" 2>&1 && bash hotreload.sh reload >> "$OUTDIR/$label.out" 2>&1
   rc=$?
   sleep 3
-  pid=$(pgrep -n -f 'ComposeHR.app/ComposeHR')
+  pid=$(app_pid)
   # A warm restart truncates launch.log, so read all of it in that case.
   if [ "$want" = WARM ]; then L0=0; fi
   line=$(tr -d '\r' < launch.log | tail -n +$((L0 + 1)) | grep -E "$pat" | tail -1)

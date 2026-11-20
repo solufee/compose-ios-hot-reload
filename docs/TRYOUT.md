@@ -1,4 +1,4 @@
-# 试用指南（0.2.0，实验性）
+# 试用指南（0.2.1，实验性）
 
 这份指南带你在自己的 Mac 上，把 Compose Multiplatform 的 iOS 模拟器热重载接进工程：改 Kotlin 代码、执行一条命令，
 正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。有两种接法：
@@ -32,16 +32,16 @@
 
 ## 2. 下载工具链
 
-工具链版本：**2.5.255-hotreload.5**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
+工具链版本：**2.5.255-hotreload.6**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
 
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.5/`（下文记作 `<TOOLCHAIN>`）：
+完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.6/`（下文记作 `<TOOLCHAIN>`）：
 
 | 目录 | 内容 |
 |---|---|
@@ -101,7 +101,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.0"
+    id("com.solufee.cmp.hotreload") version "0.2.1"
 }
 
 cmpHotReload {
@@ -330,7 +330,7 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 ## 5. 已知限制
 
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
-- 工具链版本固定，插件只认 2.5.255-hotreload.5。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
+- 工具链版本固定，插件只认 2.5.255-hotreload.6。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
 - 温重启约 17 s（实测 17–24 s），其中约 11 s 是重新打包；清理过 `build/hotreload`（`hotReloadClean`）后的第一次打包要重建缓存，约 2 分钟。温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
 - 兼容性检查（判断能不能热替换）和编译同时进行。只改 app 时检查本身约 0.6 s，但被编译时间盖住，端到端只多十几毫秒。
@@ -389,7 +389,8 @@ Xcode 工程（`iosApp/`）和你平时的 debug 构建都和原来一样。热�
 | 应用插件的模块 | 含 `fun MainViewController()` 的那个模块（向导模板里叫 `shared` 或 `composeApp`）。插件自己生成 UIKit 入口（调用 `MainViewController()`）和 Info.plist |
 | Swift / Xcode 那层 | **不参与热重载**。插件生成的入口绕过模板里的 `iosApp/`（`iOSApp.swift`、`ContentView.swift` 和 Xcode 工程设置）：热重载运行的 app 里，Swift 侧的代码不生效，只有 `MainViewController()` 往下的 Kotlin/Compose 部分。正式 app 仍然用 Xcode 工程构建，不受影响 |
 | 源码 | 这个模块的 `iosSimulatorArm64Main` 和它 `dependsOn` 的全部源码集，包括默认层级里的 `appleMain`、`iosMain`、`commonMain`，以及 Compose 资源（`composeResources/`，第一次打包时由 Compose 插件生成） |
-| 同工程的其他 KMP 模块 | 这个模块直接依赖的会一起热重载（作为库模块，源码必须写 `package`）。0.2.0 的验收只覆盖了单模块的向导模板 |
+| 同工程的其他 KMP 模块 | 这个模块依赖的同工程模块（含间接依赖，例如 `shared` → `core` → `base`）都会一起热重载，作为库模块，源码必须写 `package`；它们自己的 `expect`/`actual` 和 Compose 资源也都支持（0.2.1 起，按三模块工程验收） |
+| Compose 资源 | 字符串、图片等放在各模块 `composeResources/` 里的资源，打包时拷进 app。只改资源时 `./gradlew hotReload` 会自动温重启（输出 `WARM compose-resources: …`）来换上新资源；资源不能热替换 |
 | 第三方依赖 | 自动从 `iosSimulatorArm64CompileKlibraries` 解析（含传递依赖）。Kotlin 标准库、kotlinx、Compose、AndroidX 这些工具链自带的库，一律换成工具链里的那一份（不会链进两份） |
 | Compose 版本 | 每个 Compose 模块（`org.jetbrains.compose.*`、`androidx.compose.*`）和工具链里**同名的那一份**比版本（两套版本号各比各的）：比工具链的新就在打包前报错，写出是哪个依赖拉进来的。工具链的 Compose fork 是 **1.13.0-beta01**，所以工程里的 Compose Multiplatform 用 1.13.0-beta01 或更早的版本。工具链里没有的 Compose 模块不做版本判断 |
 | 依赖库的 klib 版本 | klib ABI 在 **1.6.0（Kotlin 1.6.10）到 2.5.0** 之间、metadata 不高于 **2.6.0**，即用 Kotlin 2.5 及更早版本编出的库。超出范围的库在打包前报错，报错里有库名、版本和该怎么换 |
@@ -420,7 +421,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.0"
+    id("com.solufee.cmp.hotreload") version "0.2.1"
 }
 ```
 
@@ -453,8 +454,13 @@ cmp.hotreload.toolchainDir=<TOOLCHAIN>/kotlin-native
 - 改 `commonMain` 或 `iosMain` 里函数的**函数体**（包括 `actual` 函数的函数体）：热替换，输出 `compat: HOT`，进程不变；
 - 改 `expect`/`actual` 的**签名**，或者**增删一对** `expect`/`actual`：不能热替换，自动温重启（输出里有
   `WARM signature …` 或 `WARM expect-actual …`，最后是 `WARM OK`），约 20 秒；
+- 工具链 .6 起，热替换成功后整个界面会完整重组一次（`remember` 的状态保留，最多多几十毫秒），参数没变的调用点、
+  已有的 lambda、打开着的 `Dialog` 也会马上显示新代码，不用点任何东西。想对比旧行为时写 `cmpHotReload { forceRecompose = false }`
+  （或 `-Pcmp.hotreload.forceRecompose=false`），下次启动 app（`hotReloadRun` 或温重启）生效；
+- 只改 `composeResources/` 里的字符串、图片等资源时，`hotReload` 会自动温重启（输出 `WARM compose-resources: …`），
+  因为资源是打包时拷进 app 的；
 - 其余规则同第 4、5 节。注意向导模板的 `App()` 把问候语放在 `remember { Greeting().greet() }` 里：`remember`
-  只算一次，改了 `greet()` 以后要让这块重新显示（点两下 “Click me!”）才能看到新文字。
+  只算一次，界面重组也不会重算它，改了 `greet()` 以后要让这块重新显示（点两下 “Click me!”）才能看到新文字。
 
 生成的 app 名是根项目名（只保留字母和数字，例如 `KmpHr`），bundle id 是 `MainViewController` 所在包名加
 `.hotreload`（例如 `org.example.kmphr.hotreload`），所以不会覆盖你用 Xcode 装的正式 app。停止：
@@ -467,7 +473,7 @@ xcrun simctl terminate <UDID 或 booted> org.example.kmphr.hotreload
 ### 已知限制：还在用旧工具链 2.5.255-hotreload.4 时
 
 旧工具链 2.5.255-hotreload.4 在把 Info.plist 里的布尔值交给 Kotlin 时有缺陷：Compose 启动时对 Info.plist 的严格检查
-（`CADisableMinimumFrameDurationOnPhone`）会误判，app 一启动就退出，`launch.log` 里能看到这项检查的报错。2.5.255-hotreload.5 已经修好，插件 0.2.0 也只认 .5，请按第 2 节换成 .5。
+（`CADisableMinimumFrameDurationOnPhone`）会误判，app 一启动就退出，`launch.log` 里能看到这项检查的报错。2.5.255-hotreload.5 起已经修好，插件 0.2.0 起也只认 .5，请按第 2 节换成 .5。
 用 0.1.x 插件和 .4 时，临时绕法是把 `MainViewController.kt` 改成下面这样，**只在试用时改，不要提交**（它会关掉正式 app 里的这项检查）：
 
 ```kotlin

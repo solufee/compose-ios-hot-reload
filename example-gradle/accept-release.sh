@@ -10,7 +10,8 @@ cd "$(dirname "$0")"
 UDID=${HR_UDID:-booted}
 say() { echo "== $*"; }
 H_DIR=$(cd ~ && pwd)   # home directory, replaced by a placeholder in the evidence files
-clean() { sed -e "s#${H_DIR}#<HOME>#g"; }
+REPO_DIR=$(cd "$(dirname "$0")/.." && pwd)   # this repository, replaced by <REPO> in the evidence files
+clean() { sed -e "s#${REPO_DIR}#<REPO>#g" -e "s#${H_DIR}#<HOME>#g"; }
 
 say "1. clean state"
 ./gradlew -q hotReloadDaemonStop --console=plain 2>&1 | clean

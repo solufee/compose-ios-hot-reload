@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""0.2.0 acceptance on the official KMP wizard template (iOS only, Compose Multiplatform UI).
+"""0.2.x acceptance on the official KMP wizard template (iOS only, Compose Multiplatform UI).
 
 Starts from the untouched wizard zip, adds the test fixture a user project would have (one expect/actual pair
 and kotlinx-datetime from Maven Central), then applies only the steps of docs/TRYOUT.md section 7 and checks:
@@ -12,7 +12,10 @@ and kotlinx-datetime from Maven Central), then applies only the steps of docs/TR
   release: hotReloadVerifyRelease passes; the KMP plugin's release/debug task graphs are identical with and without the plugin
 
 Every reload is followed by real taps (hide and show the greeting with "Click me!") and an on-screen check (AXe).
-The only deviation from TRYOUT: the plugin repository is a local copy of the Pages Maven dir (0.2.0 is not published yet).
+With --multi the template gets two more KMP modules, shared -> core -> base (core: its own expect/actual and a Compose
+string resource; base: a plain KMP library shared does not depend on directly), and their changes are checked too.
+
+The only deviation from TRYOUT: the plugin repository may be a local copy of the Pages Maven dir (an unreleased version).
 
 Usage: accept-kmp.py --zip WIZARD.zip --work DIR --plugin-repo URL --toolchain DIR --udid U [--port 5568] [--plist-workaround]
 Stops what it started (the app by bundle id, the project's compile daemons) at the end.
@@ -35,6 +38,12 @@ ap.add_argument("--plugin-repo", required=True)
 ap.add_argument("--toolchain", required=True, help="<TOOLCHAIN>/kotlin-native")
 ap.add_argument("--udid", required=True)
 ap.add_argument("--port", default="5568")
+ap.add_argument("--plugin-version", default="0.2.1")
+ap.add_argument("--multi", action="store_true", help="add the core and base KMP modules (0.2.1)")
+ap.add_argument("--force-recompose", action="store_true",
+                help="toolchain .6+: static call sites and an existing lambda update without taps; control run with forceRecompose=false")
+ap.add_argument("--dialog", action="store_true", help="toolchain .6+: a Dialog opens before and after reloads, an open Dialog updates")
+ap.add_argument("--prop", action="append", default=[], help="extra key=value for local.properties (e.g. tools of a local toolchain)")
 ap.add_argument("--plist-workaround", action="store_true",
                 help="toolchain 2.5.255-hotreload.4 only: add the enforceStrictPlistSanityCheck line (TRYOUT section 7, known limitations)")
 a = ap.parse_args()
@@ -44,6 +53,10 @@ P = os.path.join(WORK, "KmpHr")
 SH = os.path.join(P, "shared")
 PKG = "src/{}/kotlin/org/example/kmphr"
 EXE, BUNDLE = "KmpHr", "org.example.kmphr.hotreload"
+BASE = os.path.join(P, "base/src/commonMain/kotlin/org/example/base/Base.kt")
+CORE = os.path.join(P, "core/src/commonMain/kotlin/org/example/core/Core.kt")
+CORE_IOS = os.path.join(P, "core/src/iosMain/kotlin/org/example/core/Core.ios.kt")
+CORE_RES = os.path.join(P, "core/src/commonMain/composeResources/values/strings.xml")
 LOG = os.path.join(SH, "launch.log")
 HOME = os.path.expanduser("~")
 GAP = "/tmp/gap-selrefs.log"
@@ -139,14 +152,14 @@ def greeting():
     return next((l for l in labels() if l.startswith("Compose: ")), None)
 
 
-def show_greeting(expect):
+def show_greeting(expect, prefix="Compose: "):
     """Real taps: hide the greeting if shown, then show it again (the template computes it in remember {})."""
     if greeting() is not None:
         tap("Click me!")
         wait(lambda ls: not any(l.startswith("Compose: ") for l in ls), timeout=10)
     tap("Click me!")
-    ok = wait(lambda ls: any(l.startswith("Compose: ") and all(e in l for e in expect) for l in ls), timeout=20)
-    return ok, greeting()
+    ok = wait(lambda ls: any(l.startswith(prefix) and all(e in l for e in expect) for l in ls), timeout=20)
+    return ok, next((l for l in labels() if l.startswith(prefix)), None)
 
 
 def pid():
@@ -164,7 +177,16 @@ def launch_checks(tag):
     check(f"{tag}: no crash in launch.log", not crash, crash.group(0) if crash else "")
 
 
-def reload(name, expect_kind, screen, *, warm_reason=None):
+def reload_only(*extra):
+    """`gradlew hotReload` without any tap: (HOT and loaded, output, pid before, pid after)."""
+    p0 = pid()
+    rc, out, dt = gradle("hotReload", *extra)
+    if rc != 0:
+        say("\n".join(out.splitlines()[-25:]))
+    return rc == 0 and "compat: HOT" in out and "app loaded the patch" in out, out, p0, pid()
+
+
+def reload(name, expect_kind, screen, *, warm_reason=None, prefix="Compose: "):
     p0 = pid()
     rc, out, dt = gradle("hotReload")
     kind = "HOT" if "compat: HOT" in out else ("WARM" if "compat: WARM" in out else "?")
@@ -179,7 +201,7 @@ def reload(name, expect_kind, screen, *, warm_reason=None):
         ok = ok and any(l.startswith("WARM OK") for l in warm)
         if warm_reason:
             ok = ok and any(re.search(warm_reason, l) for l in warm)
-    shown, g = show_greeting(screen)
+    shown, g = show_greeting(screen, prefix)
     p1 = pid()
     same = p1 == p0
     ok = ok and shown and (same if expect_kind == "HOT" else (p1 is not None and p1 != p0))
@@ -214,25 +236,92 @@ def main():
     write(EXTRAS_IOS, 'package org.example.kmphr\n\nactual fun platformTag(): String = "tag-ios-1"\n')
     APP = path("commonMain", "App.kt")
     edit(APP, 'Text("Compose: $greeting")', 'Text("Compose: $greeting | ${platformTag()} | ${dateLine()}")')
+    if a.force_recompose or a.dialog:
+        edit(APP, "var showContent by remember { mutableStateOf(false) }",
+             "var showContent by remember { mutableStateOf(false) }\n        var dialogOpen by remember { mutableStateOf(false) }")
+        extra = '                Text("Click me!")\n            }\n            Text("Static: st-1")\n'
+        if a.dialog:
+            extra += ('            Button(onClick = { dialogOpen = true }) { Text("Open dialog") }\n'
+                      '            if (dialogOpen) {\n'
+                      '                androidx.compose.ui.window.Dialog(onDismissRequest = { dialogOpen = false }) {\n'
+                      '                    Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface)) {\n'
+                      '                        Text("Dialog: dlg-1 | ${platformTag()}")\n'
+                      '                        Button(onClick = { dialogOpen = false }) { Text("Close dialog") }\n'
+                      '                    }\n'
+                      '                }\n'
+                      '            }\n')
+        edit(APP, '                Text("Click me!")\n            }\n', extra)
+        say("   fixture: a static Text in App()" + (" and a Dialog (Open dialog / Close dialog)" if a.dialog else ""))
+    if a.multi:
+        say("   --multi: modules core (expect/actual, Compose string resource) and base; shared -> core -> base")
+        edit(os.path.join(P, "settings.gradle.kts"), 'include(":shared")', 'include(":shared")\ninclude(":core")\ninclude(":base")')
+        edit(build, "implementation(libs.compose.runtime)", "implementation(libs.compose.runtime)\n            implementation(project(\":core\"))")
+        write(os.path.join(P, "base/build.gradle.kts"), "plugins {\n    alias(libs.plugins.kotlinMultiplatform)\n}\n\nkotlin {\n    iosArm64()\n    iosSimulatorArm64()\n}\n")
+        write(BASE, 'package org.example.base\n\nfun baseLine(): String = "base-1"\n')
+        write(os.path.join(P, "core/build.gradle.kts"), """plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
+}
+
+kotlin {
+    iosArm64()
+    iosSimulatorArm64()
+    sourceSets {
+        commonMain.dependencies {
+            api(project(":base"))
+            implementation(libs.compose.runtime)
+            implementation(libs.compose.foundation)
+            implementation(libs.compose.material3)
+            implementation(libs.compose.components.resources)
+        }
+    }
+}
+""")
+        write(CORE, """package org.example.core
+
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import kmphr.core.generated.resources.Res
+import kmphr.core.generated.resources.core_title
+import org.example.base.baseLine
+import org.jetbrains.compose.resources.stringResource
+
+expect fun coreTag(): String
+
+fun coreLine(): String = "core-1 " + baseLine()
+
+@Composable
+fun CoreBadge() {
+    Text("Core: ${stringResource(Res.string.core_title)} | ${coreTag()} | ${coreLine()}")
+}
+""")
+        write(CORE_IOS, 'package org.example.core\n\nactual fun coreTag(): String = "core-ios-1"\n')
+        write(CORE_RES, '<resources>\n    <string name="core_title">Core title v1</string>\n</resources>\n')
+        edit(APP, 'Text("Compose: $greeting | ${platformTag()} | ${dateLine()}")',
+             'Text("Compose: $greeting | ${platformTag()} | ${dateLine()}")\n                    org.example.core.CoreBadge()')
 
     # ---------------------------------------------------------------- 2. TRYOUT section 7, steps 1-4
     say("## 2. TRYOUT section 7: plugin repository, plugin line, local.properties, .gitignore")
     edit(os.path.join(P, "settings.gradle.kts"), "pluginManagement {\n    repositories {\n",
          f'pluginManagement {{\n    repositories {{\n        maven {{ url = uri("{a.plugin_repo}") }}\n')
-    edit(build, "plugins {\n", 'plugins {\n    id("com.solufee.cmp.hotreload") version "0.2.0"\n')
+    edit(build, "plugins {\n", f'plugins {{\n    id("com.solufee.cmp.hotreload") version "{a.plugin_version}"\n')
     write(os.path.join(P, "local.properties"),
-          f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\ncmp.hotreload.port={a.port}\n")
+          f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\ncmp.hotreload.port={a.port}\n" +
+          "".join(f"{p}\n" for p in a.prop))
     if a.plist_workaround:
         say("   (toolchain .4 workaround: enforceStrictPlistSanityCheck = false in MainViewController.kt)")
         edit(path("iosMain", "MainViewController.kt"), "ComposeUIViewController {", "ComposeUIViewController(configure = { enforceStrictPlistSanityCheck = false }) {")
     else:
         say("   MainViewController.kt unchanged")
+    SRC_DIRS = [os.path.join(SH, "src")] + ([os.path.join(P, "core/src"), os.path.join(P, "base/src")] if a.multi else [])
     with open(os.path.join(P, ".gitignore"), "a") as g:
         g.write("\nlocal.properties\nshared/.hr/\nshared/launch.log\n")
 
     # ---------------------------------------------------------------- 2b. release baseline (before any hot reload)
     say("## 2b. release baseline: hotReloadVerifyRelease -Pcmp.hotreload.releaseBaseline=true, sources snapshot")
-    shutil.copytree(os.path.join(SH, "src"), os.path.join(WORK, "src-baseline"))
+    for d in SRC_DIRS:
+        shutil.copytree(d, os.path.join(WORK, "src-baseline", os.path.relpath(d, P)))
     rc, out, dt = gradle("hotReloadVerifyRelease", "-Pcmp.hotreload.releaseBaseline=true", timeout=2400)
     for l in grep(out, r"release|BUILD|wrong"):
         say("  " + l)
@@ -256,6 +345,54 @@ def main():
     launch_checks("run")
     ok, g = show_greeting(["Hello, iOS", "tag-ios-1", "2026-11-20"])
     check("tap 'Click me!' shows the greeting (commonMain + iosMain actual + kotlinx-datetime)", ok, repr(g))
+    if a.multi:
+        ok, g = show_greeting(["Core title v1", "core-ios-1", "core-1 base-1"], "Core: ")
+        check("core module shows its string resource, actual and base's function", ok, repr(g))
+
+    if a.force_recompose:
+        say("## 3f. forced recomposition (toolchain .6): new code on screen without any tap")
+        edit(APP, '"Static: st-1"', '"Static: st-2"')
+        ok, out, p0, p1 = reload_only()
+        seen = wait(lambda ls: "Static: st-2" in ls, timeout=15)
+        check("static call site in App() updates without taps -> HOT", ok and seen and p0 == p1, f"pid {p0}->{p1} labels={[l for l in labels() if l.startswith('Static')]}")
+        edit(APP, 'Text("Click me!")', 'Text("Click me now!")')
+        ok, out, p0, p1 = reload_only()
+        seen = wait(lambda ls: "Click me now!" in ls, timeout=15)
+        check("existing lambda (Button content) updates without taps -> HOT", ok and seen and p0 == p1, f"pid {p0}->{p1}")
+        edit(APP, 'Text("Click me now!")', 'Text("Click me!")')
+        ok, out, p0, p1 = reload_only()
+        seen = wait(lambda ls: "Click me!" in ls, timeout=15)
+        check("the lambda changed back updates without taps -> HOT", ok and seen and p0 == p1, f"pid {p0}->{p1}")
+        log = open(LOG, errors="replace").read()
+        n = len(re.findall(r"HR forceRecompose", log))
+        check("the app logged its forced recompositions", n >= 3, f"{n} 'HR forceRecompose' lines; " + "; ".join(re.findall(r"HR forceRecompose[^\n]*", log)[-1:]))
+    if a.dialog:
+        say("## 3d. Dialog (toolchain .6): opens before and after a reload with the new content; an open Dialog updates")
+        tap("Open dialog")
+        ok1 = wait(lambda ls: any(l.startswith("Dialog: dlg-1") for l in ls), timeout=15)
+        tap("Close dialog")
+        ok2 = wait(lambda ls: not any(l.startswith("Dialog: ") for l in ls), timeout=10)
+        check("Dialog opens and closes before any reload", ok1 and ok2)
+        edit(APP, '"Dialog: dlg-1 | ', '"Dialog: dlg-2 | ')
+        ok, out, p0, p1 = reload_only()
+        tap("Open dialog")
+        ok1 = wait(lambda ls: any(l.startswith("Dialog: dlg-2") for l in ls), timeout=15)
+        g = next((l for l in labels() if l.startswith("Dialog: ")), None)
+        tap("Close dialog")
+        ok2 = wait(lambda ls: not any(l.startswith("Dialog: ") for l in ls), timeout=10)
+        check("after a HOT reload the Dialog opens with the new content", ok and ok1 and ok2 and p0 == p1, f"{g!r} pid {p0}->{p1}")
+        tap("Open dialog")
+        wait(lambda ls: any(l.startswith("Dialog: dlg-2") for l in ls), timeout=15)
+        edit(APP, '"Dialog: dlg-2 | ', '"Dialog: dlg-3 | ')
+        ok, out, p0, p1 = reload_only()
+        ok1 = wait(lambda ls: any(l.startswith("Dialog: dlg-3") for l in ls), timeout=15)
+        g = next((l for l in labels() if l.startswith("Dialog: ")), None)
+        tap("Close dialog")
+        ok2 = wait(lambda ls: not any(l.startswith("Dialog: ") for l in ls), timeout=10)
+        check("an open Dialog shows the new content after a HOT reload, then closes", ok and ok1 and ok2 and p0 == p1, f"{g!r} pid {p0}->{p1}")
+        log = open(LOG, errors="replace").read()
+        crash = re.search(r"Uncaught|IrLinkageError|EXC_|SIGSEGV", log)
+        check("no crash or IrLinkageError with Dialog", not crash, crash.group(0) if crash else "")
 
     # ---------------------------------------------------------------- 4. hot and warm changes
     say("## 4. changes")
@@ -279,6 +416,53 @@ def main():
     reload("remove the expect/actual pair (flavor)", "WARM", ["tag-ios-4"], warm_reason=r"^WARM expect-actual flavor: expect fun removed")
     edit(GREET, '"Hello again, ', '"Hello once more, ')
     reload("commonMain body after both warm restarts", "HOT", ["Hello once more, iOS", "tag-ios-4"])
+
+    if a.multi:
+        say("## 4m. library modules: core (direct) and base (only through core)")
+        edit(BASE, '"base-1"', '"base-2"')
+        reload("base body (library reached only through core)", "HOT", ["core-1 base-2"], prefix="Core: ")
+        edit(CORE, '"core-1 "', '"core-2 "')
+        reload("core commonMain body", "HOT", ["core-2 base-2"], prefix="Core: ")
+        edit(CORE_IOS, '"core-ios-1"', '"core-ios-2"')
+        reload("core iosMain actual body", "HOT", ["core-ios-2"], prefix="Core: ")
+        edit(CORE, "expect fun coreTag(): String", "expect fun coreTag(n: Int = 0): String")
+        edit(CORE_IOS, 'actual fun coreTag(): String = "core-ios-2"', 'actual fun coreTag(n: Int): String = "core-ios-3"')
+        reload("core expect/actual signature", "WARM", ["core-ios-3", "core-2 base-2"], warm_reason=r"coreTag", prefix="Core: ")
+        edit(CORE, "fun coreLine()", "expect fun coreFlavor(): String\n\nfun coreLine()")
+        edit(CORE_IOS, "actual fun coreTag", 'actual fun coreFlavor(): String = "sim"\n\nactual fun coreTag')
+        reload("add an expect/actual pair in core", "WARM", ["core-ios-3"], warm_reason=r"^WARM expect-actual coreFlavor: expect fun added", prefix="Core: ")
+        edit(CORE, "expect fun coreFlavor(): String\n\n", "")
+        edit(CORE_IOS, 'actual fun coreFlavor(): String = "sim"\n\n', "")
+        reload("remove the expect/actual pair in core", "WARM", ["core-ios-3"], warm_reason=r"^WARM expect-actual coreFlavor: expect fun removed", prefix="Core: ")
+        edit(BASE, '"base-2"', '"base-3"')
+        reload("base body after the warm restarts", "HOT", ["core-2 base-3"], prefix="Core: ")
+        say("## 4r. a Compose string resource of core: one hotReload -> warm restart (resources are copied at package time)")
+        edit(CORE_RES, "Core title v1", "Core title v2")
+        reload("core string resource (composeResources)", "WARM", ["Core title v2", "core-ios-3", "core-2 base-3"],
+               warm_reason=r"^WARM compose-resources: 1 file\(s\) changed", prefix="Core: ")
+
+    if a.force_recompose:
+        say("## 4f. control: relaunched with -Pcmp.hotreload.forceRecompose=false, the static call site stays stale")
+        rc, out, dt = gradle("hotReloadRun", "-Pcmp.hotreload.forceRecompose=false")
+        startup = open(LOG, errors="replace").read()
+        edit(APP, '"Static: st-2"', '"Static: st-off"')
+        ok, out, p0, p1 = reload_only("-Pcmp.hotreload.forceRecompose=false")
+        stale = not wait(lambda ls: "Static: st-off" in ls, timeout=8)
+        log = open(LOG, errors="replace").read()
+        forced = re.findall(r"HR forceRecompose recomposers=", log)
+        check("forceRecompose=false: app starts with it off, the reload is HOT, the static call site stays stale",
+              rc == 0 and ok and stale and p0 == p1 and "HR forceRecompose: off" in startup and not forced,
+              f"startup line {re.findall(r'HR forceRecompose: [^\n]*', startup)}, forced recompositions {len(forced)}, labels={[l for l in labels() if l.startswith('Static')]}")
+        # hotReloadRun reinstalls the last packaged app (patches are not in it): package first, then run with the default.
+        rc1, _, _ = gradle("hotReloadPackage")
+        rc2, _, _ = gradle("hotReloadRun")
+        startup = open(LOG, errors="replace").read()
+        edit(APP, '"Static: st-off"', '"Static: st-on"')
+        ok, out, p0, p1 = reload_only()
+        seen = wait(lambda ls: "Static: st-on" in ls, timeout=15)
+        check("back to the default (forceRecompose on): the next change shows without taps",
+              rc1 == 0 and rc2 == 0 and ok and seen and p0 == p1 and "HR forceRecompose: on" in startup,
+              f"labels={[l for l in labels() if l.startswith('Static')]}")
 
     # ---------------------------------------------------------------- 5. counter-examples: klibs with edited manifests
     say("## 5. klibs with edited manifests (extraKlibs) stop the build before compiling")
@@ -321,8 +505,9 @@ def main():
 
     # ---------------------------------------------------------------- 6. release unchanged
     say("## 6. release: sources back to the baseline state, then hotReloadVerifyRelease (daemons still running)")
-    shutil.rmtree(os.path.join(SH, "src"))
-    shutil.copytree(os.path.join(WORK, "src-baseline"), os.path.join(SH, "src"))
+    for d in SRC_DIRS:
+        shutil.rmtree(d)
+        shutil.copytree(os.path.join(WORK, "src-baseline", os.path.relpath(d, P)), d)
     rc, out, dt = gradle("hotReloadVerifyRelease", timeout=1800)
     for l in grep(out, r"release|BUILD|wrong|differ"):
         say("  " + l)
@@ -337,7 +522,7 @@ def main():
 
 
     rc1, with_plugin = graph()
-    open(build, "w").write(build_text.replace('    id("com.solufee.cmp.hotreload") version "0.2.0"\n', ""))
+    open(build, "w").write(build_text.replace(f'    id("com.solufee.cmp.hotreload") version "{a.plugin_version}"\n', ""))
     rc2, without = graph()
     open(build, "w").write(build_text)
     check("Xcode/KMP framework task graphs identical with and without the plugin (dry run)",

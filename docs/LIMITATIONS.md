@@ -21,7 +21,8 @@
 | 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（Compose Multiplatform ≤ 1.13.0-beta01）；超出时打包前报错，写出库名和拉进它的依赖 |
 | KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
 | 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
-| 多个 KMP 模块互相依赖 | ⚠️ 直接依赖的模块会作为库模块一起处理，但 0.2.0 未做验收 |
+| 多个 KMP 模块互相依赖 | ✅ 0.2.1：间接依赖也一起热重载；库模块的 `expect`/`actual` 和 Compose 资源都支持（三模块工程验收） |
+| Compose 资源（strings、drawables） | ➖ 不能热替换：打包时拷进 app；只改资源时 `hotReload` 自动温重启 |
 | 只编 `iosSimulatorArm64`；Android、iosArm64、桌面目标 | ➖ 不参与热重载，也不受影响 |
 | 多模块热替换（改 ui、改 app、同时改） | ✅ 20/20、20/20、3/3 |
 | 同一模块内多个文件同时改 | ✅ 3/3，同一 tick |
@@ -54,10 +55,11 @@
    正确性要求，`hotreload.env` 默认打开并导出。关掉后异常穿过 JIT 代码时进程会终止；`run.sh` 每次启动都要求
    `EH OK eh-probe`，缺了就以退出码 2 失败、不重试。启动时合成并整段注册约 12.6 万条 FDE，开 KEEP 的代价约
    0.2–0.7 s。`KALDO_SYNTH_EH_FRAME` 按值判断：未设、空串、`0` 为关（v5 起）。
-6. **启动偶发失败（已规避，根因未修）**。全部 Kotlin 符号都外部化时，冷启动约 20% 在 `Konan_constructors` 前
-   SIGSEGV（ORC `simplifyDepGroups`）。启动时传收窄的 `KALDO_HOT_SYMBOLS`（`run.sh` 默认传
-   `build/app/hot-symbols.txt`）后 30/30、10/10 首次成功；`run.sh` 仍保留最多 3 次重试兜底。
-   在 `Core.cpp` 接受重复定义的尝试会让 bootstrap 物化失败，已回退；根因还没修。
+6. **启动偶发失败（根因已修，LLVM 补丁，随工具链 .6 发布）**。根因是插件合成的 `_objc_msgSend$…` stub 等定义没有登记到
+   materialization，却被放进 dependency group，`simplifyDepGroups` 查找失败后仍读 `end()->second`（越界读，是否崩取决于内存布局）；
+   每次启动有 658 个这样的定义（TECHNICAL-NOTES §1.5）。修复后不收窄 `KALDO_HOT_SYMBOLS`、不重试，冷启动 30/30。
+   收窄仍是默认：启动更快（p50 5.3 s 对 6.5 s），热替换范围也限定在用户模块；只是不再是稳定性所必需。
+   用 .5 及以前的工具链时仍要收窄；`run.sh` 保留最多 3 次重试兜底。
 7. **长会话退化**。App 连续运行 3.5 小时（tick≈12,400）后，发送到首帧从 0.9 s 涨到 1.86 s；重启进程恢复。
    原因（JIT 符号表、旧模块回收还是 Compose 侧）未定位。KEEP 打开后的长会话还没测。
 8. **release 构建的确定性**。`__text` 大小和符号表一致，但每次链接整文件 md5 都不同（`LC_UUID`、
@@ -77,13 +79,15 @@
 10. **构建链**。要么本地构建三件套（LLVM+Kaldo、Kotlin dist、Compose klib），要么用预构建工具链；
    后者从 GitHub Release 下载（见 `docs/TRYOUT.md`）。上游提交一变，补丁就要重新对齐；没有 CI。
    预构建包不带 `klib/cache`，首次打包要现建 stdlib 缓存，比本机构建慢约 1 分钟。
-11. **无参 composable 不会自动重组**。Compose 会跳过没有参数变化的 composable；如果一个被热替换的
-   `@Composable` 既没有参数、也不读任何 state，替换后旧代码会继续显示，看起来像热重载没生效。
-   给它传一个会变化的参数（例如页面每秒递增的 tick）**并在函数体里读到它**，或者让它读一个 `State`；
-   只传不读同样会被跳过（独立试用里实测：只传不读时画面不变，读了之后约 5 s 自动生效）。这是 Compose 的跳过逻辑，
-   不是热重载的 bug；真实项目里改「不接收参数的叶子组件」时一定会遇到。参数全是静态值（常量、单例 lambda）的已有调用点也会被跳过：
-   改已有 lambda 的正文、删掉并列 lambda 中的一个之后，屏幕可能保留旧内容，直到那一段被别的原因重组
-   （`example-gradle/accept-singletons.txt`）。修法方向是 reload 成功后强制完整重组，还没做。
+11. **画面过期（工具链 .6 已修，默认开）**。.5 及以前，Compose 会跳过参数没变的 composable：既没有参数、也不读 state 的
+   `@Composable`，以及参数全是静态值（常量、单例 lambda）的已有调用点，热替换后继续显示旧内容
+   （`example-gradle/accept-singletons.txt`）。.6 起每次 reload 成功后，在主线程上把所有组合的所有作用域失效，下一帧整树重组，
+   `remember`/`rememberSaveable` 状态保留（TECHNICAL-NOTES §1.6）。仍然要注意：
+   - `remember { … }` 里算出来的值不会重算，这是 `remember` 的语义（第 17 条）；要随代码变化的值不要放进 `remember`。
+   - 代价：会话期间每个可重启函数都保留重组作用域（`collectParameterInformation`），每次 reload 多一帧整树重组。实测见 REPORT §29。
+   - 只在 debug 二进制里生效。在 app 的环境里设 `KONAN_HR_FORCE_RECOMPOSE=0` 可关闭（参考脚本：`KONAN_HR_FORCE_RECOMPOSE=0 bash run.sh`），
+     恢复 .5 的行为。插件以后在 DSL 里开放这个开关。
+   - 用 .5 及以前的工具链时，限制照旧：给 composable 传一个会变化的参数**并在函数体里读到它**，或者让它读一个 `State`。
 12. **libKaldo 位置与打包义务**。两个 dylib 只装在 `<KALDO_INSTALL>/lib/`，编译器按 `konan.properties` 的
     `kaldoLinkerFlags`（`-L<KALDO_INSTALL>/lib`）直接链接；不往 LLVM 安装目录、也不往 `~/.konan/dependencies` 放。
     打包只认 `KALDO_DYLIB` 或 `toolchain.json` 的 `llvm.kaldoIossim`，并校验 sha256。打包时必须删掉可执行文件里的
@@ -99,14 +103,18 @@
    （画面过期原型里，存在文件级 `var` 里的句柄每次 reload 后都变回 null）。不会读到旧内存，原因见 TECHNICAL-NOTES §1.6。
    需要跨热替换保留的状态，放进 Compose state 或 `remember`，不要放在 `object` 或文件级 `var` 里。沿用旧槽需要同时改编译器和
    Kaldo，代价大，暂不做。
-16. **工具链自带的库比工程里用的旧时，热重载按旧版本编译**（0.2.0）。例如向导模板用 lifecycle 2.11.0，工具链里是 2.9.x：
-   打包时打印 `hot reload compiles against the toolchain's older copies of …`，用到新版本才有的 API 的代码在热重载里编译不过。
+16. **工具链自带的库比工程里用的旧时，热重载按旧版本编译**（0.2.0 起）。工具链 .6 把 collection、lifecycle、navigationevent、
+   savedstate、atomicfu 升到了 Compose 实际用的版本（androidx lifecycle 2.11.0 等），向导模板实测只剩一个：
+   `org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose` 工程里是 2.11.0、工具链里是 2.9.6。打包时会打印
+   `hot reload compiles against the toolchain's older copies of …` 列出这类库；只用到旧版本里也有的 API 就没问题，用到新 API 的代码在热重载里编译不过。
 17. **`remember { }` 里算出的值热替换后不会自己变**。向导模板的问候语在 `remember { Greeting().greet() }` 里，
    改 `greet()` 后补丁已经生效，要让这块重新进入组合（模板里点两下 “Click me!”）才显示新文字。
-18. **热重载运行时打开 Compose 的 `Dialog` 会退出**（工具链 2.5.255-hotreload.5）。工具链自带的 klib 集合缺少
-   `navigationevent-compose`、`lifecycle-viewmodel-compose`、`graphics-shapes` 等几个 Compose 依赖，编译和链接都能通过，
-   运行到 `Dialog` 时报 `IrLinkageError: … LocalNavigationEventDispatcherOwner`。`Popup` 不受影响；release 构建用官方
-   Compose，也不受影响。下一版工具链会补齐这些 klib，并在打包时检查依赖是否完整。
+18. **`Dialog`、`BackHandler` 在 .5 及以前的预构建工具链里会崩（.6 修复）**。工具链的 klib 集合缺 4 个 Compose 依赖：
+   `androidx.navigationevent:navigationevent-compose`、`org.jetbrains.androidx.navigationevent:navigationevent-compose`、
+   `androidx.lifecycle:lifecycle-viewmodel-compose`、`androidx.graphics:graphics-shapes`（ui、foundation、material3 等 klib 的
+   `depends=` 里有，klib 集合里没有）。编译、链接都能过（partial linkage），用到它们的代码到运行时才报 `IrLinkageError`：打开 `Dialog` 时
+   `Can not get instance of singleton 'LocalNavigationEventDispatcherOwner'`，进程退出。`Popup` 不受影响。
+   .6 补齐这几个 klib，并在打包时检查 klib 集合是否闭合（`scripts/check-klib-deps.py`，缺一个就不打包）。
 
 ## 已解决（旧文档里可能还会看到）
 

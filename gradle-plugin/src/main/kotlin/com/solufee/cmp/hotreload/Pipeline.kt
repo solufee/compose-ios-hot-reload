@@ -82,6 +82,21 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         appliedStamp.setLastModified(at)
     }
 
+    /** sha256 of every Compose resource file copied into the app at package time (`sha  relative path`). */
+    val resourceManifest get() = File(work, "compose-resources.sha256")
+
+    /**
+     * Compose resources that differ from what the running app was packaged with (they are copied into the .app at
+     * package time, so a patch cannot carry them): changed, added or removed relative paths; empty when the
+     * manifest is missing (packaged by an older plugin).
+     */
+    fun resourceChanges(): List<String> {
+        if (!resourceManifest.isFile) return emptyList()
+        val before = resourceManifest.readLines().filter { it.isNotBlank() }.associate { it.substringAfter("  ") to it.substringBefore("  ") }
+        val now = resourceDigests(s.composeResources.map(::File).filter { it.isDirectory })
+        return (before.keys + now.keys).sorted().filter { before[it] != now[it] }
+    }
+
     /** The UIKit entry generated for [HrSettings.iosEntry] (written by [writeGeneratedMain]). */
     fun generatedMain(): File = File(s.generatedDir, "HotReloadMain.kt")
 
@@ -205,7 +220,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     // ---------------------------------------------------------------- packages / module mapping
 
     /** Packages declared in a module's sources ("" = root package). */
-    fun packagesOf(m: HrModule): Set<String> = m.sourceDirs.flatMap { sourcePackages(File(it)) }.toSet()
+    fun packagesOf(m: HrModule): Set<String> = m.sourceDirs.flatMap { sourcePackages(File(it)) }.toSet() +
+        // The UIKit entry the plugin generates for a KMP app (HotReloadMain.kt) is in the root package and compiled with the app.
+        (if (m.kind == ModuleKind.APP && s.iosEntry != null) setOf("") else emptySet())
 
     /** Hot packages for merge-payloads: every package of every library, plus the app's named packages. */
     fun hotPackages(): List<String> =
@@ -265,9 +282,11 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         File(bundle, info.executable).setExecutable(true)
         File(s.infoPlist).copyTo(File(bundle, "Info.plist"))
         // Compose Multiplatform resources (Res.drawable...): looked up under <bundle>/compose-resources/.
-        s.composeResources?.let(::File)?.takeIf { it.isDirectory }?.let { res ->
-            res.copyRecursively(File(bundle, "compose-resources"), overwrite = true)
-            logger.lifecycle("compose resources: ${res.walkTopDown().count { it.isFile }} files -> compose-resources/")
+        val resDirs = s.composeResources.map(::File).filter { it.isDirectory }
+        resDirs.forEach { res -> res.copyRecursively(File(bundle, "compose-resources"), overwrite = true) }
+        resourceManifest.writeText(resourceDigests(resDirs).entries.joinToString("") { (k, v) -> "$v  $k\n" })
+        if (resDirs.isNotEmpty()) {
+            logger.lifecycle("compose resources: ${resDirs.sumOf { d -> d.walkTopDown().count { it.isFile } }} files from ${resDirs.size} module(s) -> compose-resources/")
         }
         File(s.kaldoDylib).copyTo(File(bundle, "Frameworks/${File(s.kaldoDylib).name}"))
         // The linker leaves absolute rpaths (e.g. to the LLVM install). Outside the bundle the simulator
@@ -484,6 +503,11 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
          */
         fun pendingArchives(pending: List<String>, built: List<String>): List<String> =
             (pending + built).map { it.trim() }.filter { it.contains("per-file-cache/") && it.endsWith(".a") }.distinct()
+
+        /** Relative path -> sha256 of every file under [dirs] (Compose resources of all modules). */
+        fun resourceDigests(dirs: List<File>): Map<String, String> = dirs.flatMap { d ->
+            d.walkTopDown().filter { it.isFile }.map { it.relativeTo(d).path to Tools.sha256(it.readBytes()) }.toList()
+        }.toMap().toSortedMap()
 
         /** Module of a rebuilt object: with one module (the KMP template's `shared`) every object is its own. */
         fun moduleOf(modules: List<HrModule>, packages: Map<HrModule, Set<String>>, symbols: () -> Set<String>): HrModule? =

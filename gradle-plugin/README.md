@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.5**。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.6**。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -18,7 +18,8 @@
   通常一行 DSL 都不用写。插件用反射读 Kotlin Multiplatform 插件的源码集（`iosSimulatorArm64Main` 和它 `dependsOn` 的全部源码集，
   按片段传给编译器：`-Xmulti-platform -Xexpect-actual-classes -Xfragments -Xfragment-refines -Xfragment-sources`），
   从 `iosSimulatorArm64CompileKlibraries` 解析依赖 klib，生成调用 `MainViewController()` 的 UIKit 入口和 Info.plist，
-  把 Compose 资源拷进 app。不编译、也不依赖你的 Kotlin Gradle 插件版本，只读它的设置。步骤见 TRYOUT 第 7 节。
+  把各模块的 Compose 资源拷进 app。依赖的同工程 KMP 模块（含间接依赖）按依赖顺序作为库模块（0.2.1）。
+  不编译、也不依赖你的 Kotlin Gradle 插件版本，只读它的设置。步骤见 TRYOUT 第 7 节。
 - **不用 KMP 插件的多模块工程**（下面的写法）：插件加在根项目上，模块源码在 `src/main/kotlin`。
 
 `settings.gradle.kts`：插件从 GitHub Pages 上的静态 Maven 仓库解析，不需要 token，也没有其他依赖：
@@ -36,7 +37,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.0"
+    id("com.solufee.cmp.hotreload") version "0.2.1"
 }
 
 cmpHotReload {
@@ -95,6 +96,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `orcRuntime` / `objcUtilsLib` | 清单的 `tools.orcRuntime` / `tools.uikitUtils`；没有时看 dist 旁边的 `orc-runtime/`、`cmp-uikit-utils/`；再没有用工程 `tools/` 下同名文件 | 自己构建的工具链才需要设 |
 | `llvmHome` | 清单的 `tools.llvmTools`；没有时看 dist 旁边的 `llvm-tools/`；再没有就不设（工具自己的默认值） | 传给打包工具的 `KONAN_LLVM_HOME` |
 | `keepCompactUnwind` | `true` | 打包时导出 `KALDO_KEEP_COMPACT_UNWIND=1`（INTERFACE §3.3 第 1 条） |
+| `forceRecompose` | `true`（`cmp.hotreload.forceRecompose`） | 工具链 .6 起：每次热替换成功后整个界面完整重组一次，参数没变的调用点也显示新代码，`remember` 状态保留。`false` 时传 `KONAN_HR_FORCE_RECOMPOSE=0`（.5 的行为）；下次启动 app 时生效 |
 | `warmRestart` | `true`（`cmp.hotreload.warmRestart`） | 分类器判定需要温重启时：`true` 自动重新打包并带着保存的状态重启；`false` 只报原因、任务失败、不发送 |
 | `simulator { udid; port; launchLog; readyMarker; launchTimeoutSeconds; launchRetries; reinstall }` | `booted`、清单端口、`launch.log`、无、120、3、`true` | 端口同时传给发送端和 app |
 | `app(":x") { sourceDir; infoPlist; linkerOptions; dependsOn }` | `src/main/kotlin`、`Info.plist`、ImageIO 等、全部库 | |
@@ -146,7 +148,7 @@ pluginManagement {
 }
 // build.gradle.kts（根项目）
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.0"
+    id("com.solufee.cmp.hotreload") version "0.2.1"
 }
 ```
 
@@ -238,7 +240,7 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 ../example-gradle/gradlew -p . test -Pcmp.hotreload.toolchainDir=<KOTLIN_NATIVE_DIST>
 ```
 
-共 49 个测试；不给工具链时，需要真实编译器的两项跳过，其余照常运行。
+共 56 个测试；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
 
 | 测试类 | 数量 | 内容 |
 |---|---|---|
@@ -249,6 +251,9 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 | `CompatContractTest` | 8 | 分类器随 jar 分发且哈希一致；源码里的 `expect` 声明（增删一对判温重启）；非快照输入不会判成 HOT；用真实 klib 验证“只改函数体退出 0、加字段退出 3”（要工具链）；`hr-state.json` 解析；带参数启动时找 app 进程；已启动模拟器列表；dist 旁边的 klib 会被链接 |
 | `PluginFunctionalTest` | 9 | TestKit：版本不匹配和下载版旧工具链的报错、没配工具链、DSL 配错时其它任务照常、debug 开关、应用插件前后 `tasks --all` 一致、`warmRestart` 与 `--no-warm`、加在单个模块上并声明源码片段、任务都在自己的组里 |
 | `KmpTest` | 10 | 版本比较；每个 Compose 模块和工具链里同名那份比版本（写出拉进它的依赖）；cinterop klib 警告；依赖 klib 按 `unique_name` 和 Maven 组件替换、去重、比工具链新时提示；klib ABI 高于 2.5.0 / 低于 1.6.0、metadata 高于 2.6.0 的报错；`MainViewController` 入口识别；多片段编译参数；按符号归模块 |
+| `ExpectActualCasesTest` | 5 | 增删一对 expect/actual 判温重启的 12 例用例表（6 正 6 反）；Compose 资源改动判温重启；回归：只含初始化桩的目标文件、生成的 UIKit 入口（根包）在多模块时归 app、失败编译后的待发送列表 |
+| `ProjectDependenciesTest` | 1 | 同工程 KMP 模块依赖按传递关系、依赖在前的顺序找出，环路不死循环 |
+| `ReleaseDigestTest` | 1 | release 校验比 `__text` 摘要：同一二进制摘要一致，改一个代码字节必须失败；原始 `__text` 哈希只记录 |
 
 ## 验收脚本与证据
 

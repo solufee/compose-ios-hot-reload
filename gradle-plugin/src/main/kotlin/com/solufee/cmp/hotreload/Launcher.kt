@@ -19,6 +19,8 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         "KALDO_PERF_MAP" to "1",
         "KALDO_HOT_SYMBOLS" to s.hotSymbols.path,
         "KONAN_HOT_RELOAD_PORT" to s.port.toString(),
+        // Toolchain .6+: full recomposition after each reload (INTERFACE §7); passed explicitly either way.
+        "KONAN_HR_FORCE_RECOMPOSE" to if (s.forceRecompose) "1" else "0",
     ).mapKeys { "SIMCTL_CHILD_${it.key}" }
 
     /**

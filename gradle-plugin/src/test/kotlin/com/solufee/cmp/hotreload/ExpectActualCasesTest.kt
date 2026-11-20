@@ -2,6 +2,7 @@ package com.solufee.cmp.hotreload
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -79,6 +80,43 @@ class ExpectActualCasesTest {
         val initOnly = setOf("__Konan_init_59afbfb0b603c12f")
         assertEquals(shared, Pipeline.moduleOf(listOf(shared), mapOf(shared to setOf("org.example")), { initOnly }))
         assertNull(Pipeline.moduleOf(listOf(shared, ui), mapOf(shared to setOf("org.example"), ui to setOf("myui")), { initOnly }))
+    }
+
+    @Test
+    fun `regression - the generated UIKit entry (root package) belongs to the app when there are library modules`() {
+        // 0.2.1 fix: shared -> core -> base; the plugin's HotReloadMain.kt (root package) used to match no module.
+        val shared = HrModule(":shared", ModuleKind.APP, File(tmp, "s").apply { mkdirs() }.path, emptyList())
+        val core = HrModule(":core", ModuleKind.LIBRARY, File(tmp, "c").apply { mkdirs(); File(this, "C.kt").writeText("package org.example.core\n") }.path, emptyList())
+        val s = HrSettings(
+            rootDir = tmp.path, workDir = File(tmp, "w").path, dist = "/d", kotlinc = "/k", compilerJar = "/c.jar", composePlugin = "/p.jar",
+            klibList = "/k.txt", kaldoDylib = "/l.dylib", kaldoSha256 = null, target = "ios_simulator_arm64", orcRuntime = "/o.a",
+            objcUtilsLib = "/u.a", llvmHome = null, useDaemon = false, socketDir = "/s", javaHome = "/j", modules = listOf(shared, core),
+            infoPlist = "/p", linkerOptions = emptyList(), keepCompactUnwind = true, port = 5567, udid = "booted", launchLog = "/l",
+            readyMarker = null, launchTimeoutSec = 1, launchRetries = 1, reinstall = true, warmRestart = true,
+            iosEntry = "org.example.kmphr.MainViewController",
+        )
+        val p = Pipeline(s, org.gradle.api.logging.Logging.getLogger("t"))
+        val packages = s.modules.associateWith { p.packagesOf(it) }
+        val entryObject = setOf("_kfun:#main(kotlin.Array<kotlin.String>){}", "_kclass:HotReloadAppDelegate")
+        assertEquals(shared, Pipeline.moduleOf(s.modules, packages) { entryObject })
+        assertEquals(core, Pipeline.moduleOf(s.modules, packages) { setOf("_kfun:org.example.core#coreLine(){}kotlin.String") })
+    }
+
+    @Test
+    fun `a changed Compose resource makes the reload warm, an unchanged set does not`() {
+        val res = File(tmp, "assembled/composeResources/kmphr.core.generated.resources/values").apply { mkdirs() }
+        val strings = File(res, "strings.commonMain.cvr").apply { writeText("core_title=v1") }
+        val root = File(tmp, "assembled")
+        val before = Pipeline.resourceDigests(listOf(root))
+        assertEquals(emptyList<String>(), resourceReasons(listOf()))
+        strings.writeText("core_title=v2")
+        File(res, "extra.cvr").writeText("x")
+        val now = Pipeline.resourceDigests(listOf(root))
+        val changed = (before.keys + now.keys).sorted().filter { before[it] != now[it] }
+        assertEquals(listOf("composeResources/kmphr.core.generated.resources/values/extra.cvr",
+            "composeResources/kmphr.core.generated.resources/values/strings.commonMain.cvr"), changed)
+        val r = resourceReasons(changed).single()
+        assertTrue(r.startsWith("WARM compose-resources: 2 file(s) changed since packaging"), r)
     }
 
     @Test

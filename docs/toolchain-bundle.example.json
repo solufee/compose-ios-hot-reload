@@ -1,8 +1,8 @@
 {
   "interfaceVersion": 8,
   "layout": "bundle",
-  "toolchainVersion": "2.5.255-hotreload.5",
-  "generatedAt": "2026-11-19T22:36:06+08:00",
+  "toolchainVersion": "2.5.255-hotreload.6",
+  "generatedAt": "2026-11-20T09:50:59+08:00",
   "kotlin": {
     "version": "2.5.255-SNAPSHOT",
     "dist": "kotlin-native",
@@ -19,15 +19,15 @@
     "klibDir": "compose-klibs",
     "baseCommit": "ee243c321ddff6b18fcf18916be1b96ef70e2363",
     "patch": "compose-multiplatform-core-build.patch",
-    "patchSha256": "c1de7a107e3f15820ae7a9278e683a672ea5470aa3164861e6e17cd0a9ab2da6"
+    "patchSha256": "335d7a32356b92b1ba395b63235f4b20e804a610411db693bb2858a389eb7a50"
   },
   "llvm": {
     "baseCommit": "2f8844c2b35557baced9106c50b9b8758fa6a0de",
     "patch": "llvm-kaldo.patch",
-    "patchSha256": "3bb8a987ca9182afff80ba35d0334d711652305ef7c46340e940ece439943db3",
+    "patchSha256": "ad6137ad7f81fa2c186f36b37f67491104461a88b0bdf41d71b0b1db85dca965",
     "kaldoHome": "kaldo",
     "kaldoIossim": "kaldo/lib/libKaldo.iossim.dylib",
-    "kaldoIossimSha256": "8ed50386abe6fd5be14424ae2f63042b224302685a22cefcb3a43da7d847ce1d",
+    "kaldoIossimSha256": "fd0abe179c4283d90e64d615804f96103c5d5e8856d0dc80e736235461a42e9f",
     "llvmHome": {
       "kind": "konan-dependency",
       "name": "llvm-21-aarch64-macos-essentials-97"
@@ -48,137 +48,137 @@
   "components": [
     {
       "id": "kotlin-native",
-      "file": "kotlin-native-2.5.255-hotreload.5-macos-aarch64.tar.zst",
+      "file": "kotlin-native-2.5.255-hotreload.6-macos-aarch64.tar.zst",
       "extractDir": "kotlin-native",
-      "bytes": 70327106,
+      "bytes": 70327363,
       "rawBytes": 392560640,
-      "sha256": "7f2034dcfafaaa5ff3b7ac5cf3a3775fe49b9fc226b6322123413b71d4b1b5ed",
+      "sha256": "fdcf21cabebc091dd19a7cfc93268dcb1fcf7487f34e13e6ede4211490529ef8",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "kotlin-native-2.5.255-hotreload.5-macos-aarch64.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/kotlin-native-2.5.255-hotreload.5-macos-aarch64.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "kotlin-native-2.5.255-hotreload.6-macos-aarch64.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/kotlin-native-2.5.255-hotreload.6-macos-aarch64.tar.zst"
       }
     },
     {
       "id": "compose-klibs",
-      "file": "compose-klibs-2.5.255-hotreload.5.tar.zst",
+      "file": "compose-klibs-2.5.255-hotreload.6.tar.zst",
       "extractDir": "compose-klibs",
-      "bytes": 11039353,
-      "rawBytes": 50315264,
-      "sha256": "e3ca51cc865dc9f09529b4c30ff2cf0a842cab1cd9c8c8e9fcfa45326d24238d",
+      "bytes": 11048200,
+      "rawBytes": 50343936,
+      "sha256": "e7076b5f7848913a0d63e5048a3e5d0a25ce9be59896477eccf3ac5d9951185f",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "compose-klibs-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/compose-klibs-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "compose-klibs-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/compose-klibs-2.5.255-hotreload.6.tar.zst"
       }
     },
     {
       "id": "compose-compiler-plugin",
-      "file": "compose-compiler-plugin-2.5.255-hotreload.5.tar.zst",
+      "file": "compose-compiler-plugin-2.5.255-hotreload.6.tar.zst",
       "extractDir": "compose-plugin",
-      "bytes": 502318,
+      "bytes": 502329,
       "rawBytes": 2338816,
-      "sha256": "365c07802bcb8422d11949135b276b03db7b97cfe03f12e571286ad312c1e432",
+      "sha256": "61e57d244c5c2a35bb3a99c1393a9e674fb7cb0efe8b1f2f02fee09a8fa7dc16",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "compose-compiler-plugin-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/compose-compiler-plugin-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "compose-compiler-plugin-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/compose-compiler-plugin-2.5.255-hotreload.6.tar.zst"
       }
     },
     {
       "id": "kaldo-iossim",
-      "file": "kaldo-iossim-2.5.255-hotreload.5.tar.zst",
+      "file": "kaldo-iossim-2.5.255-hotreload.6.tar.zst",
       "extractDir": "kaldo",
-      "bytes": 10591487,
+      "bytes": 10592521,
       "rawBytes": 40783872,
-      "sha256": "c39e2947152a9d46db4d705d39cdc4a0b3271f8b1d4c655c50e9db66bb4da605",
+      "sha256": "716b0f9fa5958e1238bf05669717443ad1d1c6855aaa904dc738b89cb8610a22",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "kaldo-iossim-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/kaldo-iossim-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "kaldo-iossim-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/kaldo-iossim-2.5.255-hotreload.6.tar.zst"
       }
     },
     {
       "id": "kaldo-macos",
-      "file": "kaldo-macos-2.5.255-hotreload.5.tar.zst",
+      "file": "kaldo-macos-2.5.255-hotreload.6.tar.zst",
       "extractDir": "kaldo",
-      "bytes": 10438674,
+      "bytes": 10439885,
       "rawBytes": 39288832,
-      "sha256": "eb52c2c23535472cdc8c1073cfa1eb48e5aa313c74f6a7b34735c2d5e836b009",
+      "sha256": "9fbe8c6b67998b385b0589e959c915a93b6076a193e1e814435fba925e1d46ea",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "kaldo-macos-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/kaldo-macos-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "kaldo-macos-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/kaldo-macos-2.5.255-hotreload.6.tar.zst"
       }
     },
     {
       "id": "orc-runtime",
-      "file": "orc-runtime-2.5.255-hotreload.5.tar.zst",
+      "file": "orc-runtime-2.5.255-hotreload.6.tar.zst",
       "extractDir": "orc-runtime",
-      "bytes": 538617,
+      "bytes": 538696,
       "rawBytes": 3178496,
-      "sha256": "7dbad1a3e0c8ac22e251301f27b4f1ff97f7df503a4a009bb1c38fbf61bc63f1",
+      "sha256": "3aa109af73aca986c23acff4d97c620a2cef02bfa227c2281c12f118daf6528c",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "orc-runtime-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/orc-runtime-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "orc-runtime-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/orc-runtime-2.5.255-hotreload.6.tar.zst"
       }
     },
     {
       "id": "cmp-uikit-utils",
-      "file": "cmp-uikit-utils-2.5.255-hotreload.5.tar.zst",
+      "file": "cmp-uikit-utils-2.5.255-hotreload.6.tar.zst",
       "extractDir": "cmp-uikit-utils",
-      "bytes": 64033,
+      "bytes": 64034,
       "rawBytes": 376832,
-      "sha256": "47eff362bdae12f0ec94138099a60ced5dc24daeee1d2417051adb75f46e2ca2",
+      "sha256": "2a8dc32c99219aaf2a26753b361d442a2f618d9a5e69edab0b16aa9570f1260f",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "cmp-uikit-utils-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/cmp-uikit-utils-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "cmp-uikit-utils-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/cmp-uikit-utils-2.5.255-hotreload.6.tar.zst"
       }
     },
     {
       "id": "llvm-tools",
-      "file": "llvm-tools-2.5.255-hotreload.5.tar.zst",
+      "file": "llvm-tools-2.5.255-hotreload.6.tar.zst",
       "extractDir": "llvm-tools",
-      "bytes": 7307069,
+      "bytes": 7307073,
       "rawBytes": 44220416,
-      "sha256": "a8a4d7b67b9a485d8ea16823119735a98b4e3a40be045cd63a31cd5130d94066",
+      "sha256": "86f8aef474ad5dfdbf5f3417dfdfc11acfbf7c1ae2ba0a8dca296a0de0a2bee4",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "llvm-tools-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/llvm-tools-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "llvm-tools-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/llvm-tools-2.5.255-hotreload.6.tar.zst"
       }
     },
     {
       "id": "bundled-klibs",
-      "file": "bundled-klibs-2.5.255-hotreload.5.tar.zst",
+      "file": "bundled-klibs-2.5.255-hotreload.6.tar.zst",
       "extractDir": "bundled-klibs",
-      "bytes": 45446161,
+      "bytes": 45446162,
       "rawBytes": 45768704,
-      "sha256": "c63b239dc6a8f85b6edea8f349999484dfeba3bda5f1cd8aa18aeb935ad82b47",
+      "sha256": "3c549c1345608acdb465a2a1d7b6f043eba1311b898c725a143c6bfb6ad7899f",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.5",
-        "asset": "bundled-klibs-2.5.255-hotreload.5.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/bundled-klibs-2.5.255-hotreload.5.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.6",
+        "asset": "bundled-klibs-2.5.255-hotreload.6.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/bundled-klibs-2.5.255-hotreload.6.tar.zst"
       }
     }
   ],
@@ -203,12 +203,12 @@
       ]
     },
     {
-      "coordinate": "androidx.collection:collection-iossimulatorarm64:1.5.0",
+      "coordinate": "androidx.collection:collection-iossimulatorarm64:1.6.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/collection/collection-iossimulatorarm64/1.5.0/collection-iossimulatorarm64-1.5.0.klib",
-      "file": "collection-iossimulatorarm64-1.5.0.klib",
-      "sha256": "d437ac17cea331234060bb90fe17118e48d58487034c71881fa081c367d7f703",
-      "bytes": 955430,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/collection/collection-iossimulatorarm64/1.6.0/collection-iossimulatorarm64-1.6.0.klib",
+      "file": "collection-iossimulatorarm64-1.6.0.klib",
+      "sha256": "efbc134612872956b916397fe00c2f822623fb8c551692a9f5e50e91dabab9ce",
+      "bytes": 946435,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -273,12 +273,12 @@
       ]
     },
     {
-      "coordinate": "androidx.lifecycle:lifecycle-common-iossimulatorarm64:2.9.4",
+      "coordinate": "androidx.graphics:graphics-shapes-iossimulatorarm64:1.1.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-iossimulatorarm64/2.9.4/lifecycle-common-iossimulatorarm64-2.9.4.klib",
-      "file": "lifecycle-common-iossimulatorarm64-2.9.4.klib",
-      "sha256": "fa46f5eefd87a45a62adc2983595428ebd26f8b79d79a612b327f9a85b007f4f",
-      "bytes": 27239,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/graphics/graphics-shapes-iossimulatorarm64/1.1.0/graphics-shapes-iossimulatorarm64-1.1.0.klib",
+      "file": "graphics-shapes-iossimulatorarm64-1.1.0.klib",
+      "sha256": "e2f76a1fe4766bc986962f22a6124d17ca3c6714acd4ccf54d13088373592f67",
+      "bytes": 177293,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -287,12 +287,12 @@
       ]
     },
     {
-      "coordinate": "androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64:2.9.4",
+      "coordinate": "androidx.lifecycle:lifecycle-common-iossimulatorarm64:2.11.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-compose-iossimulatorarm64/2.9.4/lifecycle-runtime-compose-iossimulatorarm64-2.9.4.klib",
-      "file": "lifecycle-runtime-compose-iossimulatorarm64-2.9.4.klib",
-      "sha256": "918968d0d1d2d21efd56e52c106165d48ecc84c994b32d5c548cc089eb8f4629",
-      "bytes": 47211,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-iossimulatorarm64/2.11.0/lifecycle-common-iossimulatorarm64-2.11.0.klib",
+      "file": "lifecycle-common-iossimulatorarm64-2.11.0.klib",
+      "sha256": "1afdb1ff365f59b4b2679bdac56e7b9aae7c239d9b2b9f10891a03dc93850a37",
+      "bytes": 30732,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -301,12 +301,12 @@
       ]
     },
     {
-      "coordinate": "androidx.lifecycle:lifecycle-runtime-iossimulatorarm64:2.9.4",
+      "coordinate": "androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64:2.11.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-iossimulatorarm64/2.9.4/lifecycle-runtime-iossimulatorarm64-2.9.4.klib",
-      "file": "lifecycle-runtime-iossimulatorarm64-2.9.4.klib",
-      "sha256": "730d3b4a7105b72f63ceb0daa602d1494c074b598deb78a63d5be367d2d34fa8",
-      "bytes": 41929,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-compose-iossimulatorarm64/2.11.0/lifecycle-runtime-compose-iossimulatorarm64-2.11.0.klib",
+      "file": "lifecycle-runtime-compose-iossimulatorarm64-2.11.0.klib",
+      "sha256": "d04b002fbd6b28ad35a22a2b13d603c62d28cedbfc249f30cfdcb8f0fbeadc5a",
+      "bytes": 49601,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -315,12 +315,12 @@
       ]
     },
     {
-      "coordinate": "androidx.lifecycle:lifecycle-viewmodel-iossimulatorarm64:2.9.4",
+      "coordinate": "androidx.lifecycle:lifecycle-runtime-iossimulatorarm64:2.11.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-iossimulatorarm64/2.9.4/lifecycle-viewmodel-iossimulatorarm64-2.9.4.klib",
-      "file": "lifecycle-viewmodel-iossimulatorarm64-2.9.4.klib",
-      "sha256": "fc222c52590a67a914a5fd2d8272e83fc2bbd55fe7aaafedf48d21558b10ad19",
-      "bytes": 56960,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-iossimulatorarm64/2.11.0/lifecycle-runtime-iossimulatorarm64-2.11.0.klib",
+      "file": "lifecycle-runtime-iossimulatorarm64-2.11.0.klib",
+      "sha256": "c07787f86eefbfcb32cc63cef16e1ed9c8baed33b401e6ecc613c521c20f59fa",
+      "bytes": 51799,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -329,12 +329,12 @@
       ]
     },
     {
-      "coordinate": "androidx.lifecycle:lifecycle-viewmodel-savedstate-iossimulatorarm64:2.9.4",
+      "coordinate": "androidx.lifecycle:lifecycle-viewmodel-compose-iossimulatorarm64:2.11.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate-iossimulatorarm64/2.9.4/lifecycle-viewmodel-savedstate-iossimulatorarm64-2.9.4.klib",
-      "file": "lifecycle-viewmodel-savedstate-iossimulatorarm64-2.9.4.klib",
-      "sha256": "58fb02f9cf76d7d9344de038cbfe08356c4f2643ef5567e9c6eef4ce7c3d5226",
-      "bytes": 45880,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-compose-iossimulatorarm64/2.11.0/lifecycle-viewmodel-compose-iossimulatorarm64-2.11.0.klib",
+      "file": "lifecycle-viewmodel-compose-iossimulatorarm64-2.11.0.klib",
+      "sha256": "2e590b2a1be5cf3178aff2ae70d5b90e399f1151e82f8e7c606392384236751e",
+      "bytes": 38661,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -343,12 +343,12 @@
       ]
     },
     {
-      "coordinate": "androidx.navigationevent:navigationevent-iossimulatorarm64:1.0.1",
+      "coordinate": "androidx.lifecycle:lifecycle-viewmodel-iossimulatorarm64:2.11.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-iossimulatorarm64/1.0.1/navigationevent-iossimulatorarm64-1.0.1.klib",
-      "file": "navigationevent-iossimulatorarm64-1.0.1.klib",
-      "sha256": "33e6fc6319246c6e404b0a2dcf40bb5013251ad1123bc518aa0b623b0ba36cd2",
-      "bytes": 70587,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-iossimulatorarm64/2.11.0/lifecycle-viewmodel-iossimulatorarm64-2.11.0.klib",
+      "file": "lifecycle-viewmodel-iossimulatorarm64-2.11.0.klib",
+      "sha256": "9b9bb5a067336fee84fd6bd7b0f74f4ef5c9a6c097927a696b26de8804a602d7",
+      "bytes": 58748,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -357,12 +357,12 @@
       ]
     },
     {
-      "coordinate": "androidx.savedstate:savedstate-compose-iossimulatorarm64:1.3.3",
+      "coordinate": "androidx.lifecycle:lifecycle-viewmodel-savedstate-iossimulatorarm64:2.11.0",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-compose-iossimulatorarm64/1.3.3/savedstate-compose-iossimulatorarm64-1.3.3.klib",
-      "file": "savedstate-compose-iossimulatorarm64-1.3.3.klib",
-      "sha256": "db8feb95575b678163ec4a1221cbd3b047e7c241a378771e3985a9124fd9b1f6",
-      "bytes": 18119,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate-iossimulatorarm64/2.11.0/lifecycle-viewmodel-savedstate-iossimulatorarm64-2.11.0.klib",
+      "file": "lifecycle-viewmodel-savedstate-iossimulatorarm64-2.11.0.klib",
+      "sha256": "8dce7df6c2d8318eec4aa7fe065a693232e7dda3e132d319766bb7ac4a96c8bb",
+      "bytes": 63749,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -371,12 +371,54 @@
       ]
     },
     {
-      "coordinate": "androidx.savedstate:savedstate-iossimulatorarm64:1.3.3",
+      "coordinate": "androidx.navigationevent:navigationevent-compose-iossimulatorarm64:1.1.1",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-iossimulatorarm64/1.3.3/savedstate-iossimulatorarm64-1.3.3.klib",
-      "file": "savedstate-iossimulatorarm64-1.3.3.klib",
-      "sha256": "74d1ef34b801d642ea5d4c8f982e9ae46b6e08e4d28d3f7fa2e518b1fa33f57e",
-      "bytes": 105242,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-compose-iossimulatorarm64/1.1.1/navigationevent-compose-iossimulatorarm64-1.1.1.klib",
+      "file": "navigationevent-compose-iossimulatorarm64-1.1.1.klib",
+      "sha256": "997294b4c9688f3b17d6c0c6c40e3ffd3174f883d6c24545e5ad02fbc61e639c",
+      "bytes": 35069,
+      "license": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ]
+    },
+    {
+      "coordinate": "androidx.navigationevent:navigationevent-iossimulatorarm64:1.1.1",
+      "repository": "google",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-iossimulatorarm64/1.1.1/navigationevent-iossimulatorarm64-1.1.1.klib",
+      "file": "navigationevent-iossimulatorarm64-1.1.1.klib",
+      "sha256": "955996f58150fb0164ad841e41d4181f342d3dd7eafb7103dfa60afcb71afd7e",
+      "bytes": 78020,
+      "license": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ]
+    },
+    {
+      "coordinate": "androidx.savedstate:savedstate-compose-iossimulatorarm64:1.5.0",
+      "repository": "google",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-compose-iossimulatorarm64/1.5.0/savedstate-compose-iossimulatorarm64-1.5.0.klib",
+      "file": "savedstate-compose-iossimulatorarm64-1.5.0.klib",
+      "sha256": "d652676705a4c89bdd594bf14bd4b2784d9220eddf372d466ef2dadaef05394d",
+      "bytes": 20093,
+      "license": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ]
+    },
+    {
+      "coordinate": "androidx.savedstate:savedstate-iossimulatorarm64:1.5.0",
+      "repository": "google",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-iossimulatorarm64/1.5.0/savedstate-iossimulatorarm64-1.5.0.klib",
+      "file": "savedstate-iossimulatorarm64-1.5.0.klib",
+      "sha256": "1364c9dfd2f2af423a667a5900df162b5156ded03a5329149e65f4c95940e634",
+      "bytes": 152740,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -399,6 +441,20 @@
       ]
     },
     {
+      "coordinate": "org.jetbrains.androidx.navigationevent:navigationevent-compose-iossimulatorarm64:1.1.0",
+      "repository": "maven-central",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/androidx/navigationevent/navigationevent-compose-iossimulatorarm64/1.1.0/navigationevent-compose-iossimulatorarm64-1.1.0.klib",
+      "file": "navigationevent-compose-iossimulatorarm64-1.1.0.klib",
+      "sha256": "36da927ef084ab195cd8543258a360b09b9c5609c0f108a0457d370311ad7066",
+      "bytes": 7549,
+      "license": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ]
+    },
+    {
       "coordinate": "org.jetbrains.androidx.savedstate:savedstate-compose-uikitsimarm64:1.3.6",
       "repository": "maven-central",
       "url": "https://repo1.maven.org/maven2/org/jetbrains/androidx/savedstate/savedstate-compose-uikitsimarm64/1.3.6/savedstate-compose-uikitsimarm64-1.3.6.klib",
@@ -413,29 +469,29 @@
       ]
     },
     {
-      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.27.0",
+      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.33.0",
       "repository": "maven-central",
-      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.27.0/atomicfu-iossimulatorarm64-0.27.0.klib",
-      "file": "atomicfu-iossimulatorarm64-0.27.0.klib",
-      "sha256": "3b43eb770a61853c94db366efca58ca0191dee7fcd8dc135d7ac12e02c823bcf",
-      "bytes": 50564,
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.33.0/atomicfu-iossimulatorarm64-0.33.0.klib",
+      "file": "atomicfu-iossimulatorarm64-0.33.0.klib",
+      "sha256": "cbb7b7f068b56ed1d539035b022cb9ebe5d18de27ba5f00b19f8f899bf55ee96",
+      "bytes": 86847,
       "license": [
         {
-          "name": "The Apache Software License, Version 2.0",
+          "name": "Apache-2.0",
           "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
         }
       ]
     },
     {
-      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.27.0:cinterop-interop",
+      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.33.0:cinterop-interop",
       "repository": "maven-central",
-      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.27.0/atomicfu-iossimulatorarm64-0.27.0-cinterop-interop.klib",
-      "file": "atomicfu-iossimulatorarm64-0.27.0-cinterop-interop.klib",
-      "sha256": "ad8f70f3d7f70c25f74393d5c4ca48b22a2a4815ba73896c0d8b7919377234ec",
-      "bytes": 3669,
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.33.0/atomicfu-iossimulatorarm64-0.33.0-cinterop-interop.klib",
+      "file": "atomicfu-iossimulatorarm64-0.33.0-cinterop-interop.klib",
+      "sha256": "e7de2d80b2d7254147750056e317e844bafe0f698c7b983f9bc118d21b74be4f",
+      "bytes": 3590,
       "license": [
         {
-          "name": "The Apache Software License, Version 2.0",
+          "name": "Apache-2.0",
           "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
         }
       ]

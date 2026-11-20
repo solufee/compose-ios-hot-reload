@@ -273,7 +273,7 @@ KOTLIN_DIST=... COMPOSE_PLUGIN_JAR=... KLIBLIST=... scripts/gen-toolchain.sh
 scripts/gen-external-klibs.py --klibs <本机 klibs 清单> --out <WORKSPACE>/external-klibs.json
 
 # 1) 打包：9 个 tar.zst 组件（含 bundled-klibs）+ packaging-manifest.json，每个组件附 LICENSE 和 NOTICE
-OUT_DIR=<WORKSPACE>/toolchain-dist TOOLCHAIN_VERSION=2.5.255-hotreload.5 \
+OUT_DIR=<WORKSPACE>/toolchain-dist TOOLCHAIN_VERSION=2.5.255-hotreload.6 \
 EXTERNAL_KLIBS=<WORKSPACE>/external-klibs.json \
 KOTLIN_DIST=<KOTLIN_NATIVE_DIST> COMPOSE_KLIB_CACHE=<GRADLE_CACHE>/compose-source-jbmain \
 COMPOSE_PLUGIN_JAR=<COMPOSE_PLUGIN_JAR> \
@@ -294,9 +294,9 @@ scripts/publish-toolchain.py --dist-dir <WORKSPACE>/toolchain-dist --manifest <W
   --local-repo <WORKSPACE>/toolchain-repo
 
 # 4) 消费端：下载、校验 sha256、解包、下载公开 klib、本地化，然后 source env.sh 就能用 example-gradle
-scripts/fetch-toolchain.py https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/toolchain.json \
+scripts/fetch-toolchain.py https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/toolchain.json \
   --cache <WORKSPACE>/toolchain-cache
-. <WORKSPACE>/toolchain-cache/2.5.255-hotreload.5/env.sh
+. <WORKSPACE>/toolchain-cache/2.5.255-hotreload.6/env.sh
 ```
 
 - 需要 `zstd`（`brew install zstd`）。`llvmHome` 默认使用 Kotlin/Native 官方依赖 `llvm-21-aarch64-macos-essentials-97`。
@@ -366,7 +366,7 @@ ui 4,953 ms、app 3,919 ms、两个 5,290 ms，与关分类器交替对照 ui +2
   其中约 10.5 s 是完整重新打包；插件 0.1.1 接入了同样的提速，温重启约 17 s（0.1.0 约 50 s）。见 docs/LIMITATIONS.md。
 - plist 里的 `NSNumber` 布尔值桥接：工具链 .5 已修，Compose 的严格 Info.plist 检查可以保持打开（.4 及以前要关闭）。
 - 长会话（3.5 小时 / 上万次重组）后发送段会慢约 1 s，原因未定位。
-- 启动稳定性靠收窄的 `KALDO_HOT_SYMBOLS`（`run.sh` 默认传）：30/30；不收窄时约 20% 在 `Konan_constructors` 前崩溃。
+- 启动：收窄的 `KALDO_HOT_SYMBOLS`（`run.sh` 默认传）30/30。不收窄时的偶发崩溃根因已在 LLVM 补丁里修复（工具链 .6，不收窄也 30/30）；.5 及以前仍要收窄。
 - 预构建工具链从公开仓库的 Release 下载，不需要 token（见 docs/TRYOUT.md）；Release 的 https 下载在首次公开发布时第一次实测，之前用同样的文件在本地镜像上验证过。
 
 ## 故障排查

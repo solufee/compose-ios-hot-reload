@@ -62,6 +62,61 @@ index 725d362ebe4c..65bd679e25ed 100644
    VFS = vfs::getRealFileSystem();
    auto *MMIWP = getAnalysisIfAvailable<MachineModuleInfoWrapperPass>();
    MMI = MMIWP ? &MMIWP->getMMI() : nullptr;
+diff --git a/llvm/lib/ExecutionEngine/Orc/Core.cpp b/llvm/lib/ExecutionEngine/Orc/Core.cpp
+index f47b7ecdcc7b..92af7ba9c532 100644
+--- a/llvm/lib/ExecutionEngine/Orc/Core.cpp
++++ b/llvm/lib/ExecutionEngine/Orc/Core.cpp
+@@ -2985,6 +2985,14 @@
+ 
+     // Skip empty EDUs.
+     if (DG.Dependencies.empty())
++      continue;
++
++    // Kaldo: release builds compile the asserts below out, and a symbol that
++    // MR does not own would dereference end() (an out-of-bounds read that only
++    // sometimes faults). Skip such symbols, and groups made only of them.
++    if (llvm::none_of(DG.Symbols, [&](const SymbolStringPtr &S) {
++          return MR.getSymbols().count(S);
++        }))
+       continue;
+ 
+     auto TmpEDU = std::make_shared<JITDylib::EmissionDepUnit>(TargetJD);
+@@ -2994,9 +3002,9 @@
+       NonOwningSymbolStringPtr NonOwningSymbol(Symbol);
+       assert(!EDUForSymbol.count(NonOwningSymbol) &&
+              "Symbol should not appear in more than one SymbolDependenceGroup");
+-      assert(MR.getSymbols().count(Symbol) &&
+-             "Symbol in DepGroups not in the emitted set");
+       auto NewlyEmittedItr = MR.getSymbols().find(Symbol);
++      if (NewlyEmittedItr == MR.getSymbols().end())
++        continue;
+       EDUInfo.EDU->Symbols[NonOwningSymbol] = NewlyEmittedItr->second;
+       EDUForSymbol[NonOwningSymbol] = EDUInfo.EDU.get();
+     }
+@@ -3044,11 +3052,18 @@
+     if (DG.Dependencies.empty())
+       continue;
+ 
+-    assert(EDUForSymbol.count(NonOwningSymbolStringPtr(*DG.Symbols.begin())) &&
+-           "No EDU for DG");
+-    auto &EDU =
+-        *EDUForSymbol.find(NonOwningSymbolStringPtr(*DG.Symbols.begin()))
+-             ->second;
++    // Kaldo: find the EDU through the first symbol MR owns (see step 1).
++    JITDylib::EmissionDepUnit *EDUPtr = nullptr;
++    for (const auto &Symbol : DG.Symbols) {
++      auto It = EDUForSymbol.find(NonOwningSymbolStringPtr(Symbol));
++      if (It != EDUForSymbol.end()) {
++        EDUPtr = It->second;
++        break;
++      }
++    }
++    if (!EDUPtr)
++      continue;
++    auto &EDU = *EDUPtr;
+ 
+     for (auto &[DepJD, Deps] : DG.Dependencies) {
+       DenseSet<NonOwningSymbolStringPtr> NewDepsForJD;
 diff --git a/llvm/lib/ExecutionEngine/Orc/LLJIT.cpp b/llvm/lib/ExecutionEngine/Orc/LLJIT.cpp
 index 67bb7dd8ad08..0f0fc1b0b144 100644
 --- a/llvm/lib/ExecutionEngine/Orc/LLJIT.cpp
@@ -79,10 +134,10 @@ index 67bb7dd8ad08..0f0fc1b0b144 100644
  
  std::string LLJIT::mangle(StringRef UnmangledName) const {
 diff --git a/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp b/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp
-index d1a6eaf914a7..6a9dc803e9c5 100644
+index d1a6eaf914a7..68236d3d02a5 100644
 --- a/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp
 +++ b/llvm/lib/ExecutionEngine/Orc/LinkGraphLinkingLayer.cpp
-@@ -197,11 +197,12 @@ public:
+@@ -197,11 +197,12 @@
              ExtraSymbols.push_back(KV.first);
        }
  
@@ -100,6 +155,23 @@ index d1a6eaf914a7..6a9dc803e9c5 100644
      }
  
      if (auto Err = MR->notifyResolved(InternedResult))
+@@ -329,8 +330,15 @@
+     }
+ 
+     // Identify non-locally-scoped symbols defined by each block.
++    // Kaldo: only symbols this MR is responsible for. Plugin-synthesized
++    // definitions that were never claimed (e.g. __objc_stubs) are dropped from
++    // the resolution result in notifyResolved, so they must not appear in the
++    // dependence groups either: simplifyDepGroups looks every group symbol up
++    // in MR.getSymbols(). A block left without definitions is treated as an
++    // anonymous block, so its dependencies still reach the blocks using it.
+     for (auto *Sym : G.defined_symbols()) {
+-      if (Sym->getScope() != Scope::Local)
++      if (Sym->getScope() != Scope::Local && Sym->hasName() &&
++          MR->getSymbols().count(Sym->getName()))
+         BlockInfos[&Sym->getBlock()].Defs.insert(Sym);
+     }
+ 
 diff --git a/llvm/lib/ExecutionEngine/Orc/MachOPlatform.cpp b/llvm/lib/ExecutionEngine/Orc/MachOPlatform.cpp
 index 6a5fb51cd6d5..7a6f14a6005a 100644
 --- a/llvm/lib/ExecutionEngine/Orc/MachOPlatform.cpp

@@ -127,6 +127,14 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
      */
     abstract val warmRestart: Property<Boolean>
 
+    /**
+     * Toolchain .6+: after every successful reload the app invalidates all Compose compositions, so call sites with
+     * static arguments run the new code too (`remember` state is kept; at most ~70 ms more per reload).
+     * true (default) or false (`KONAN_HR_FORCE_RECOMPOSE=0`: the .5 behaviour, unchanged call sites may stay stale).
+     * Also `-Pcmp.hotreload.forceRecompose=false`. Takes effect at the next app launch (hotReloadRun or a warm restart).
+     */
+    abstract val forceRecompose: Property<Boolean>
+
     /** Klibs to link in addition to the toolchain's and the modules' Gradle dependencies. */
     abstract val extraKlibs: ConfigurableFileCollection
 
