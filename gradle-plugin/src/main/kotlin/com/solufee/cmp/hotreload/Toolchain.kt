@@ -160,7 +160,7 @@ object ToolchainValidator {
                 if (iv != null && iv > pinned.interfaceVersion)
                     "the toolchain is newer than this plugin; update the plugin to one built for interfaceVersion $iv"
                 else
-                    "rebuild the toolchain from the baselines in README.md and $REGEN",
+                    "rebuild the toolchain from the baselines in DEVELOP.md and $REGEN",
             )
         }
         if (t.layout != null && t.layout != "local") {
@@ -171,17 +171,17 @@ object ToolchainValidator {
             )
         }
         val kotlinFix = "build Kotlin/Native from JetBrains/kotlin@${pinned.kotlinBaseCommit.take(12)} + " +
-            "patches/kotlin-native-hot-reload.patch (README.md, step 2), then $REGEN"
+            "patches/kotlin-native-hot-reload.patch (DEVELOP.md, step 2), then $REGEN"
         eq("kotlin.version", pinned.kotlinVersion, t.kotlinVersion, kotlinFix)
         eq("kotlin.baseCommit", pinned.kotlinBaseCommit, t.kotlinBaseCommit, kotlinFix)
         eq("kotlin.patchSha256", pinned.kotlinPatchSha256, t.kotlinPatchSha256, kotlinFix)
         val composeFix = "build Compose from JetBrains/compose-multiplatform-core@${pinned.composeBaseCommit.take(12)} + " +
-            "patches/compose-multiplatform-core-build.patch (README.md, step 3), then $REGEN"
+            "patches/compose-multiplatform-core-build.patch (DEVELOP.md, step 3), then $REGEN"
         eq("compose.version", pinned.composeVersion, t.composeVersion, composeFix)
         eq("compose.baseCommit", pinned.composeBaseCommit, t.composeBaseCommit, composeFix)
         eq("compose.patchSha256", pinned.composePatchSha256, t.composePatchSha256, composeFix)
         val llvmFix = "build LLVM + libKaldo from llvm-project-kotlin@${pinned.llvmBaseCommit.take(12)} + " +
-            "patches/llvm-kaldo.patch (README.md, step 1), then $REGEN"
+            "patches/llvm-kaldo.patch (DEVELOP.md, step 1), then $REGEN"
         eq("llvm.baseCommit", pinned.llvmBaseCommit, t.llvmBaseCommit, llvmFix)
         eq("llvm.patchSha256", pinned.llvmPatchSha256, t.llvmPatchSha256, llvmFix)
         eq("runtime.target", pinned.target, t.target, "only ${pinned.target} is supported; $REGEN")
@@ -199,8 +199,8 @@ object ToolchainValidator {
         exists("kotlin.kotlincNative", t.kotlincNative, "point toolchainDir at a Kotlin/Native dist built with `./gradlew :kotlin-native:dist`")
         exists("kotlin.compilerJar", t.compilerJar, "the dist is incomplete; rerun `./gradlew :kotlin-native:dist`")
         exists("kotlin.klibDir", t.klibDir, "the dist has no klib/; rerun `./gradlew :kotlin-native:dist distPlatformLibs`")
-        exists("compose.pluginJar", t.composePluginJar, "build the Compose compiler plugin jar (README.md, step 3)")
-        exists("llvm.kaldoIossim", t.kaldoIossim, "build libKaldo.iossim.dylib (README.md, step 1)")
+        exists("compose.pluginJar", t.composePluginJar, "build the Compose compiler plugin jar (DEVELOP.md, step 3)")
+        exists("llvm.kaldoIossim", t.kaldoIossim, "build libKaldo.iossim.dylib (DEVELOP.md, step 1)")
         // INTERFACE §3.3 #7: the manifest must describe the library actually installed.
         t.kaldoIossim?.let(::File)?.takeIf { it.isFile }?.let { lib ->
             val actual = Tools.sha256(lib.readBytes())
@@ -211,7 +211,7 @@ object ToolchainValidator {
                 )
             }
         }
-        exists("compose.klibList", t.klibList, "generate the klib list (README.md, step 3)")
+        exists("compose.klibList", t.klibList, "generate the klib list (DEVELOP.md, step 3)")
         t.klibList?.let(::File)?.takeIf { it.isFile }?.let { list ->
             val missing = list.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
                 .filterNot { File(it).exists() }
@@ -219,7 +219,7 @@ object ToolchainValidator {
                 p += ToolchainProblem(
                     "compose.klibList entries", "every klib in ${list.path} exists",
                     "${missing.size} missing, e.g. ${missing.take(3).joinToString()}",
-                    "rebuild the Compose klibs or regenerate the list (README.md, step 3)",
+                    "rebuild the Compose klibs or regenerate the list (DEVELOP.md, step 3)",
                 )
             }
         }

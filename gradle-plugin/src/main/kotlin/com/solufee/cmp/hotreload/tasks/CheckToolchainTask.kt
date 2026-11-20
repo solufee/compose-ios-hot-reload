@@ -115,9 +115,9 @@ abstract class CheckToolchainTask : DefaultTask() {
         throw GradleException(ToolchainValidator.report(t, manifest, pinned, listOf(problem)))
 
     private fun fixFor(label: String) = when {
-        "orcRuntime" in label -> "copy lib/clang/21/lib/darwin/liborc_rt_iossim.a from the LLVM build (README.md, step 1) " +
+        "orcRuntime" in label -> "copy lib/clang/21/lib/darwin/liborc_rt_iossim.a from the LLVM build (DEVELOP.md, step 1) " +
             "and set cmp.hotreload.orcRuntime, or put it at tools/liborc_rt_iossim_arm64.a"
-        "objcUtilsLib" in label -> "build CMPUIKitUtils.xcodeproj from the Compose fork (README.md, step 3) " +
+        "objcUtilsLib" in label -> "build CMPUIKitUtils.xcodeproj from the Compose fork (DEVELOP.md, step 3) " +
             "and set cmp.hotreload.objcUtilsLib, or put it at tools/libCMPUIKitObjcUtils.a"
         "Info.plist" in label -> "add an Info.plist with CFBundleExecutable and CFBundleIdentifier to the app module"
         else -> "check the module's sourceDir in cmpHotReload { }"

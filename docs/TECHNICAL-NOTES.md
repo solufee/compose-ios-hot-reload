@@ -1,7 +1,7 @@
 # 技术说明：Compose Multiplatform 在 iOS 模拟器上的进程内热重载
 
 本文讲两件事：这套热重载是怎么搭起来的，以及路上几个关键问题的现象、根因、修法和验证结果。
-怎么构建、怎么跑见 [README.md](../README.md)；工具的参数和退出码见 [docs/INTERFACE.md](INTERFACE.md)；
+怎么构建、怎么跑见 [DEVELOP.md](../DEVELOP.md)；工具的参数和退出码见 [docs/INTERFACE.md](INTERFACE.md)；
 现状和限制见 [docs/LIMITATIONS.md](LIMITATIONS.md)。
 
 ## 0. 概要
