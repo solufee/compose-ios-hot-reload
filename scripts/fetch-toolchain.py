@@ -32,16 +32,25 @@ GitHub API (releases/tags/<tag> -> asset id). The https paths are written but
 have not been exercised yet (nothing is published); file:// is what the B6
 end-to-end test uses.
 
+Several fetches of the same version (for example two Gradle builds) run one after the other: each holds
+DIR/<version>/.fetch.lock while it works, and the second one finds the components done. A component is
+unpacked into a fresh directory next to its target and then moved in file by file, so the target never
+holds a half-written file; a failed unpack is retried once (FETCH_EXTRACT_ATTEMPTS, default 2), shows the
+zstd/tar error, leaves the verified archive in .download for the next run, and marks nothing as done.
+
 Exit codes: 0 ok; 2 bad manifest or arguments; 3 size/sha256 mismatch;
 4 missing tool (zstd) or extraction failure; 5 download failure.
 """
 import argparse
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -166,13 +175,111 @@ def download(comp, dest):
     os.replace(tmp, dest)
 
 
-def extract(archive, target):
-    os.makedirs(target, exist_ok=True)
-    z = subprocess.Popen(["zstd", "-dc", archive], stdout=subprocess.PIPE)
-    t = subprocess.run(["tar", "-xf", "-", "-C", target], stdin=z.stdout)
-    z.stdout.close()
-    if z.wait() != 0 or t.returncode != 0:
-        die(4, f"extracting {os.path.basename(archive)} into {target} failed")
+def verified(path, comp):
+    return os.path.isfile(path) and os.path.getsize(path) == comp["bytes"] and sha256(path) == comp["sha256"]
+
+
+def unpack(archive, into):
+    """zstd -dc ARCHIVE | tar -xf - -C INTO. Returns None or the error text of zstd/tar."""
+    with tempfile.TemporaryFile() as zerr, tempfile.TemporaryFile() as terr:
+        z = subprocess.Popen(["zstd", "-dc", archive], stdout=subprocess.PIPE, stderr=zerr)
+        t = subprocess.run(["tar", "-xf", "-", "-C", into], stdin=z.stdout, stderr=terr)
+        z.stdout.close()
+        zrc = z.wait()
+        if zrc == 0 and t.returncode == 0:
+            return None
+        zerr.seek(0)
+        terr.seek(0)
+        text = (zerr.read() + terr.read()).decode("utf-8", "replace").strip().replace("\n", " | ")
+        return f"zstd exit {zrc}, tar exit {t.returncode}" + (f": {text[:400]}" if text else "")
+
+
+def move_tree(src, dst):
+    """Move every file and symlink of SRC into DST (os.replace, same file system), keeping what DST already
+    has from other components; directories take the mode they have in the archive."""
+    modes = []
+    for dirpath, dirnames, filenames in os.walk(src):
+        rel = os.path.relpath(dirpath, src)
+        out = os.path.normpath(os.path.join(dst, rel))
+        if os.path.lexists(out) and not os.path.isdir(out):
+            os.remove(out)
+        os.makedirs(out, exist_ok=True)
+        os.chmod(out, os.stat(out).st_mode | 0o700)  # an earlier run may have left it read-only
+        modes.append((out, os.stat(dirpath).st_mode & 0o7777))
+        os.chmod(dirpath, os.stat(dirpath).st_mode | 0o700)  # so entries can be moved out
+        for name in filenames + [d for d in dirnames if os.path.islink(os.path.join(dirpath, d))]:
+            target = os.path.join(out, name)
+            if os.path.isdir(target) and not os.path.islink(target):
+                shutil.rmtree(target)
+            os.replace(os.path.join(dirpath, name), target)
+    for out, mode in reversed(modes):
+        os.chmod(out, mode | 0o200)
+
+
+def extract(archive, target, comp_id="component"):
+    """Unpack into a fresh directory next to TARGET, then move the files in. Retried once."""
+    attempts = max(1, int(os.environ.get("FETCH_EXTRACT_ATTEMPTS", "2")))
+    parent = os.path.dirname(os.path.abspath(target))
+    os.makedirs(parent, exist_ok=True)
+    error = None
+    for i in range(1, attempts + 1):
+        tmp = tempfile.mkdtemp(prefix=f".extract-{comp_id}-", dir=parent)
+        try:
+            error = unpack(archive, tmp)
+            if error is None:
+                os.makedirs(target, exist_ok=True)
+                move_tree(tmp, target)
+                return
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        if i < attempts:
+            print(f"fetch: {comp_id}: 解包失败，重试（第 {i + 1}/{attempts} 次）/ unpack failed ({error}), "
+                  f"retrying (attempt {i + 1}/{attempts})", file=sys.stderr)
+    die(4, f"{comp_id}: 解包失败 / extracting {os.path.basename(archive)} into {target} failed after "
+           f"{attempts} attempts: {error}\n"
+           f"       已校验的下载文件保留在 {archive}，重新运行会再校验后直接解包 / the verified archive is kept "
+           "there; run again to check it and unpack it again (nothing was marked as done)")
+
+
+def fetch_components(m, root):
+    """Download, verify and unpack every component not yet done (DIR/<version>/.fetched/<id>)."""
+    dl_dir = os.path.join(root, ".download")
+    marks = os.path.join(root, ".fetched")
+    for c in m["components"]:
+        mark = os.path.join(marks, c["id"])
+        if os.path.exists(mark) and open(mark).read().strip() == c["sha256"]:
+            print(f"cached {c['id']}")
+            continue
+        os.makedirs(dl_dir, exist_ok=True)
+        os.makedirs(marks, exist_ok=True)
+        archive = os.path.join(dl_dir, c["file"])
+        if verified(archive, c):
+            print(f"reusing {c['id']} (already downloaded, sha256 ok)")
+        else:
+            download(c, archive)
+        extract(archive, os.path.join(root, c["extractDir"]), c["id"])
+        with open(mark + ".tmp", "w") as f:
+            f.write(c["sha256"])
+        os.replace(mark + ".tmp", mark)
+        os.remove(archive)
+        print(f"fetched {c['id']} (sha256 {c['sha256'][:12]} ok)")
+
+
+@contextlib.contextmanager
+def version_lock(root):
+    """One fetch per toolchain version at a time; leftovers of an interrupted unpack are removed."""
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, ".fetch.lock"), "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"fetch: 另一个 fetch 正在处理 {root}，等待它结束 / another fetch is working on this version, "
+                  "waiting for it", file=sys.stderr)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        for name in os.listdir(root):
+            if name.startswith(".extract-"):
+                shutil.rmtree(os.path.join(root, name), ignore_errors=True)
+        yield
 
 
 def localize(m, root, llvm_home, extra_klibs, auto_cache_from, public_klibs, public_roots):
@@ -273,26 +380,20 @@ def main():
     if shutil.which("zstd") is None and not a.dry_run:
         die(4, "zstd not found on PATH (brew install zstd)")
     root = os.path.join(os.path.abspath(a.cache), m["toolchainVersion"])
-    dl_dir = os.path.join(root, ".download")
-    marks = os.path.join(root, ".fetched")
-    for c in m["components"]:
-        mark = os.path.join(marks, c["id"])
-        done = os.path.exists(mark) and open(mark).read().strip() == c["sha256"]
-        if a.dry_run:
+    if a.dry_run:
+        marks = os.path.join(root, ".fetched")
+        for c in m["components"]:
+            mark = os.path.join(marks, c["id"])
+            done = os.path.exists(mark) and open(mark).read().strip() == c["sha256"]
             print(f"{'cached' if done else 'fetch '} {c['id']:<26} {c['bytes']:>10} B  {c['download']['url']}"
                   f" -> {os.path.join(root, c['extractDir'])}")
-            continue
-        if done:
-            print(f"cached {c['id']}")
-            continue
-        os.makedirs(dl_dir, exist_ok=True)
-        os.makedirs(marks, exist_ok=True)
-        archive = os.path.join(dl_dir, c["file"])
-        download(c, archive)
-        extract(archive, os.path.join(root, c["extractDir"]))
-        open(mark, "w").write(c["sha256"])
-        os.remove(archive)
-        print(f"fetched {c['id']} (sha256 {c['sha256'][:12]} ok)")
+    with (contextlib.nullcontext() if a.dry_run else version_lock(root)):
+        if not a.dry_run:
+            fetch_components(m, root)
+        fetch_rest(a, m, root)
+
+
+def fetch_rest(a, m, root):
     public_klibs, public_roots = [], []
     ext_root = os.path.join(root, "external-klibs")
     for e in m.get("externalKlibs", []):

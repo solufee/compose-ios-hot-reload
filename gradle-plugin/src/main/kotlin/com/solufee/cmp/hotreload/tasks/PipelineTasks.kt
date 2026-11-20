@@ -6,7 +6,9 @@ import com.solufee.cmp.hotreload.HrSettings
 import com.solufee.cmp.hotreload.Launcher
 import com.solufee.cmp.hotreload.Pipeline
 import com.solufee.cmp.hotreload.Tools
+import com.solufee.cmp.hotreload.WarmAdvice
 import com.solufee.cmp.hotreload.WarmRestart
+import com.solufee.cmp.hotreload.hotNote
 import org.gradle.api.GradleException
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
@@ -208,19 +210,23 @@ abstract class ReloadTask : HotReloadTask() {
             }
             if (patchError != null) throw patchError
             logger.lifecycle("compat: HOT (classifier ${r.ms} ms, waited ${waited} ms after the patch was ready)")
+            r.notes.forEach { logger.lifecycle(hotNote(it)) }
             pipeline.sendPatch(patch!!)
             compat.commit()
             return
         }
         // A change that needs a warm restart may also fail to build as a patch; the warm restart rebuilds anyway.
+        // #18: every reason with one actionable sentence, and a summary line at the end.
         logger.lifecycle("compat: WARM (classifier ${r.ms} ms, patch ${if (patchError == null) "built in ${tReady - t0} ms" else "failed"}; not sent)\n" +
-            r.reasons.joinToString("\n"))
+            WarmAdvice.annotate(r.reasons).joinToString("\n"))
         if (noWarm.get() || !s.warmRestart) {
             val why = if (noWarm.get()) "--no-warm" else "cmpHotReload.warmRestart = false"
+            logger.lifecycle(WarmAdvice.summary(r.reasons.size, null, why))
             throw GradleException("CMP hot reload: this change needs a warm restart; patch not sent ($why):\n" + r.reasons.joinToString("\n"))
         }
         logger.lifecycle("compat: warm restart required; rebuilding and relaunching")
-        WarmRestart(s, logger).run(pipeline, tools, daemons, compat)
+        val warmMs = WarmRestart(s, logger).run(pipeline, tools, daemons, compat)
+        logger.lifecycle(WarmAdvice.summary(r.reasons.size, warmMs))
     }
 }
 

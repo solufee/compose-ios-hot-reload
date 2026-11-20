@@ -5,12 +5,12 @@ Commands:
 
   compat-classify.py snapshot --klib <path> --out <json> [--klib-tool <klib>]
                               [--daemon <sock>] [--cache-dir <dir>]
-  compat-classify.py classify --old <json> --new <json> [--json]
+  compat-classify.py classify --old <json> --new <json> [--json] [--force-recompose]
   compat-classify.py baseline --baseline-dir <dir> --module <name>=<klib> ...
                               [--klib-tool <klib>] [--daemon <sock>] [--cache-dir <dir>]
   compat-classify.py check    --baseline-dir <dir> --module <name>=<klib|-> ...
                               [--klib-tool <klib>] [--daemon <sock>] [--cache-dir <dir>]
-                              [--prior-ms <name>=<ms>]
+                              [--prior-ms <name>=<ms>] [--force-recompose]
 
 `baseline` writes <dir>/<name>.json for every module. `check` snapshots every
 module, writes <dir>/<name>.new.json and classifies it against <dir>/<name>.json
@@ -37,8 +37,10 @@ replaced or needs a warm restart. Exit codes:
 Warm reasons (TASK.md Phase 2):
   field-layout         class field added/removed/type/order changed, or a
                        constructor signature changed
-  signature            function signature changed, method added to a class,
-                       or supertypes changed
+  signature            function signature changed where #28 does not allow it
+                       (open/override/interface members, enum/ObjC classes,
+                       @Composable without --force-recompose), method added to
+                       a class that is not final, or supertypes changed
   inline               body of an inline function changed
   suspend              body of a suspend function changed
   top-level-property   top-level property added/removed/type/var-val changed
@@ -46,7 +48,11 @@ Warm reasons (TASK.md Phase 2):
 
 Allowed hot changes (must not be flagged): function bodies of ordinary
 functions, added/removed top-level functions (composables), private method
-changes, added classes.
+changes, added classes; since 0.2.4 (#28) signature changes of top-level
+functions and of final members of final classes/objects (callers are
+recompiled into the patch), and of @Composable functions with
+--force-recompose (the app recomposes fully after a reload), which print
+`NOTE remember-reset <symbol>: ...` (informational, exit code unchanged).
 """
 import argparse
 import hashlib
@@ -167,6 +173,9 @@ def split_type(type_text):
     return type_text.strip()
 
 
+COMPOSABLE = "@androidx/compose/runtime/Composable"
+
+
 def parse_metadata(text):
     classes = {}
     top_props = {}
@@ -244,11 +253,13 @@ def parse_metadata(text):
                 "modality": modality_of(m.group("mods")),
                 "suspend": "suspend" in mods_of(m.group("mods")),
                 "inline": "inline" in mods_of(m.group("mods")),
+                "composable": any(a == COMPOSABLE or a.startswith(COMPOSABLE + "(") for a in annotations),
             }
             if in_class:
                 container["functions"].append(entry)
             else:
-                top_funs[entry["name"]] = entry
+                # Keyed by name and parameters: overloads are separate entries (reasons_for groups them by name).
+                top_funs[f"{entry['name']}({entry['params']})"] = entry
             continue
 
         m = PROP_RE.match(line)
@@ -262,6 +273,8 @@ def parse_metadata(text):
             if in_class:
                 container["properties"].append(entry)
             else:
+                # #20: a top-level const has no storage to initialize (callers inline the value).
+                entry["const"] = "const" in mods_of(m.group("mods"))
                 top_props[entry["name"]] = entry
             continue
 
@@ -438,11 +451,87 @@ def adds_methods_safely(info):
     return info.get("kind") == "object" or (info.get("kind") == "class" and info.get("modality") == "final")
 
 
-def reasons_for(old, new):
+def group_by_name(functions):
+    """{name: {params: entry}}; works for snapshots keyed by name (older script) and by name(params)."""
+    out = {}
+    for f in functions:
+        out.setdefault(f["name"], {})[f["params"]] = f
+    return out
+
+
+def signature_changes(old_fns, new_fns):
+    """{name: [entries]} of functions whose overload set changed: a parameter list added/removed or a return type
+    changed (both sides of such an entry are listed). Names that exist on one side only are not included: adding or
+    removing a whole function is a different kind of change."""
+    a, b = group_by_name(old_fns), group_by_name(new_fns)
+    out = {}
+    for name in sorted(set(a) & set(b)):
+        oa, ob = a[name], b[name]
+        entries = [oa[k] for k in sorted(set(oa) - set(ob))] + [ob[k] for k in sorted(set(ob) - set(oa))]
+        for k in sorted(set(oa) & set(ob)):
+            # @Composable added or removed changes the compiled signature ($composer, $changed) too. An older
+            # baseline has no "composable" field: unknown is not a change.
+            flips = "composable" in oa[k] and oa[k].get("composable") != ob[k].get("composable")
+            if oa[k]["return"] != ob[k]["return"] or flips:
+                entries += [oa[k], ob[k]]
+        if entries:
+            out[name] = entries
+    return out
+
+
+def describe_change(entries, old_fns):
+    olds = [e for e in entries if any(e is f for f in old_fns)]
+    news = [e for e in entries if not any(e is f for f in old_fns)]
+    fmt = lambda es: " | ".join(("@Composable " if e.get("composable") else "") + f"({e['params']}): {e['return']}"
+                                for e in es) or "-"
+    return f"signature changed: {fmt(olds)} -> {fmt(news)}"
+
+
+def judge_signature_change(symbol, entries, detail, force_recompose, add, note, dispatch_ok=True):
+    """Rule of #28 (REPORT §33): every caller of a function whose signature changed is recompiled into the patch,
+    so the new code only calls the new symbol and the old one is no longer called. Hot for top-level functions
+    and final members of final classes/objects; still warm for inline (callers carry the old body), suspend
+    (continuations of running coroutines), open/override members (dispatch tables of live objects; overrides
+    show as `open` in the metadata) and members of classes that are not safe for new methods (enum, ObjC,
+    open/abstract/sealed/interface). A @Composable keeps a restart lambda with the old parameters in the slot
+    table; only a forced full recomposition (forceRecompose, default on) replaces it before it is called."""
+    if any(e["inline"] for e in entries):
+        add("inline", symbol, detail + " (inline function)")
+    elif any(e["suspend"] for e in entries):
+        add("suspend", symbol, detail + " (suspend function)")
+    elif not dispatch_ok or any(e.get("modality") != "final" for e in entries):
+        add("signature", symbol, detail + (" (open/override member)" if dispatch_ok else ""))
+    elif any(e.get("composable") for e in entries):
+        if force_recompose:
+            note("remember-reset", symbol, "composable signature changed; the remember state inside it resets once, "
+                 "callers keep theirs")
+        else:
+            add("signature", symbol, detail + " (@Composable with forceRecompose off)")
+
+
+def calls_final_members_directly(info):
+    """#20: an open, abstract or sealed class (not an enum, interface or ObjC class) calls its final members
+    directly; only open members and overrides go through the vtable."""
+    if info.get("isEnum") or info.get("objcExported") or info.get("kind") != "class":
+        return False
+    if any(t.startswith("platform/") for t in info.get("superTypes", [])):
+        return False
+    return info.get("modality") in ("open", "abstract", "sealed")
+
+
+def old_names(info):
+    return {f["name"] for f in info["functions"]}
+
+
+def reasons_for(old, new, force_recompose=False, notes=None):
     reasons = []
 
     def add(category, symbol, detail):
         reasons.append({"category": category, "symbol": symbol, "detail": detail})
+
+    def note(category, symbol, detail):
+        if notes is not None:
+            notes.append({"category": category, "symbol": symbol, "detail": detail})
 
     old_classes = old["classes"]
     new_classes = new["classes"]
@@ -459,59 +548,97 @@ def reasons_for(old, new):
             add("field-layout", fq, "constructor signature changed")
         if a["properties"] != b["properties"]:
             add("field-layout", fq, field_diff(a["properties"], b["properties"]))
+        safe = adds_methods_safely(a) and adds_methods_safely(b)
+        changed = signature_changes(a["functions"], b["functions"])
         old_fns = {(f["name"], f["params"]): f for f in a["functions"]}
         new_fns = {(f["name"], f["params"]): f for f in b["functions"]}
-        for key in sorted(set(old_fns) - set(new_fns)):
-            f = old_fns[key]
-            if f["visibility"] == "private":
-                continue
-            cat = "inline" if f["inline"] else ("suspend" if f["suspend"] else "signature")
-            add(cat, f"{fq}.{key[0]}", "method removed")
-        for key in sorted(set(new_fns) - set(old_fns)):
-            f = new_fns[key]
-            if f["visibility"] == "private":
-                continue
-            # A final member added to a final class or an object: no vtable/itable change. Overrides show
-            # up as "open" in the metadata and stay below.
-            if adds_methods_safely(b) and f.get("modality") == "final" and not f["inline"] and not f["suspend"]:
-                continue
-            cat = "inline" if f["inline"] else ("suspend" if f["suspend"] else "signature")
-            add(cat, f"{fq}.{key[0]}", "method added to existing class")
-        for key in sorted(set(old_fns) & set(new_fns)):
-            a_fn, b_fn = old_fns[key], new_fns[key]
-            if a_fn["visibility"] == "private" and b_fn["visibility"] == "private":
-                continue
-            if a_fn["return"] != b_fn["return"]:
-                cat = "inline" if (a_fn["inline"] or b_fn["inline"]) else (
-                    "suspend" if (a_fn["suspend"] or b_fn["suspend"]) else "signature")
-                add(cat, f"{fq}.{key[0]}", f"return type {a_fn['return']} -> {b_fn['return']}")
+        if safe:
+            # Final class / object / companion (#28): a changed signature of a final member is hot, like a
+            # top-level function; overrides (shown as open), inline and suspend members stay warm.
+            for name, entries in changed.items():
+                if all(e["visibility"] == "private" for e in entries) and not any(e.get("composable") for e in entries):
+                    continue
+                judge_signature_change(f"{fq}.{name}", entries, describe_change(entries, a["functions"]),
+                                       force_recompose, add, note)
+            changed_names = set(changed)
+            for key in sorted(set(new_fns) - set(old_fns)):
+                f = new_fns[key]
+                if f["visibility"] == "private" or key[0] in changed_names:
+                    continue
+                # A final member added to a final class or an object: no vtable/itable change. #20: also an inline
+                # or suspend one - nothing outside the patch can have inlined it or be suspended in it.
+                if f.get("modality") == "final":
+                    continue
+                cat = "inline" if f["inline"] else ("suspend" if f["suspend"] else "signature")
+                add(cat, f"{fq}.{key[0]}", "method added to existing class")
+            for key in sorted(set(old_fns) - set(new_fns)):
+                f = old_fns[key]
+                if f["visibility"] == "private" or key[0] in changed_names:
+                    continue
+                # A final member removed: its callers changed too and are in the patch.
+                if f.get("modality") == "final" and not f["inline"] and not f["suspend"]:
+                    continue
+                cat = "inline" if f["inline"] else ("suspend" if f["suspend"] else "signature")
+                add(cat, f"{fq}.{key[0]}", "method removed")
+        else:
+            final_direct = calls_final_members_directly(b) and calls_final_members_directly(a)
+            for key in sorted(set(old_fns) - set(new_fns)):
+                f = old_fns[key]
+                if f["visibility"] == "private":
+                    continue
+                cat = "inline" if f["inline"] else ("suspend" if f["suspend"] else "signature")
+                add(cat, f"{fq}.{key[0]}", "method removed")
+            for key in sorted(set(new_fns) - set(old_fns)):
+                f = new_fns[key]
+                if f["visibility"] == "private":
+                    continue
+                # #20: a final member added to an open/abstract/sealed class is called directly, not through the vtable.
+                if final_direct and f.get("modality") == "final" and not f["inline"] and not f["suspend"] and key[0] not in old_names(a):
+                    continue
+                cat = "inline" if f["inline"] else ("suspend" if f["suspend"] else "signature")
+                add(cat, f"{fq}.{key[0]}", "method added to existing class")
+            for key in sorted(set(old_fns) & set(new_fns)):
+                a_fn, b_fn = old_fns[key], new_fns[key]
+                if a_fn["visibility"] == "private" and b_fn["visibility"] == "private":
+                    continue
+                if a_fn["return"] != b_fn["return"]:
+                    cat = "inline" if (a_fn["inline"] or b_fn["inline"]) else (
+                        "suspend" if (a_fn["suspend"] or b_fn["suspend"]) else "signature")
+                    add(cat, f"{fq}.{key[0]}", f"return type {a_fn['return']} -> {b_fn['return']}")
         if a.get("other", []) != b.get("other", []):
             add("class-shape", fq, "unclassified class member changed")
 
     old_props, new_props = old["topProperties"], new["topProperties"]
+    strip = lambda p: {k: v for k, v in p.items() if k != "const"}   # older baselines have no "const"
     for name in sorted(set(old_props) | set(new_props)):
         if name not in old_props:
+            if new_props[name].get("const"):
+                continue   # #20: a const has no storage to initialize
             add("top-level-property", name, "top-level property added")
         elif name not in new_props:
+            if old_props[name].get("const"):
+                continue
             add("top-level-property", name, "top-level property removed")
-        elif old_props[name] != new_props[name]:
+        elif strip(old_props[name]) != strip(new_props[name]):
             add("top-level-property", name,
                 f"type/mutability changed: {old_props[name]} -> {new_props[name]}")
 
-    old_funs, new_funs = old["topFunctions"], new["topFunctions"]
-    for name in sorted(set(old_funs) & set(new_funs)):
-        a, b = old_funs[name], new_funs[name]
-        if a["visibility"] == "private" and b["visibility"] == "private":
+    old_funs, new_funs = list(old["topFunctions"].values()), list(new["topFunctions"].values())
+    # Top-level functions (#28): a changed parameter list or return type is hot (callers are in the patch);
+    # inline, suspend, and @Composable without forceRecompose stay warm.
+    for name, entries in signature_changes(old_funs, new_funs).items():
+        if all(e["visibility"] == "private" for e in entries) and not any(e.get("composable") for e in entries):
             continue
-        if (a["params"], a["return"]) != (b["params"], b["return"]):
-            cat = "inline" if (a["inline"] or b["inline"]) else (
-                "suspend" if (a["suspend"] or b["suspend"]) else "signature")
-            add(cat, name, f"signature changed: {a['params']} -> {b['params']}")
-        elif a["visibility"] != b["visibility"]:
-            # internal <-> public keeps the symbol; anything involving private changes its linkage.
-            if {a["visibility"], b["visibility"]} <= {"internal", "public"}:
-                continue
-            add("signature", name, "visibility changed")
+        judge_signature_change(name, entries, describe_change(entries, old_funs), force_recompose, add, note)
+    old_by, new_by = group_by_name(old_funs), group_by_name(new_funs)
+    for name in sorted(set(old_by) & set(new_by)):
+        for params in sorted(set(old_by[name]) & set(new_by[name])):
+            a, b = old_by[name][params], new_by[name][params]
+            if a["visibility"] != b["visibility"]:
+                # internal <-> public keeps the symbol; anything involving private changes its linkage.
+                if {a["visibility"], b["visibility"]} <= {"internal", "public"}:
+                    continue
+                add("signature", name, "visibility changed")
 
     old_aliases, old_other = split_typealiases(old.get("topOther", []))
     new_aliases, new_other = split_typealiases(new.get("topOther", []))
@@ -599,7 +726,7 @@ def cmd_check(args):
     for v in args.prior_ms or []:
         name, _, ms = v.partition("=")
         prior[name] = int(ms)
-    times, modes, all_reasons = {}, {}, []
+    times, modes, all_reasons, notes = {}, {}, [], []
     classify_ms = 0
     for name, klib in parse_modules(args.module):
         base_path = os.path.join(args.baseline_dir, name + ".json")
@@ -619,12 +746,13 @@ def cmd_check(args):
         modes[name] = mode
         t1 = now_ms()
         if mode != "same":
-            all_reasons += reasons_for(old, new)
+            all_reasons += reasons_for(old, new, args.force_recompose, notes)
         classify_ms += now_ms() - t1
     if not all_reasons:
         print("HOT no incompatible change")
     for r in all_reasons:
         print(f"WARM {r['category']} {r['symbol']}: {r['detail']}")
+    print_notes(notes)
     total = now_ms() - t_start + sum(prior.values())
     extra = " ".join(f"{n}={m}" for n, m in modes.items())
     print(f"compat: timing ms={total} ui_snapshot={times.get('ui', 0)} app_snapshot={times.get('app', 0)} "
@@ -632,10 +760,16 @@ def cmd_check(args):
     return 3 if all_reasons else 0
 
 
+def print_notes(notes):
+    for n in notes:
+        print(f"NOTE {n['category']} {n['symbol']}: {n['detail']}")
+
+
 def cmd_classify(args):
-    reasons = reasons_for(load(args.old), load(args.new))
+    notes = []
+    reasons = reasons_for(load(args.old), load(args.new), args.force_recompose, notes)
     if args.json:
-        json.dump({"verdict": "warm-restart" if reasons else "hot", "reasons": reasons},
+        json.dump({"verdict": "warm-restart" if reasons else "hot", "reasons": reasons, "notes": notes},
                   sys.stdout, indent=1)
         sys.stdout.write("\n")
     else:
@@ -643,6 +777,7 @@ def cmd_classify(args):
             print("HOT no incompatible change")
         for r in reasons:
             print(f"WARM {r['category']} {r['symbol']}: {r['detail']}")
+        print_notes(notes)
     return 3 if reasons else 0
 
 
@@ -665,11 +800,15 @@ def main(argv):
         xp.add_argument("--cache-dir")
         if name == "check":
             xp.add_argument("--prior-ms", action="append")
+            xp.add_argument("--force-recompose", action="store_true",
+                            help="the running app recomposes fully after each reload (KONAN_HR_FORCE_RECOMPOSE=1)")
         xp.set_defaults(func=func)
     cp = sub.add_parser("classify")
     cp.add_argument("--old", required=True)
     cp.add_argument("--new", required=True)
     cp.add_argument("--json", action="store_true")
+    cp.add_argument("--force-recompose", action="store_true",
+                    help="the running app recomposes fully after each reload (KONAN_HR_FORCE_RECOMPOSE=1)")
     cp.set_defaults(func=cmd_classify)
     args = ap.parse_args(argv)
     try:

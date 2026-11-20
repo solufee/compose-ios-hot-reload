@@ -82,6 +82,10 @@ $ git -C /tmp/verify-compose apply --check patches/compose-multiplatform-core-bu
 （无输出，退出码 0）
 ```
 
+Issue #27（2026-11-20，`kotlin-native-hot-reload.patch` sha256 `4f560d86…`：runtime 的 `HotReload.cpp`/`HotReloadInternal.hpp` 把 reload 放到主队列上执行；`compose-multiplatform-core-build.patch` sha256 `42e1eba6…`：`ui` 的 `FrameChoreographer.ios.kt` 帧入口和 `HotReloadRecompose.ios.kt` 回调里当场失效）：分别在 JetBrains/kotlin 的基线 `8e53ee99fbc0` 和 compose-multiplatform-core 的官方标签 `v1.13.0-rc01`（`f39822e6a77e`）上用临时 index 检查，`git apply --cached --check` 都通过；按补丁打出来的这几个文件和工作树逐字节相同（`patches/apply-check.log`）。
+
+Issue #5（2026-11-20，`llvm-kaldo.patch` sha256 `3e0dafa3…`，`Kaldo.cpp`/`Kaldo.hpp`：reload 时摘掉上一层 JITDylib 的宿主符号生成器，加 `KALDO_RELOAD_TIMING`）：在 gabryon99/llvm-project-kotlin 的基线 `2f8844c2b355` 上用临时 index 检查，`git apply --cached --check` 通过。
+
 工具链 .6（2026-11-20，`compose-multiplatform-core-build.patch` sha256 `335d7a32…`，新增 `ui` 的强制重组）：在 JetBrains/compose-multiplatform-core 的基线 `ee243c321ddf` 上用临时 index 检查，`git apply --cached --check` 通过（`patches/apply-check.log`）。
 
 工具链 .7（2026-11-20，补丁不变，仍是 `335d7a32…`）：在官方标签 `v1.13.0-rc01`（`f39822e6a77e`，提交号经 GitHub API 核对）上用临时 index 检查，`git apply --cached --check` 退出码 0；在 `v1.13.0-beta02`（`7649a819edb3`）上 `ComposeSceneMediator.ios.kt` 那一段打不上（退出码 1，beta02 还没有 #3597 的延迟 `setContent`），所以基线选 rc01（`patches/apply-check.log`）。

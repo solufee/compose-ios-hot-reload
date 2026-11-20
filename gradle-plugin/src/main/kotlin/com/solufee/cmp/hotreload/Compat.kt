@@ -40,11 +40,26 @@ fun externalKlibReasons(changed: List<String>): List<String> =
 /**
  * Warm-restart reasons for expect/actual pairs added or removed between two sets of `expect` declarations
  * ("kind name", from [expectDeclarations]). Only the presence of a pair is judged here; a changed signature
- * is caught by the classifier (compat-classify.py) like any other signature change.
+ * is judged by the classifier (compat-classify.py) like any other signature change. An `expect fun` pair is
+ * a plain function after actualization: adding or removing one is hot (#28); classes, objects, interfaces,
+ * properties and typealiases stay warm.
  */
 fun expectActualReasons(before: Set<String>, now: Set<String>): List<String> =
-    (now - before).sorted().map { "WARM expect-actual ${it.substringAfter(' ')}: expect ${it.substringBefore(' ')} added" } +
-        (before - now).sorted().map { "WARM expect-actual ${it.substringAfter(' ')}: expect ${it.substringBefore(' ')} removed" }
+    (now - before).filterNot { it.startsWith("fun ") }.sorted()
+        .map { "WARM expect-actual ${it.substringAfter(' ')}: expect ${it.substringBefore(' ')} added" } +
+        (before - now).filterNot { it.startsWith("fun ") }.sorted()
+            .map { "WARM expect-actual ${it.substringAfter(' ')}: expect ${it.substringBefore(' ')} removed" }
+
+/**
+ * A classifier note shown under the HOT line, e.g. `NOTE remember-reset Screen: ...` (#28: a @Composable whose
+ * signature changed is hot with forceRecompose, but its own remember state starts over once).
+ */
+fun hotNote(line: String): String {
+    val m = Regex("^NOTE (\\S+) (.+?): (.*)$").find(line.trim()) ?: return "compat: $line"
+    val (category, symbol, detail) = m.destructured
+    return if (category == "remember-reset") "compat: note: $symbol changed its signature; the remember state inside $symbol resets once (its callers keep theirs)"
+    else "compat: note: $category $symbol: $detail"
+}
 
 private val MODS = "(?:(?:public|internal|private|protected|open|abstract|sealed|data|inline|value|annotation|enum|inner|fun|suspend|external|infix|operator|tailrec)\\s+)*"
 private val EXPECT_DECL = Regex("""(?m)^\s*(?:@[\w.]+(?:\([^)]*\))?\s+)*""" + MODS + """expect\s+""" + MODS +
@@ -59,7 +74,8 @@ fun expectDeclarations(dir: File): Set<String> =
 class Compat(private val s: HrSettings, private val logger: Logger, private val pipeline: Pipeline, private val tools: Tools) {
     enum class Verdict { HOT, WARM }
 
-    data class Result(val verdict: Verdict, val reasons: List<String>, val ms: Long)
+    /** [notes]: `NOTE <category> <symbol>: <detail>` lines of the classifier (e.g. remember-reset on a HOT verdict). */
+    data class Result(val verdict: Verdict, val reasons: List<String>, val ms: Long, val notes: List<String> = emptyList())
 
     private val dir get() = s.compatDir
     private fun base(m: HrModule) = File(dir, "${m.label}.json")
@@ -97,15 +113,17 @@ class Compat(private val s: HrSettings, private val logger: Logger, private val 
         val t0 = System.currentTimeMillis()
         val app = if (appSourcesChanged()) pipeline.compileAppKlib(daemons).path else "-"
         val modules = s.libraries.map { it.label to s.klibOf(it).path } + (s.app.label to app)
-        val r = Proc.run(command("check", modules, daemons), env = env(), echo = false)
+        val force = if (s.runningForceRecompose) listOf("--force-recompose") else emptyList()
+        val r = Proc.run(command("check", modules, daemons) + force, env = env(), echo = false)
         val ms = System.currentTimeMillis() - t0
         // An expect/actual pair added or removed: warm restart (Kotlin Multiplatform, 0.2.0).
         val expectReasons = (if (expectFile.isFile) {
             expectActualReasons(expectFile.readLines().filter { it.isNotBlank() }.toSet(), expectDeclarations())
         } else emptyList()) + resourceReasons(pipeline.resourceChanges()) + externalKlibReasons(pipeline.externalKlibChanges())
+        val notes = r.output.lines().filter { it.startsWith("NOTE ") }
         when (r.exit) {
-            0 -> if (expectReasons.isEmpty()) Result(Verdict.HOT, emptyList(), ms) else Result(Verdict.WARM, expectReasons, ms)
-            3 -> Result(Verdict.WARM, r.output.lines().filter { it.startsWith("WARM ") } + expectReasons, ms)
+            0 -> if (expectReasons.isEmpty()) Result(Verdict.HOT, emptyList(), ms, notes) else Result(Verdict.WARM, expectReasons, ms, notes)
+            3 -> Result(Verdict.WARM, r.output.lines().filter { it.startsWith("WARM ") } + expectReasons, ms, notes)
             else -> throw GradleException(
                 "CMP hot reload: compat-classify check failed (exit ${r.exit}); patch not sent:\n${r.output.trim().takeLast(3000)}",
             )

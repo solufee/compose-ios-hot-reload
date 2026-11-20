@@ -21,6 +21,9 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         "KONAN_HOT_RELOAD_PORT" to s.port.toString(),
         // Toolchain .6+: full recomposition after each reload (INTERFACE §7); passed explicitly either way.
         "KONAN_HR_FORCE_RECOMPOSE" to if (s.forceRecompose) "1" else "0",
+        // Toolchain .8+ (#27): every reload runs on the main queue; not taken within this time = not applied (INTERFACE §7).
+        "KONAN_HR_RELOAD_ON_MAIN" to "1",
+        "KONAN_HR_MAIN_WAIT_MS" to s.mainWaitMs.toString(),
     ).mapKeys { "SIMCTL_CHILD_${it.key}" }
 
     /**
@@ -90,6 +93,8 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
                 }
                 if (ready && pid != null) {
                     val sec = (System.nanoTime() - t0) / 1e9
+                    // What the running app was started with: the classifier needs it (#28, @Composable signatures).
+                    s.launchedForceRecomposeFile.apply { parentFile.mkdirs() }.writeText(if (s.forceRecompose) "1" else "0")
                     logger.lifecycle("CMP hot reload: app started (attempt $attempt, pid $pid, %.1f s, port ${s.port}, log ${log.path})".format(sec))
                     return Started(attempt, pid, sec)
                 }

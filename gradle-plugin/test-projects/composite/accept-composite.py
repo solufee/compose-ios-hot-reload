@@ -7,8 +7,8 @@ build build-logic) and the included build lib-build (:util, :core with expect/ac
 
   A  includedModule("lib-build", ":util"/":core") declared (lib-build modules compiled from source):
      release baseline, package, run (EH, SELREF), screen; HOT in :app, :feature (body and actual), :core (body and
-     actual) and :util (reached only through :core), all on screen without taps; WARM for core's expect signature,
-     adding/removing an expect/actual pair in core and core's string resource; a Dialog updates while open; release
+     actual) and :util (reached only through :core), all on screen without taps; HOT (0.2.4, #28) for core's expect
+     signature and adding/removing an expect/actual fun pair; WARM for an expect class pair and core's string resource; a Dialog updates while open; release
      check by __text digest (daemons still running).
   B  without the declarations: lib-build's own build compiles core/util to klibs, the app links them (the plugin
      prints how to hot reload them), core's resources are bundled, a change in core warm-restarts the app.
@@ -215,7 +215,7 @@ def deps_listing():
 
 # ---------------------------------------------------------------- 0. fixture copy
 say(f"# composite build acceptance, {time.strftime('%F %T')}, simulator {a.udid}, ports {a.port} (app) / {a.demo_port} (lib-build demo)")
-say(f"# plugin {a.plugin_version} from {a.plugin_repo}")
+say(f"# plugin {a.plugin_version} from " + ("a local Maven directory" if a.plugin_repo.startswith("file:") else a.plugin_repo))
 if os.path.exists(WORK):
     shutil.rmtree(WORK)
 shutil.copytree(HERE, P, ignore=shutil.ignore_patterns("accept-composite.py", "evidence", "build", ".gradle", ".kotlin", ".hr", "launch.log", "local.properties"))
@@ -283,16 +283,21 @@ def phase_a():
     edit("core_ios", '"core-ios-1"', '"core-ios-2"')
     reload(APP, "included lib-build:core iosMain actual", "HOT", "core-ios-2")
 
-    say("## A2. warm changes in the included build")
+    say("## A2. expect/actual and resource changes in the included build")
     edit("core", "expect fun coreTag(): String", "expect fun coreTag(n: Int = 0): String")
     edit("core_ios", 'actual fun coreTag(): String = "core-ios-2"', 'actual fun coreTag(n: Int): String = "core-ios-3"')
-    reload(APP, "included core expect/actual signature", "WARM", "core-ios-3", reason=r"coreTag")
+    reload(APP, "included core expect/actual signature (#28)", "HOT", "core-ios-3")
     edit("core", "fun coreLine()", "expect fun coreFlavor(): String\n\nfun coreLine()")
     edit("core_ios", "actual fun coreTag", 'actual fun coreFlavor(): String = "sim"\n\nactual fun coreTag')
-    reload(APP, "add an expect/actual pair in included core", "WARM", "core-ios-3", reason=r"^WARM expect-actual coreFlavor: expect fun added")
+    edit("core_ios", '"core-ios-3"', '"core-ios-4 " + coreFlavor()')
+    reload(APP, "add an expect/actual fun pair in included core and use it (#28)", "HOT", "core-ios-4 sim")
     edit("core", "expect fun coreFlavor(): String\n\n", "")
     edit("core_ios", 'actual fun coreFlavor(): String = "sim"\n\n', "")
-    reload(APP, "remove the expect/actual pair in included core", "WARM", "core-ios-3", reason=r"^WARM expect-actual coreFlavor: expect fun removed")
+    edit("core_ios", '"core-ios-4 " + coreFlavor()', '"core-ios-5"')
+    reload(APP, "remove the expect/actual fun pair in included core (#28)", "HOT", "core-ios-5")
+    edit("core", "fun coreLine()", "expect class CoreClock() {\n    fun now(): Long\n}\n\nfun coreLine()")
+    edit("core_ios", "actual fun coreTag", "actual class CoreClock actual constructor() {\n    actual fun now(): Long = 7L\n}\n\nactual fun coreTag")
+    reload(APP, "add an expect/actual class pair in included core", "WARM", "core-ios-5", reason=r"^WARM expect-actual CoreClock: expect class added")
     edit("core_res", "Core title v1", "Core title v2")
     reload(APP, "included core string resource", "WARM", "Core: Core title v2", reason=r"^WARM compose-resources")
 

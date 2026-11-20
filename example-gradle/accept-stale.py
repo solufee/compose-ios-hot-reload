@@ -59,7 +59,7 @@ UI = os.path.join(SRC, "ui/stale.kt")
 LOG = os.path.join(HERE, "launch.log")
 CRASH_RE = re.compile(r"SIGSEGV|EXC_BAD|Uncaught|Terminating app|Hot-Reload failed|HOOK class=")
 FORCE_RE = re.compile(r"HR forceRecompose recomposers=(\d+) compositions=(\d+) invalidated=(\d+) "
-                      r"recomposed=(\d+) deferred=(\d+) dispatchMs=(\d+) forceMs=(\d+) "
+                      r"recomposed=(\d+) deferred=(\d+)(?: via=\w+)? dispatchMs=(\d+) forceMs=(\d+) "
                       r"frameMs=(\w+) totalMs=(\d+) frameEpochMs=(\d+)")
 STATE_RE = re.compile(r"STALE_STATE page=(\d+) plain=(\d+) saved=(\d+) popup=(\w+) dialog=(\w+) backs=(\d+)")
 

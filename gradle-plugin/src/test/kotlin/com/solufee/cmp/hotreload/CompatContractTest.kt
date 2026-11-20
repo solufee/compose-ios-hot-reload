@@ -38,6 +38,38 @@ class CompatContractTest {
         assertNotEquals(3, r.exit, r.output)
     }
 
+    private fun snap(name: String, topFunctions: String): File = File(tmp, "$name.json").apply {
+        writeText("""{"kind": "cmp-hot-reload-compat", "version": 1, "module": "m", "klib": "m.klib", "classes": {},
+            "topProperties": {}, "topFunctions": {$topFunctions}, "topOther": [], "bodies": {}, "klibSha256": "$name"}""")
+    }
+
+    private fun fn(name: String, params: String, composable: Boolean = false, key: String = "$name($params)") =
+        """"$key": {"name": "$name", "params": "$params", "return": "kotlin/Unit", "visibility": "public", "modality": "final",
+            "suspend": false, "inline": false, "composable": $composable}"""
+
+    @Test
+    fun `#28 - a changed composable signature is hot only with --force-recompose, and prints a remember-reset note`() {
+        val old = snap("c0", fn("Badge", "text: kotlin/String", composable = true))
+        val new = snap("c1", fn("Badge", "text: kotlin/String, rim: kotlin/String /* = ... */", composable = true))
+        val off = classify(old, new)
+        assertEquals(3, off.exit, off.output)
+        assertTrue(off.output.contains("WARM signature Badge: ") && off.output.contains("forceRecompose off"), off.output)
+        val on = Proc.run(listOf("python3", "-I", tools.compatClassify.path, "classify", "--old", old.path, "--new", new.path, "--force-recompose"), echo = false)
+        assertEquals(0, on.exit, on.output)
+        val note = on.output.lines().single { it.startsWith("NOTE ") }
+        assertTrue(note.startsWith("NOTE remember-reset Badge: "), note)
+        assertEquals("compat: note: Badge changed its signature; the remember state inside Badge resets once (its callers keep theirs)", hotNote(note))
+    }
+
+    @Test
+    fun `#28 - a plain top-level signature change is hot, also against a baseline keyed by name (older script)`() {
+        val old = snap("p0", fn("uiLabel", "", key = "uiLabel"))
+        val new = snap("p1", fn("uiLabel", "suffix: kotlin/String /* = ... */"))
+        val r = classify(old, new)
+        assertEquals(0, r.exit, r.output)
+        assertTrue(r.output.lines().none { it.startsWith("NOTE ") }, r.output)
+    }
+
     @Test
     fun `hr-state json is parsed per INTERFACE 10_3`() {
         assertEquals(WarmRestart.State(2, 3), WarmRestart.parseState("""{"page":2,"count":3}"""))

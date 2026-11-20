@@ -175,6 +175,14 @@ libKaldo 的 `KotlinSymbolExternalizer` plugin 对每个“热”函数做两件
 外部化 plugin 原先对每个符号都扫一遍整张图的边（符号数 × 边数），十一万个函数时跑 10 分钟以上也没结束。
 改成用一个 `DenseMap<Symbol*, Symbol*>` 先算出每个目标、再遍历一次边之后，几秒内完成。
 
+**reload JITDylib 的链接顺序与符号生成器**（2026-11-20，Issue #5）。每次 reload 新建一个 JITDylib `reload<N>`，链接顺序是
+它自己 → 之前所有 `reload<k>`（从新到旧）→ StubsJD → MainJD；它自己挂两个定义生成器（`MachOHostDataSymbolGenerator`、
+`DynamicLibrarySearchGenerator`），用来在链接时解析宿主进程里的数据和函数。ORC 查找时对链接顺序里的每个 JITDylib，
+先查已有定义，查不到就运行它的生成器。补丁的外部引用大多定义在 MainJD（JIT 出来的主程序和 Compose 代码），宿主和 dlsym
+都找不到，所以以前每次 reload 都要把之前每一层的两个生成器各跑一遍：链接耗时每多一次 reload 加约 10 ms（55 次后 553 ms）。
+这两个生成器只在本层自己那次链接时有用，下一次 reload 开始时把上一层的摘掉（`Kaldo.cpp` `reloadObjects`；归档输入的
+`StaticLibraryDefinitionGenerator` 保留），链接耗时稳定在约 15 ms。`KALDO_RELOAD_TIMING=1` 打印分阶段耗时（INTERFACE §7）。
+
 ### 1.6 Compose 怎么看到新代码
 
 上游 runtime 只提供“重载成功”的回调，没有 Compose 重组桥。Compose runtime 里按 group key 失效的接口
@@ -197,8 +205,17 @@ Compose runtime 用的是 Google 发布的 `androidx.compose.runtime:runtime` kl
 1. 每个场景组合（根组合和 Dialog/Popup 层，都经过 `ComposeSceneMediator.setContent`）第一次组合时调用
    `Composer.collectParameterInformation()`。之后这个 composer 给**每个**可重启的 group 保留重组作用域，而不只是读过 state 的那些；
    在它下面创建的组合（层、LazyColumn 的条目、SubcomposeLayout）通过 `CompositionContext` 继承这一设置。
-2. runtime 在 reload 成功后调用 `HotReload.addReloadSuccessHandler` 注册的回调（在 reload 线程上）。回调把工作派到主线程
-   （`Dispatchers.Main`，主线程也是跑 Recomposer 的线程，所以不会落在一次 composition 或 apply 的中间）；在主线程上通过
+2. runtime 在 reload 成功后调用 `HotReload.addReloadSuccessHandler` 注册的回调。回调先记下「有待处理的强制失效」，然后：
+   - .8 起 Kotlin/Native runtime 把整个 reload 放到主队列上执行（`HotReload.cpp` 的 `ReloadFromServer`，`dispatch_async_f` 到主队列，
+     监听线程等它做完），所以 reload 落在两次主 run loop 之间，不会打断一帧；回调也在主线程上，当场失效（`via=reload`）。
+     原因（Issue #27，REPORT §34）：reload 让 Kotlin 线程停在最近的安全点，可能在一帧的重组中途；恢复后这一帧接着跑新代码，
+     早于回调，可能调用从旧代码迁移过来、捕获的参数和新函数对不上的重启 lambda（签名变了时，REPORT §33），帧入口拦不住已经开始的帧。
+     reload 本身不变：仍然先让其他所有 Kotlin 线程（`Dispatchers.Default`/IO 上的协程等）停住，换代码、迁移实例后再恢复（stop-the-world）。
+     主队列在 `KONAN_HR_MAIN_WAIT_MS`（默认 2 s）内没接手时补丁不应用，打印 `HR reload: NOT applied: …`，下一次热重载再发。
+   - 回调不在主线程（`KONAN_HR_RELOAD_ON_MAIN=0` 时在监听线程上 reload），或者有组合正忙时，
+     主线程上谁先到谁做：iOS 每个窗口的重组帧入口（`FrameChoreographer.performRecomposerFrameIfNeeded`，`via=frame`）或回调派过去的
+     任务（`via=task`）。
+   主线程也是跑 Recomposer 的线程，所以几条路都不会落在一次 composition 或 apply 的中间；在主线程上通过
    `RecomposerInfo.observe()` 拿到每个运行中的 Recomposer 的全部组合，任何一个正在组合或有未应用的改动就重新排到主线程、打一行
    `deferred` 日志；否则对每个组合调 `ControlledComposition.invalidateAll()`。下一帧里每个可重启函数都用调用方**现在**传的参数重新执行，
    静态参数也不例外。slot table 不拆，`remember`、`rememberSaveable` 的状态都保留。
@@ -207,12 +224,15 @@ Compose runtime 用的是 Google 发布的 `androidx.compose.runtime:runtime` kl
 所以第 1 步必不可少。runtime 里另一条路 `composer.forceRecomposeScopes()`（Live Edit 用的 `forciblyRecompose`）是 internal 的，
 要改 runtime 才能用，没有走。
 
-每次 reload 打一行 `HR forceRecompose recomposers=… compositions=… invalidated=… recomposed=… dispatchMs=… forceMs=… frameMs=… totalMs=…`，
-`invalidated` 是被失效的作用域数，`recomposed` 是强制那一帧里实际进入的作用域数，`totalMs` 是从 reload 成功到所有 Recomposer 重组并应用完。
+每次 reload 打一行 `HR forceRecompose recomposers=… compositions=… invalidated=… recomposed=… deferred=… via=reload|frame|task dispatchMs=… forceMs=… frameMs=… totalMs=…`，
+`via` 是谁做的失效（主队列上的回调、帧入口或派过去的任务），`invalidated` 是被失效的作用域数，`recomposed` 是强制那一帧里实际进入的作用域数，`totalMs` 是从 reload 成功到所有 Recomposer 重组并应用完。
 只在 debug 二进制里生效（`Platform.isDebugBinary`；热重载构建都带 `-g`）；app 环境里 `KONAN_HR_FORCE_RECOMPOSE=0` 关闭两步
 （INTERFACE §7）。`remember { … }` 里算出来的值不会重算（这是 `remember` 的语义），要随代码变化的值不要放进 `remember`。
 回归：`example-gradle/accept-stale.py`（首页、滚动过的 LazyColumn、Popup、翻页、600 行的大列表，以及开关两种模式的耗时）、
-`example-gradle/accept-singletons.sh`（开着时检查屏幕上的 lambda 与源码一致）。
+`example-gradle/accept-singletons.sh`（开着时检查屏幕上的 lambda 与源码一致）、`example-gradle/accept-default-param.sh`
+（参数表末尾加带默认值的参数后强行热替换；每帧只重组被改组件时来回改签名 10 次，每次 reload 都要在主队列上完成并当场失效；
+反例：`KONAN_HR_RELOAD_ON_MAIN=0` 以及再关掉帧入口，都应退出。两个只给验收用的开关：`KONAN_HR_TEST_TASK_DELAY_MS`、
+`KONAN_HR_TEST_NO_FRAME_ENTRY`，后者同时关掉回调里的当场失效）。
 
 **对象与单例在热替换时怎么处理**（2026-11-19 核实，代码加实测）：
 

@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.7**。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.8**（插件 0.2.4）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -78,7 +78,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | 任务 | 作用 |
 |---|---|
 | `hotReloadCheckToolchain` | 读 `toolchain.json`，与插件钉死的版本逐项比对，检查 Xcode、模拟器 runtime 和所需文件；通过结果按清单、Xcode、klib 列表缓存 |
-| `hotReloadCompileKlib<Module>` | 每个库模块一个任务，编成 klib；源码和依赖 klib 不变时 UP-TO-DATE |
+| `hotReloadCompileKlib<Module>` | 每个库模块一个任务，编成 klib；源码和依赖 klib 不变时 UP-TO-DATE。0.2.4（#21）：klib 旁边的 `inputs.txt` 记下上次编译用的输入（编译参数、模块每个 Kotlin 源文件的 sha256、链接的模块 klib 的 sha256、依赖 klib 的大小和时间）；Gradle 因为别的原因重跑这个任务、而这些输入没变时，打印 `klib <模块>: inputs unchanged …; not recompiled`，klib 不动（分类器按 sha256 认出它没变，也不再 dump）；要编译时先打印一行原因，例如 `klib ui: compiling (sources changed: ui.kt)` 或 `(module klibs changed: base)` |
 | `hotReloadPackage` | split 编译 app（走 klib 守护进程；它不可用或编译失败时改用 `kotlinc-native` 重跑，并打印一行提示）→ `merge-payloads.py`（热符号集按各模块源码里的 package 自动生成；不变的库 archive 的处理结果缓存在 `build/hotreload/merge-cache/`）→ `embed-merged.py` → 组装 `.app`。日志最后一行 `package timing ms=… compile=… merge=… embed+bundle=…` |
 | `hotReload` | 先分类（见下文“分类器与温重启”）；可热替换时：守护进程 cache-only 编译 → 按 mtime 取本次重建的对象 → 按 `_kfun:<package>` 归到模块 → `ld -r` → 逐模块符号检查 → 发送。`--no-warm`：需要温重启时只报原因并失败 |
 | `hotReloadRun` | 安装并启动；首帧标记（`readyMarker`）出现或 Kotlin main 运行 3 s 即算启动成功，失败最多重试 3 次。`--args="..."` 传给 app（如 `--hr-state=2,3`） |
@@ -98,6 +98,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `orcRuntime` / `objcUtilsLib` | 清单的 `tools.orcRuntime` / `tools.uikitUtils`；没有时看 dist 旁边的 `orc-runtime/`、`cmp-uikit-utils/`；再没有用工程 `tools/` 下同名文件 | 自己构建的工具链才需要设 |
 | `llvmHome` | 清单的 `tools.llvmTools`；没有时看 dist 旁边的 `llvm-tools/`；再没有就不设（工具自己的默认值） | 传给打包工具的 `KONAN_LLVM_HOME` |
 | `keepCompactUnwind` | `true` | 打包时导出 `KALDO_KEEP_COMPACT_UNWIND=1`（INTERFACE §3.3 第 1 条） |
+| `mainWaitMs` | `2000`（`cmp.hotreload.mainWaitMs`） | 工具链 .8 起（#27/#40）：每次 reload 在 app 主线程上执行（插件传 `KONAN_HR_RELOAD_ON_MAIN=1`）；主线程在这么多毫秒内没接手，补丁不应用（`KONAN_HR_MAIN_WAIT_MS`），`hotReload` 以非零退出并提示 “the app was busy, patch not applied”，这次的改动留到下一次重发；`hotReloadWatch -t` 里只有这一次失败，继续监听。下次启动 app 时生效 |
 | `forceRecompose` | `true`（`cmp.hotreload.forceRecompose`） | 工具链 .6 起：每次热替换成功后整个界面完整重组一次，参数没变的调用点也显示新代码，`remember` 状态保留。`false` 时传 `KONAN_HR_FORCE_RECOMPOSE=0`（.5 的行为）；下次启动 app 时生效 |
 | `deviceFamily` | `listOf(1)`（`cmp.hotreload.deviceFamily=1,2`） | 插件生成的 Info.plist 的 `UIDeviceFamily`（0.2.3）：1 iPhone、2 iPad；`listOf(1, 2)` 时在 iPad 模拟器上以 iPad 尺寸全屏运行。默认值生成的文件和 0.2.2 逐字节相同。app 模块自带 Info.plist 时原样使用它，这一项不起作用并给出警告 |
 | `warmRestart` | `true`（`cmp.hotreload.warmRestart`） | 分类器判定需要温重启时：`true` 自动重新打包并带着保存的状态重启；`false` 只报原因、任务失败、不发送 |
@@ -135,8 +136,15 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
   重新打包并写基线 → 安装后把这个文件**原样写回**新安装的 `Documents/` → 启动；文件里有 `page`/`count` 时还传 `--hr-state=N,M`，
   并等到首帧标记所在的行同时出现 `page=N` 和 `count=M` → 打印 `WARM OK ms=… ms_package=… ms_relaunch=… page=N count=M`。
   app 不写这个文件也能温重启，只是回到第 0 页；启动日志里出现 `EH FAIL` 时任务失败。
-- 原因按分类器的原样输出，每行 `WARM <类别> <符号>: <说明>`。
-- 规则的边界用 `test-projects/classifier-cases/cases.py` 固定：44 个用例，用真实 klib（含 Compose 插件生成的声明）逐类比较，
+- 原因按分类器的原样输出，每行 `WARM <类别> <符号>: <说明>`；0.2.4（#18）起每行下面跟一行缩进的建议 `    -> …`（`WarmAdvice`），
+  最后打印 `compat: N ABI changes, cannot hot-patch; warm restart took X s`（不重启时是 `not restarted (--no-warm)`）。HOT 时分类器的 `NOTE …` 行（0.2.4：`remember-reset`）显示为
+  `compat: note: …`。
+- 0.2.4（#28）：插件把**正在运行的 app 启动时**的 forceRecompose（`build/hotreload/launched-force-recompose.txt`，DSL 的值要到下次
+  启动才生效）以 `--force-recompose` 传给 `check`。顶层函数和 final 类/object/companion 的 final 成员改签名判 HOT；`@Composable`
+  只在强制重组开着时 HOT，并打印 remember 重置提示。`expect fun` 成对增删不再判 WARM（类、object、接口、属性、typealias 仍然 WARM）。
+- 0.2.4（#20）：按 `test-projects/classifier-cases/RELAXATIONS.md` 的书面评估，放宽顶层 `const val` 增删、final 类/object 新增
+  `inline`/`suspend` 成员、open/abstract/sealed 类新增 final 成员（`@ExportObjCClass` 的增删在 klib 元数据里看不到，没法收紧）。
+- 规则的边界用 `test-projects/classifier-cases/cases.py` 固定：93 个用例（0.2.4），用真实 klib（含 Compose 插件生成的声明）逐类比较，
   热替换与温重启各有正反例；`manual_hot.py` 在运行中的 app 上逐步验证放行的几类改动确实能热替换并上屏。
 
 ## 发布（静态 Maven 仓库）
@@ -253,18 +261,21 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 ../example-gradle/gradlew -p . test -Pcmp.hotreload.toolchainDir=<KOTLIN_NATIVE_DIST>
 ```
 
-共 63 个测试；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
+共 83 个测试（0.2.4）；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
 
 | 测试类 | 数量 | 内容 |
 |---|---|---|
 | `ToolchainValidatorTest` | 9 | 版本、基线 commit、补丁哈希、libKaldo 实际哈希、Xcode、缺文件、bundle 布局拒绝 |
 | `PipelineTest` | 5 | 模块归类（最长包名匹配、根包）、源码 package 读取、内置工具哈希、工具位置的查找顺序（显式设置 → 清单 `tools` → 下载布局 → `tools/`） |
-| `PackagerDutiesTest` | 4 | INTERFACE §3.3 的打包方义务（合并开关、启动开关、`CACHE_ONLY` 不漏进完整构建） |
+| `PackagerDutiesTest` | 4 | INTERFACE §3.3 的打包方义务（合并开关、启动开关、`CACHE_ONLY` 不漏进完整构建）；0.2.4 起启动开关里有 `KONAN_HR_RELOAD_ON_MAIN=1` 和 `KONAN_HR_MAIN_WAIT_MS`（`mainWaitMs`） |
+| `ReloadOutcomeTest` | 4 | 0.2.4（#40）：从 app 日志读出补丁结果：`HR reload: NOT applied` 判失败（即使加载器已经链接了补丁），`HR reload: ran on the main queue` 判成功并读出等待和执行时间，只有 `[kaldo] ::` 时按旧工具链处理 |
 | `ProtocolContractTest` | 4 | 钉住的 `interfaceVersion`；守护进程回复解析；发送协议逐字节；连真实 `HrCompileDaemon` 编译成功和语法错误（要工具链） |
-| `CompatContractTest` | 8 | 分类器随 jar 分发且哈希一致；源码里的 `expect` 声明（增删一对判温重启）；非快照输入不会判成 HOT；用真实 klib 验证“只改函数体退出 0、加字段退出 3”（要工具链）；`hr-state.json` 解析；带参数启动时找 app 进程；已启动模拟器列表；dist 旁边的 klib 会被链接 |
+| `CompatContractTest` | 10 | 0.2.4（#28）：`@Composable` 改签名只有带 `--force-recompose` 才 HOT 并输出 remember-reset 提示，普通顶层函数改签名 HOT（含旧脚本按名字存的基线）；分类器随 jar 分发且哈希一致；源码里的 `expect` 声明（增删一对判温重启）；非快照输入不会判成 HOT；用真实 klib 验证“只改函数体退出 0、加字段退出 3”（要工具链）；`hr-state.json` 解析；带参数启动时找 app 进程；已启动模拟器列表；dist 旁边的 klib 会被链接 |
 | `PluginFunctionalTest` | 9 | TestKit：版本不匹配和下载版旧工具链的报错、没配工具链、DSL 配错时其它任务照常、debug 开关、应用插件前后 `tasks --all` 一致、`warmRestart` 与 `--no-warm`、加在单个模块上并声明源码片段、任务都在自己的组里 |
 | `KmpTest` | 10 | 版本比较；每个 Compose 模块和工具链里同名那份比版本（写出拉进它的依赖）；cinterop klib 警告；依赖 klib 按 `unique_name` 和 Maven 组件替换、去重、比工具链新时提示；klib ABI 高于 2.5.0 / 低于 1.6.0、metadata 高于 2.6.0 的报错；`MainViewController` 入口识别；多片段编译参数；按符号归模块 |
-| `ExpectActualCasesTest` | 5 | 增删一对 expect/actual 判温重启的 12 例用例表（6 正 6 反）；Compose 资源改动判温重启；回归：只含初始化桩的目标文件、生成的 UIKit 入口（根包）在多模块时归 app、失败编译后的待发送列表 |
+| `ExpectActualCasesTest` | 5 | 增删一对 expect/actual 的用例表（0.2.4 起：类、object、接口、属性 4 例 WARM，`expect fun` 增删、改名和其余 9 例不报）；Compose 资源改动判温重启；回归：只含初始化桩的目标文件、生成的 UIKit 入口（根包）在多模块时归 app、失败编译后的待发送列表 |
+| `KlibInputsTest` | 2 | 0.2.4（#21）：库 klib 的输入只随本模块源码、上游模块 klib 的字节、依赖 klib 变化；只改 app、原样保存文件、上游同样字节的重编都不算；重编原因写出变了的文件、模块或依赖 klib |
+| `WarmAdviceTest` | 4 | 0.2.4（#18）：每类 WARM 原因（27 行真实输出，覆盖分类器和插件输出的 10 个类别）各有一句建议；原因行保持原样、下面缩进一行建议；总结行 `N ABI changes, cannot hot-patch; warm restart took X s` |
 | `ProjectDependenciesTest` | 1 | 同工程 KMP 模块依赖按传递关系、依赖在前的顺序找出，环路不死循环 |
 | `ReleaseDigestTest` | 1 | release 校验比 `__text` 摘要：同一二进制摘要一致，改一个代码字节必须失败；原始 `__text` 哈希只记录 |
 | `CompositeBuildTest` | 7 | 复合构建（0.2.2）：included 模块的默认层级源码集和 Compose 生成目录；included 模块排在前、按声明顺序、依赖关系；声明顺序保留（容器按名字迭代）；外部 klib 改变判温重启；included build 自己编出的 klib 按坐标、位置、unique_name 排除（不重复链接）；included build 的 klib 同样过 ABI 预检；写错 build 名时的报错（TestKit，真实 includeBuild） |
@@ -279,4 +290,4 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 | `example-gradle/accept-release.sh` | release 零改动校验 | `example-gradle/accept-plugin-p1-release*.txt` |
 | `test-projects/three-modules/accept-three.py` | 三模块（app → ui → core） | `test-projects/three-modules/accept-three.txt` |
 | `test-projects/composite/accept-composite.py` | 0.2.2 复合构建：根 build（app、convention plugin 应用 KMP 的 feature）加 included build lib-build（util、core、demo）；声明/不声明 includedModule 两档、只声明 core、插件装在 included build 里从根 build 运行、资源、Dialog、release 校验、配置缓存、写错 includedModule 的报错 | `test-projects/composite/evidence/` |
-| `test-projects/kmp-template/accept-kmp.py` | 0.2.0：KMP 向导模板（只选 iOS）加一对 expect/actual 和 kotlinx-datetime，只按 TRYOUT 第 7 节接入：打包、启动、commonMain/iosMain 改动 HOT、expect 签名和增删一对 WARM、改过 manifest 的 klib 报错、release 校验 | `test-projects/kmp-template/evidence/` |
+| `test-projects/kmp-template/accept-kmp.py` | 0.2.0：KMP 向导模板（只选 iOS）加一对 expect/actual 和 kotlinx-datetime，只按 TRYOUT 第 7 节接入：打包、启动、commonMain/iosMain 改动 HOT、expect 签名和增删一对 WARM（0.2.4 起：函数签名和增删一对 `expect fun` HOT，增删一对 expect class WARM；`--signatures` 为 #28 的签名改动）、改过 manifest 的 klib 报错、release 校验 | `test-projects/kmp-template/evidence/` |

@@ -1,0 +1,75 @@
+# three-modules, branch feat/signature-change-hot 30b2c9c+working tree, toolchain 2.5.255-hotreload.7, 2026-11-20 17:28:57 (package from the run above)
+CMP hot reload: app started (attempt 1, pid 13787, 5.4 s, port 5568, log <REPO>/gradle-plugin/test-projects/three-modules/launch.log)
+BUILD SUCCESSFUL in 6s
+# manual hot-swap proof: core/src/main/kotlin/core.kt in three-modules, app pid 13787
+step00 OK 11364ms hot=True loaded=True on_screen=True pid 13787->13787 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 6857ms hot=True loaded=True on_screen=True pid 13787->13787 [new final class] expect '|c10|'
+step02 OK 6289ms hot=True loaded=True on_screen=True pid 13787->13787 [method added to a final class] expect '|c15|'
+step03 OK 6286ms hot=True loaded=True on_screen=True pid 13787->13787 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 6148ms hot=True loaded=True on_screen=True pid 13787->13787 [new object] expect '|oa|'
+step05 OK 6229ms hot=True loaded=True on_screen=True pid 13787->13787 [method added to an object] expect '|ob|'
+step06 OK 6230ms hot=True loaded=True on_screen=True pid 13787->13787 [new class with a companion] expect '|c1|'
+step07 OK 5967ms hot=True loaded=True on_screen=True pid 13787->13787 [method added to a companion object] expect '|c2|'
+step08 OK 6164ms hot=True loaded=True on_screen=True pid 13787->13787 [new typealias] expect '|alias|'
+step09 OK 6127ms hot=True loaded=True on_screen=True pid 13787->13787 [new internal function] expect '|vint|'
+step10 OK 5636ms hot=True loaded=True on_screen=True pid 13787->13787 [internal -> public (and body)] expect '|vpub|'
+step11 OK 6226ms hot=True loaded=True on_screen=True pid 13787->13787 [top-level: parameter with a default added] expect '|alias2|'
+step12 OK 6277ms hot=True loaded=True on_screen=True pid 13787->13787 [top-level: parameter removed] expect '|al3|'
+step13 OK 6026ms hot=True loaded=True on_screen=True pid 13787->13787 [top-level: return type changed] expect '|r4|'
+step14 OK 6093ms hot=True loaded=True on_screen=True pid 13787->13787 [final member: parameter with a default added] expect '|c30|'
+step15 OK 6078ms hot=True loaded=True on_screen=True pid 13787->13787 [object member: return type changed] expect '|o7|'
+step16 OK 6083ms hot=True loaded=True on_screen=True pid 13787->13787 [companion member: parameter added (no default), caller changed] expect '|c9|'
+step17 OK 6321ms hot=True loaded=True on_screen=True pid 13787->13787 [final member removed] expect '|c10|'
+# file restored
+summary: 18/18 hot and on screen, same pid
+# manual hot-swap proof: ui/src/main/kotlin/ui.kt in three-modules, app pid 13787
+step00 FAIL 24311ms hot=False loaded=False on_screen=True pid 13787->18075 [setup: helper shown next to the mark] expect '|x0|' | WARM class-removed excore/Box: class removed; WARM class-removed excore/Box.Companion: class removed; WARM class-removed excore/Calc: class removed; WARM class-removed excore/Fmt: class removed; WARM signature Label: typealias removed; WARM OK ms=17942 ms_package=11838 ms_relaunch=6104 page=- count=- | line written for app,core,ui (626 ms) | CMP hot reload: app started (attempt 1, pid 18075, 5.5 s, port 5568, log <REPO>/gradle-plugin/test-projects/three-modules/launch.log) | WARM OK ms=17942 ms_package=11838 ms_relaunch=6104 page=- count=- |  | BUILD SUCCESSFUL in 23s | 4 actionable tasks: 4 executed | Configuration cache entry reused. | 
+step01 FAIL 5066ms hot=True loaded=True on_screen=True pid 13787->18075 [new final class] expect '|c10|' | : HOT (classifier 55 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (105 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step02 FAIL 4700ms hot=True loaded=True on_screen=True pid 13787->18075 [method added to a final class] expect '|c15|' | : HOT (classifier 54 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (112 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step03 FAIL 4827ms hot=True loaded=True on_screen=True pid 13787->18075 [body of the method added by the previous reload] expect '|c20|' | : HOT (classifier 55 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (106 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step04 FAIL 4524ms hot=True loaded=True on_screen=True pid 13787->18075 [new object] expect '|oa|' | : HOT (classifier 54 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (111 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step05 FAIL 4588ms hot=True loaded=True on_screen=True pid 13787->18075 [method added to an object] expect '|ob|' | : HOT (classifier 53 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (112 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step06 FAIL 5035ms hot=True loaded=True on_screen=True pid 13787->18075 [new class with a companion] expect '|c1|' | : HOT (classifier 55 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (104 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step07 FAIL 4879ms hot=True loaded=True on_screen=True pid 13787->18075 [method added to a companion object] expect '|c2|' | : HOT (classifier 56 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (103 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step08 FAIL 4875ms hot=True loaded=True on_screen=True pid 13787->18075 [new typealias] expect '|alias|' | : HOT (classifier 54 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (111 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step09 FAIL 4785ms hot=True loaded=True on_screen=True pid 13787->18075 [new internal function] expect '|vint|' | : HOT (classifier 78 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (109 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step10 FAIL 4732ms hot=True loaded=True on_screen=True pid 13787->18075 [internal -> public (and body)] expect '|vpub|' | : HOT (classifier 55 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (111 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step11 FAIL 4628ms hot=True loaded=True on_screen=True pid 13787->18075 [top-level: parameter with a default added] expect '|alias2|' | : HOT (classifier 56 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (109 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step12 FAIL 4724ms hot=True loaded=True on_screen=True pid 13787->18075 [top-level: parameter removed] expect '|al3|' | : HOT (classifier 54 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (101 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step13 FAIL 4766ms hot=True loaded=True on_screen=True pid 13787->18075 [top-level: return type changed] expect '|r4|' | : HOT (classifier 63 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (109 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step14 FAIL 4793ms hot=True loaded=True on_screen=True pid 13787->18075 [final member: parameter with a default added] expect '|c30|' | : HOT (classifier 53 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (110 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step15 FAIL 4654ms hot=True loaded=True on_screen=True pid 13787->18075 [object member: return type changed] expect '|o7|' | : HOT (classifier 55 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (109 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step16 FAIL 4639ms hot=True loaded=True on_screen=True pid 13787->18075 [companion member: parameter added (no default), caller changed] expect '|c9|' | : HOT (classifier 53 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (106 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+step17 FAIL 4605ms hot=True loaded=True on_screen=True pid 13787->18075 [final member removed] expect '|c10|' | : HOT (classifier 56 ms, waited 0 ms after the patch was ready) | sent <REPO>/gradle-plugin/test-projects/three-modules/build/hotreload/patch/merged.o port 5568 | app loaded the patch (111 ms); it shows on the next recomposition |  | BUILD SUCCESSFUL in 4s | 4 actionable tasks: 3 executed, 1 up-to-date | Configuration cache entry reused. | 
+# file restored
+summary: 0/18 hot and on screen, same pid
+crash lines in launch.log: 0
+source files differing from git:        0
+# ui rerun from a fresh package and launch, 2026-11-20 17:32:57
+package timing ms=14156 compile=9448 merge=2496 embed+bundle=2212
+BUILD SUCCESSFUL in 17s
+CMP hot reload: app started (attempt 1, pid 20905, 5.7 s, port 5568, log <REPO>/gradle-plugin/test-projects/three-modules/launch.log)
+BUILD SUCCESSFUL in 6s
+# manual hot-swap proof: ui/src/main/kotlin/ui.kt in three-modules, app pid 20905
+step00 OK 8368ms hot=True loaded=True on_screen=True pid 20905->20905 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 5144ms hot=True loaded=True on_screen=True pid 20905->20905 [new final class] expect '|c10|'
+step02 OK 4896ms hot=True loaded=True on_screen=True pid 20905->20905 [method added to a final class] expect '|c15|'
+step03 OK 4672ms hot=True loaded=True on_screen=True pid 20905->20905 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 4621ms hot=True loaded=True on_screen=True pid 20905->20905 [new object] expect '|oa|'
+step05 OK 4725ms hot=True loaded=True on_screen=True pid 20905->20905 [method added to an object] expect '|ob|'
+step06 OK 4603ms hot=True loaded=True on_screen=True pid 20905->20905 [new class with a companion] expect '|c1|'
+step07 OK 4641ms hot=True loaded=True on_screen=True pid 20905->20905 [method added to a companion object] expect '|c2|'
+step08 OK 4476ms hot=True loaded=True on_screen=True pid 20905->20905 [new typealias] expect '|alias|'
+step09 OK 4604ms hot=True loaded=True on_screen=True pid 20905->20905 [new internal function] expect '|vint|'
+step10 OK 4554ms hot=True loaded=True on_screen=True pid 20905->20905 [internal -> public (and body)] expect '|vpub|'
+step11 OK 4740ms hot=True loaded=True on_screen=True pid 20905->20905 [top-level: parameter with a default added] expect '|alias2|'
+step12 OK 4569ms hot=True loaded=True on_screen=True pid 20905->20905 [top-level: parameter removed] expect '|al3|'
+step13 OK 4515ms hot=True loaded=True on_screen=True pid 20905->20905 [top-level: return type changed] expect '|r4|'
+step14 OK 4601ms hot=True loaded=True on_screen=True pid 20905->20905 [final member: parameter with a default added] expect '|c30|'
+step15 OK 4777ms hot=True loaded=True on_screen=True pid 20905->20905 [object member: return type changed] expect '|o7|'
+step16 OK 4607ms hot=True loaded=True on_screen=True pid 20905->20905 [companion member: parameter added (no default), caller changed] expect '|c9|'
+step17 OK 4829ms hot=True loaded=True on_screen=True pid 20905->20905 [final member removed] expect '|c10|'
+# file restored
+summary: 18/18 hot and on screen, same pid
+crash lines in launch.log: 0
+source files differing from git:        0

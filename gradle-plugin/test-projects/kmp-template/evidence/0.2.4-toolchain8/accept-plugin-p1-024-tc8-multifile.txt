@@ -1,0 +1,5 @@
+pid0 83127
+mf[0] OK 4797ms changed=changed objects: app=1 ui=2 symbols=[('18', '18')] same_tick=True pid=83127
+mf[1] OK 4748ms changed=changed objects: app=1 ui=2 symbols=[('18', '18')] same_tick=True pid=83127
+mf[2] OK 4718ms changed=changed objects: app=1 ui=2 symbols=[('18', '18')] same_tick=True pid=83127
+# sources restored: 0 files under */src differ from git

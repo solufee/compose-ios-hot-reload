@@ -280,10 +280,16 @@ index a848f54aee63..deb2c347dd51 100644
          plugins/WeakSymbolFallbackGenerator.cpp
  )
 diff --git a/llvm/tools/kaldo/Kaldo.cpp b/llvm/tools/kaldo/Kaldo.cpp
-index 9acf22f299ba..e9c9fb27ad67 100644
+index 9acf22f299ba..9bea9c696d29 100644
 --- a/llvm/tools/kaldo/Kaldo.cpp
 +++ b/llvm/tools/kaldo/Kaldo.cpp
-@@ -7,6 +7,7 @@
+@@ -1,3 +1,5 @@
++#include <chrono>
++#include <cstdlib>
+ #include <memory>
+ #include <string>
+ #include <string_view>
+@@ -7,6 +9,7 @@
  #include "ObjCInteropManager.hpp"
  #include "Utility.hpp"
  
@@ -291,7 +297,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
  #include "llvm/ExecutionEngine/Orc/Core.h"
  #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
  #include "llvm/ExecutionEngine/Orc/Debugging/DebuggerSupport.h"
-@@ -31,11 +32,16 @@
+@@ -31,11 +34,16 @@
  #include "KaldoInternal.hpp"
  #include "plugins/KotlinSymbolExternalizer.hpp"
  #include "plugins/MachOHostDataSymbolGenerator.hpp"
@@ -308,7 +314,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
  namespace {
  
  // region Constants
-@@ -117,11 +123,6 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
+@@ -117,11 +125,6 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
  
                  auto OLL = std::make_unique<llvm::orc::ObjectLinkingLayer>(
                      ES, std::move(*Mapper));
@@ -320,7 +326,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
                  return std::move(OLL);
                })
            .setNotifyCreatedCallback([&](llvm::orc::LLJIT &J) -> llvm::Error {
-@@ -179,6 +180,35 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
+@@ -179,6 +182,35 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
                  std::make_unique<orc::plugin::KotlinSymbolExternalizerPlugin>(
                      *StubsJD));
  
@@ -356,7 +362,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
  #if defined(__APPLE__)
              ObjCInteropManager =
                  std::make_unique<llvm::kaldo::objc::ObjCInteropManager>(J);
-@@ -301,6 +331,16 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -301,6 +333,16 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    auto &BootstrapJD = *BootstrapJDOrErr;
  
@@ -373,7 +379,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
    auto Cleanup = llvm::make_scope_exit([&] {
      if (Succeeded)
        return;
-@@ -316,6 +356,12 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -316,6 +358,12 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    BootstrapJD.addToLinkOrder(StubsJD); // StubsJD
    BootstrapJD.addToLinkOrder(MainJD);
@@ -386,7 +392,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
  
    BootstrapJD.addGenerator(
        std::make_unique<
-@@ -361,6 +407,23 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -361,6 +409,23 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
      return tl::make_unexpected(dumpLlvmErrorToString(std::move(RedirectErr)));
    }
  
@@ -410,7 +416,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
    if (auto ConstErr =
            callKonanConstructors(ES, JIT->getDataLayout(), BootstrapJD)) {
      return tl::make_unexpected(dumpLlvmErrorToString(std::move(ConstErr)));
-@@ -368,6 +431,14 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -368,6 +433,14 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    RuntimeInit();
  
@@ -425,7 +431,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
    if (ObjCInteroManager) {
      auto InitPrefixOrErr =
          ObjCInteroManager->initializeObjCUniquePrefixFromJIT(BootstrapJD);
-@@ -376,14 +447,6 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -376,14 +449,6 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
      }
  
      ObjCUniquePrefixInit(*InitPrefixOrErr);
@@ -440,7 +446,7 @@ index 9acf22f299ba..e9c9fb27ad67 100644
    }
  
    auto BootstrapHandle = llvm::kaldo::ReloadUnitHandle::getBootstrapHandle();
-@@ -397,6 +460,8 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -397,6 +462,8 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    llvm::dbgs() << "[kaldo] :: bootstrap objects loaded with success!\n";
  
@@ -449,6 +455,118 @@ index 9acf22f299ba..e9c9fb27ad67 100644
    return BootstrapHandle;
  }
  
+@@ -409,7 +476,32 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+ 
+   auto Succeeded = false;
+ 
++  using Clock = std::chrono::steady_clock;
++  const auto TStart = Clock::now();
++  auto NsSince = [](Clock::time_point T) {
++    return static_cast<uint64_t>(
++        std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - T)
++            .count());
++  };
++
+   auto &ES = JIT->getExecutionSession();
++
++  // The previous reload JITDylib is linked by now; drop its host-symbol
++  // generators so that this and later lookups do not run them again
++  // (KALDO_KEEP_RELOAD_GENERATORS=1 keeps them, for comparison).
++  size_t Pruned = 0;
++  if (PrevReloadJD && !PrevReloadGenerators.empty()) {
++    const char *Keep = std::getenv("KALDO_KEEP_RELOAD_GENERATORS");
++    if (!(Keep && std::string_view(Keep) == "1")) {
++      for (auto *G : PrevReloadGenerators) {
++        PrevReloadJD->removeGenerator(*G);
++        ++Pruned;
++      }
++    }
++  }
++  PrevReloadJD = nullptr;
++  PrevReloadGenerators.clear();
++
+   auto ReloadDylibName = KReloadJdName + std::to_string(ReloadUnits.size() - 1);
+   auto &StubsJD = SymRedirector->getStubsJD();
+   auto &MainJD = JIT->getMainJITDylib();
+@@ -432,11 +524,14 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+     }
+   });
+ 
++  size_t LinkOrderSize = 0;
+   for (auto It = ReloadUnits.rbegin(); It != ReloadUnits.rend(); ++It) {
+     if (*It) {
+       ReloadedJD.addToLinkOrder(It->value().dylib());
++      ++LinkOrderSize;
+     }
+   }
++  std::vector<llvm::orc::DefinitionGenerator *> HostGenerators;
+ 
+   ReloadedJD.addToLinkOrder(StubsJD);
+   ReloadedJD.addToLinkOrder(MainJD);
+@@ -445,7 +540,7 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+   // during materialization (generators on linked JITDylibs may not fire).
+   if (auto HostGenOrErr = orc::plugin::MachOHostDataSymbolGenerator::
+           createForCurrentProcess()) {
+-    ReloadedJD.addGenerator(std::move(*HostGenOrErr));
++    HostGenerators.push_back(&ReloadedJD.addGenerator(std::move(*HostGenOrErr)));
+   } else {
+     return tl::make_unexpected("Could not add MachOHostDataGenerator: " +
+                                dumpLlvmErrorToString(HostGenOrErr.takeError()));
+@@ -455,13 +550,15 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+ 
+   if (auto DlsymGenOrErr =
+           llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(GP)) {
+-    ReloadedJD.addGenerator(std::move(*DlsymGenOrErr));
++    HostGenerators.push_back(&ReloadedJD.addGenerator(std::move(*DlsymGenOrErr)));
+   } else {
+     return tl::make_unexpected(
+         "Could not add DynamicLibrarySearchGenerator: " +
+         dumpLlvmErrorToString(DlsymGenOrErr.takeError()));
+   }
+ 
++  const auto SetupNs = NsSince(TStart);
++  const auto TAdd = Clock::now();
+   auto &OLL = JIT->getObjLinkingLayer();
+   auto LoadedSyms = KotlinHotSymbols::create();
+ 
+@@ -516,15 +613,37 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+     }
+   }
+ 
++  const auto AddNs = NsSince(TAdd);
++  const auto TStubs = Clock::now();
+   if (auto StubsErr = SymRedirector->createRedirectableStubsIfNeeded(
+           LoadedSyms.getFunctions())) {
+     return tl::make_unexpected(dumpLlvmErrorToString(std::move(StubsErr)));
+   }
++  const auto StubsNs = NsSince(TStubs);
+ 
++  // The lookup in here materializes (JIT-links) the reload object.
++  const auto TRedirect = Clock::now();
+   if (auto RedirectErr = SymRedirector->redirectStubsToImplementation(
+           ReloadedJD, LoadedSyms.getFunctions())) {
+     return tl::make_unexpected(dumpLlvmErrorToString(std::move(RedirectErr)));
+   }
++  const auto RedirectNs = NsSince(TRedirect);
++
++  Timings.LoadNs = SetupNs + AddNs;
++  Timings.StubsNs = StubsNs;
++  Timings.RedirectNs = RedirectNs;
++  if (const char *T = std::getenv("KALDO_RELOAD_TIMING");
++      T && std::string_view(T) == "1") {
++    llvm::dbgs() << "[kaldo] :: reload-timing jd=" << ReloadDylibName
++                 << " linkorder=" << LinkOrderSize
++                 << " pruned=" << Pruned << " setup_us=" << SetupNs / 1000
++                 << " add_us=" << AddNs / 1000 << " stubs_us=" << StubsNs / 1000
++                 << " redirect_us=" << RedirectNs / 1000
++                 << " total_us=" << NsSince(TStart) / 1000 << "\n";
++  }
++
++  PrevReloadJD = &ReloadedJD;
++  PrevReloadGenerators = std::move(HostGenerators);
+ 
+   auto NewId = ++CurrentReloadHandleId;
+   auto Handle = ReloadUnitHandle(NewId);
 diff --git a/llvm/tools/kaldo/KaldoInternal.cpp b/llvm/tools/kaldo/KaldoInternal.cpp
 index 7c1dff79cbf4..4cb2a8daae28 100644
 --- a/llvm/tools/kaldo/KaldoInternal.cpp
@@ -1922,3 +2040,29 @@ index a6e02e09012f..283e00058f27 100644
  } // namespace llvm::kaldo::orc::plugin
  
  #endif // LLVM_OBJCSELECTORFIXUPPLUGIN_H
+diff --git a/llvm/tools/kaldo/Kaldo.hpp b/llvm/tools/kaldo/Kaldo.hpp
+index a99fb9cfbb3e..65f8ea504840 100644
+--- a/llvm/tools/kaldo/Kaldo.hpp
++++ b/llvm/tools/kaldo/Kaldo.hpp
+@@ -19,6 +19,7 @@ class Error;
+ namespace llvm::orc {
+ class LLJIT;
+ class JITDylib;
++class DefinitionGenerator;
+ } // namespace llvm::orc
+ 
+ namespace llvm::kaldo {
+@@ -123,6 +124,13 @@ private:
+   uint32_t CurrentReloadHandleId{ReloadUnitHandle::BootstrapRaw};
+   bool ItDidBoot{false};
+ 
++  // Host-symbol generators (MachO host data, dlsym) of the latest reload
++  // JITDylib. They are only needed while that JITDylib is linked; they are
++  // removed when the next reload starts, otherwise every later lookup runs
++  // them again for each earlier reload (load time grew with the reload count).
++  llvm::orc::JITDylib *PrevReloadJD{nullptr};
++  std::vector<llvm::orc::DefinitionGenerator *> PrevReloadGenerators;
++
+   std::unique_ptr<llvm::orc::LLJIT> JIT;
+   std::unique_ptr<SymbolsRedirector> SymRedirector;
+   std::unique_ptr<objc::ObjCInteropManager> ObjCInteroManager;

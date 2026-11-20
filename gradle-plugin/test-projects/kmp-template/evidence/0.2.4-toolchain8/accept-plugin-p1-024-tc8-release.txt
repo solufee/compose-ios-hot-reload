@@ -1,0 +1,37 @@
+== 1. clean state
+daemons of this project: 0
+== 2. baseline
+release: compiling ui
+release: compiling app
+CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=95702b001002, embed-merged.py=a02264ad3495, merge-payloads.py=9ee1f5aa4b45, release-text-digest.py=c2fa4df02310)
+release baseline build 1/1: __text digest 2923d9660ad2 (raw __text 5eae28772179)
+release baseline recorded: <REPO>/example-gradle/build/hotreload/release/baseline.fingerprint (61916 symbols, 41 sections, __text digest 2923d9660ad2)
+BUILD SUCCESSFUL in 1m 52s
+== 3. hot-reload session
+package: <REPO>/example-gradle/build/hotreload/ComposeHR.app (ad-hoc signed)
+BUILD SUCCESSFUL in 2m 2s
+CMP hot reload: app started (attempt 1, pid 1177, 6.0 s, port 5568, log <REPO>/example-gradle/launch.log)
+BUILD SUCCESSFUL in 7s
+=== summary ===
+ui: ok=3/3 p50=5562ms p90=8241ms
+app: ok=3/3 p50=3397ms p90=3433ms
+both: ok=3/3 p50=4956ms p90=4995ms
+daemons of this project: 6 HrCompileDaemon processes on the machine
+sources restored to the baseline state: 0 files differ from git
+== 4. verify inside Gradle (daemons and app still running)
+release: compiling ui
+release: compiling app
+CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=95702b001002, embed-merged.py=a02264ad3495, merge-payloads.py=9ee1f5aa4b45, release-text-digest.py=c2fa4df02310)
+release unchanged: 61916 symbols, 41 section sizes and the __text digest 2923d9660ad2 identical to the baseline (raw __text 5eae28772179 -> cc610304a73b, recorded only)
+BUILD SUCCESSFUL in 1m 53s
+== 5. same commands outside Gradle (env -i)
+manual build exit=0
+baseline  text=5eae28772179 symbols=61916
+current   text=cc610304a73b symbols=61916
+manual    text=cc610304a73b symbols=61916
+manual vs baseline: section sizes identical
+manual vs baseline: symbol table identical
+manual raw __text cc610304a73b, baseline raw __text 5eae28772179 (recorded only)
+manual vs baseline: __text digest 2923d9660ad2 identical
+# sources restored: 0 files under */src differ from git
+# done 02:21:42

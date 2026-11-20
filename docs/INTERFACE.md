@@ -266,7 +266,11 @@ app 里不含 `main` 的文件所在的包要写进 `KALDO_HOT_PACKAGES`。原�
 | `KONAN_HOT_RELOAD_CACHE_ONLY` | 关 | 编译时在缓存构建后返回，跳过 host 生成与链接；守护进程默认开 |
 | `KALDO_HOT_SYMBOLS` | 未设 | 启动时的热符号清单；未设 = 全部 Kotlin 符号外部化（.5 及以前启动约 20% 概率 SIGSEGV；.6 起已修）。**打包方应传收窄清单**（§3.3 第 3 条） |
 | `KONAN_HR_FORCE_RECOMPOSE` | 开（工具链 .6 起） | app 的环境变量（模拟器上加 `SIMCTL_CHILD_` 前缀；参考 `run.sh` 透传 `KONAN_HR_FORCE_RECOMPOSE`，默认 `1`）。开：每次 reload 成功后在主线程把所有 Compose 组合整树失效，下一帧完整重组，静态参数的调用点也执行新代码，`remember`/`rememberSaveable` 保留；为此每个场景组合在首次组合时调用 `collectParameterInformation()`。值为 `0` 时两者都关，恢复 .5 的行为（LIMITATIONS 第 11 条）。只在 debug 二进制里生效。日志行前缀 `HR forceRecompose`（TECHNICAL-NOTES §1.6）。插件以后在 DSL 里开放，0.2.0 不含 |
+| `KONAN_HR_RELOAD_ON_MAIN` | 开（工具链 .8 起） | app 的环境变量（模拟器上加 `SIMCTL_CHILD_`）。开：Kotlin/Native runtime 把每次 reload（停线程、换代码、迁移实例、调成功回调）放到主队列上执行，也就是两次主 run loop 之间，不会落在一帧的中途；Compose 的强制失效随后就在主线程上做完（日志 `via=reload`），不会有一帧用迁移过来的旧重启 lambda 只重组某个组件（Issue #27，REPORT §34）。替换期间其他线程（`Dispatchers.Default`/IO 上的协程等）照样被暂停，stop-the-world 不变。每次 reload 打一行 `HR reload: ran on the main queue requestEpochMs=… waitMs=… runMs=…`（等主队列的时间和 reload 本身的时间）。主队列在 `KONAN_HR_MAIN_WAIT_MS`（默认 2000）毫秒内没接手（主线程卡住或正在长时间计算）时**不应用补丁**，打印以 `HR reload: NOT applied:` 开头的一行并取消这次任务（主线程之后再空出来也不会执行它），app 继续运行；发送方应把这一行当作失败显示（例如 “main thread busy > 2 s, patch not applied, retry”），下一次热重载照常发送。值为 `0` 时在监听线程上执行（.7 的行为，只用于对照），打印 `HR reload: ran on the listener thread …` |
+| `KONAN_HR_MAIN_WAIT_MS` | 2000 | 上一条等主队列接手的最长毫秒数，超时则这次补丁不应用 |
 | `KALDO_PERF_MAP` | 关 | 写 `/tmp/perf-<pid>.map`，给 lldb 符号化 |
+| `KALDO_RELOAD_TIMING` | 关 | app 的环境变量（模拟器上加 `SIMCTL_CHILD_`）。值为 `1` 时 libKaldo 每次 reload 打一行 `[kaldo] :: reload-timing jd=… linkorder=… pruned=… setup_us=… add_us=… stubs_us=… redirect_us=… total_us=…`（调试用；`redirect_us` 含补丁的 JIT 链接）。工具链 .8 起（LLVM 补丁 `3e0dafa3…`） |
+| `KALDO_KEEP_RELOAD_GENERATORS` | 关 | 值为 `1` 时不摘除旧 `reload<N>` JITDylib 上的宿主符号生成器，恢复修复前的行为（链接耗时随 reload 次数线性增长，LIMITATIONS 第 7 条），只用于对照测量。工具链 .8 起 |
 | `KALDO_DEBUG_SELREFS` | 关 | 只有值为 `1` 时，才把 selector 区间里补登记的 selector 追加到 `/tmp/gap-selrefs.log`（调试用）。v8 起默认不写；v7 及以前每次启动都写 |
 | `KONAN_ORC_RUNTIME_PATH` | 无 | `liborc_rt_*.a` 路径；模拟器启动时需要 `SIMCTL_CHILD_` 前缀 |
 | `KALDO_GUEST_KEEP_OBJC` | 关 | 保留 guest 的 ObjC 成员（默认丢 host 已定义的那些） |
@@ -283,7 +287,7 @@ app 里不含 `main` 的文件所在的包要写进 `KALDO_HOT_PACKAGES`。原�
 | 5 | 2026-11-19 | 编译器直接从 `<KALDO_INSTALL>/lib` 链接 libKaldo：Kotlin 补丁里 `konan.properties` 的 `kaldoLinkerFlags.*` 改为 `-L<KALDO_INSTALL>/lib …`（macOS 另加 `-rpath <KALDO_INSTALL>/lib`），LLVM 安装目录里不再放 libKaldo（v4 的符号链接取消）。`KALDO_SYNTH_EH_FRAME` 改为按值判断（未设/空/`0` 为关）。`kotlin.patchSha256`、`llvm.patchSha256`、`llvm.kaldoIossimSha256` 随之变化，字段格式不变。不兼容点：沿用 v4 dist 的 `konan.properties`（`-lKaldo.iossim` 无 `-L`）且 LLVM 安装目录已无 libKaldo 时链接失败；依赖 `KALDO_SYNTH_EH_FRAME=0` 仍开启的行为会变成关闭 |
 | 6 | 2026-11-19 | 分发（B6）：`toolchain.json` 增加 `layout`（`local`/`bundle`）；bundle 清单带 `toolchainVersion`、`components`（文件、字节数、sha256、解包目录、`release` 或 `maven` 下载信息）、`tools`（`llvmTools`/`orcRuntime`/`uikitUtils`）和 `llvm.llvmHome`（`konan-dependency` + 依赖名）。新脚本 `gen-bundle-manifest.py`、`publish-toolchain.py`（只有 dry-run 和本地仓库两种模式）、`fetch-toolchain.py`，见 §9。`hotreload.sh` 的 `KLIBLIST` 规则通用化，新增 `KLIB_AUTO_CACHE_FROM`、`UIKIT_UTILS`；`run.sh` 新增 `ORC_RUNTIME`。兼容：local 清单只多一个 `layout` 字段；旧的 `KLIBLIST` 选出的 klib 不变 |
 | 7 | 2026-11-19 | B4：新增 `scripts/compat-classify.py`（`snapshot`/`classify`，退出码 0/3/2）；`hotreload.sh reload` 先分类，`reload --no-warm` 只拦截不发送，新增 `warm` 子命令；参考 app 支持 `--hr-state=page,count` 与 `Documents/hr-state.json`，见 §10。只新增工具、参数和退出码，已有命令与清单格式不变 |
-| 8 | 2026-11-19 | B10：分类器提速。守护进程新增 `@klib` 工具请求（§2.1）；`compat-classify.py` 新增 `baseline`/`check` 子命令和 `--daemon`、`--cache-dir`，快照增加 `klibSha256`（§10.1）；`reload` 的分类改为与 cache-only 编译并行、发送前等结论，app library klib 走 `hr-klib.sock`（§10.2）。**行为变化**：`hr-compile.sock` 有默认路径 `$HRC_SOCKET_DIR/hr-compile.sock`（`HRC_SOCKET_DIR` 默认 `<工程>/.hr`），存在就用，不再要求显式导出 `HRC_SOCKET`（§2.3）；`reload --no-warm` 在退出 3 前会先完成编译（仍不发送）。`merge-payloads.py` 在任何退出路径上删除工作目录，`KALDO_MERGE_KEEP=1` 保留（§3.1）。`fetch-toolchain.py` 接受 interfaceVersion 6–8 的 bundle 清单（v7 时它仍只认 6，下载 v7 清单会被拒，这是 v7 的遗漏）。清单字段不变。B11：libKaldo 只在 `KALDO_DEBUG_SELREFS=1` 时写 `/tmp/gap-selrefs.log`（§7；以前每次启动都写，首发前必修），`llvm.patchSha256` 变为 `3bb8a987…`、`llvm.kaldoIossimSha256` 变为 `8ed50386…`（macOS 版 libKaldo 同步重建），字段格式不变。公开 klib（v8，0.1.0）：bundle 清单新增 `externalKlibs`、`bundledKlibs`（§9.2），新增组件 `bundled-klibs`，新脚本 `gen-external-klibs.py`；`fetch-toolchain.py` 下载并校验公开 klib，不再读 Gradle 缓存，`--auto-cache-from` 默认为空；`compose-compiler-plugin` 改为 Release 附件；每个组件附 LICENSE 和 NOTICE；fetch 生成的 local 清单带 `tools`（绝对路径）。首发后（不升版本，只新增可选项）：`fetch-toolchain.py` 下载重试；温重启提速——`merge-payloads.py` 新增可选 `KALDO_MERGE_CACHE_DIR`（§3.1），`hotreload.sh package` 的编译走 `hr-klib.sock`、打印 `PACKAGE ms=…` 诊断行（§5、§10.2）；`ComposableSingletons`/`object` 的行为写进 TECHNICAL-NOTES §1.6 并加回归；Kotlin Multiplatform：`hotreload.sh` 的可选源码集参数 `UI_FRAGMENTS`/`APP_FRAGMENTS` 等，`reload` 按模块分 app/ui，`ui-klib` 守护进程失败时回退（§5，TECHNICAL-NOTES §11）。工具链 `2.5.255-hotreload.5`（不升接口）：编译器在 split 编译下于启动时绑定 ObjCExport 的 WritableTypeInfo 字段（TECHNICAL-NOTES §1.8），`kotlin.patchSha256` 变为 `40c81628…`，其余组件和身份字段与 .4 相同。工具链 `2.5.255-hotreload.6`（不升接口，只新增可选开关）：reload 成功后强制完整重组（Compose 补丁里 `ui` 模块的 `HotReloadRecompose.ios.kt`，TECHNICAL-NOTES §1.6），新环境开关 `KONAN_HR_FORCE_RECOMPOSE`（默认开，§7）；LLVM 补丁修启动时 `simplifyDepGroups` 的越界读（LIMITATIONS 第 6 条）。`compose.patchSha256`、`llvm.patchSha256`、`llvm.kaldoIossimSha256` 随之变化，字段格式不变；compose-klibs 组件只有 `ui` 一个 klib 变化。公开 klib（`externalKlibs`）改为 Compose 构建实际解析到的那组：补上缺的 `navigationevent-compose`（androidx 1.1.1 和 org.jetbrains 1.1.0）、`lifecycle-viewmodel-compose` 2.11.0、`graphics-shapes` 1.1.0，并把 collection 1.5.0→1.6.0、lifecycle 2.9.4→2.11.0、navigationevent 1.0.1→1.1.1、savedstate 1.3.3→1.5.0、atomicfu 0.27.0→0.33.0 对齐（.5 缺这几个，`Dialog`、`BackHandler` 运行时 `IrLinkageError`，LIMITATIONS 第 18 条）；`pack-toolchain.sh` 打包前用 `check-klib-deps.py` 检查 klib 集合闭合。工具链 `2.5.255-hotreload.7`（不升接口）：Compose 基线改为官方标签 `v1.13.0-rc01`（`compose.version` `1.13.0-rc01`，`compose.baseCommit` `f39822e6a77e…`），补丁不变（`compose.patchSha256` 仍是 `335d7a32…`）；`compose-klibs` 19 个模块全部重编（公开 ABI 与官方 rc01 klib 相同），`cmp-uikit-utils` 用 rc01 的源码重编；公开 klib 跟随 rc01：Compose runtime 1.13.0-rc01、skiko 0.156.1、atomicfu 0.28.0。skiko 0.156.1 在 Maven Central 上，所以 `bundledKlibs` 为空，不再有 `bundled-klibs` 组件（字段和组件格式不变，`fetch-toolchain.py` 本来就允许它为空） |
+| 8 | 2026-11-19 | B10：分类器提速。守护进程新增 `@klib` 工具请求（§2.1）；`compat-classify.py` 新增 `baseline`/`check` 子命令和 `--daemon`、`--cache-dir`，快照增加 `klibSha256`（§10.1）；`reload` 的分类改为与 cache-only 编译并行、发送前等结论，app library klib 走 `hr-klib.sock`（§10.2）。**行为变化**：`hr-compile.sock` 有默认路径 `$HRC_SOCKET_DIR/hr-compile.sock`（`HRC_SOCKET_DIR` 默认 `<工程>/.hr`），存在就用，不再要求显式导出 `HRC_SOCKET`（§2.3）；`reload --no-warm` 在退出 3 前会先完成编译（仍不发送）。`merge-payloads.py` 在任何退出路径上删除工作目录，`KALDO_MERGE_KEEP=1` 保留（§3.1）。`fetch-toolchain.py` 接受 interfaceVersion 6–8 的 bundle 清单（v7 时它仍只认 6，下载 v7 清单会被拒，这是 v7 的遗漏）。清单字段不变。B11：libKaldo 只在 `KALDO_DEBUG_SELREFS=1` 时写 `/tmp/gap-selrefs.log`（§7；以前每次启动都写，首发前必修），`llvm.patchSha256` 变为 `3bb8a987…`、`llvm.kaldoIossimSha256` 变为 `8ed50386…`（macOS 版 libKaldo 同步重建），字段格式不变。公开 klib（v8，0.1.0）：bundle 清单新增 `externalKlibs`、`bundledKlibs`（§9.2），新增组件 `bundled-klibs`，新脚本 `gen-external-klibs.py`；`fetch-toolchain.py` 下载并校验公开 klib，不再读 Gradle 缓存，`--auto-cache-from` 默认为空；`compose-compiler-plugin` 改为 Release 附件；每个组件附 LICENSE 和 NOTICE；fetch 生成的 local 清单带 `tools`（绝对路径）。首发后（不升版本，只新增可选项）：`fetch-toolchain.py` 下载重试；温重启提速——`merge-payloads.py` 新增可选 `KALDO_MERGE_CACHE_DIR`（§3.1），`hotreload.sh package` 的编译走 `hr-klib.sock`、打印 `PACKAGE ms=…` 诊断行（§5、§10.2）；`ComposableSingletons`/`object` 的行为写进 TECHNICAL-NOTES §1.6 并加回归；Kotlin Multiplatform：`hotreload.sh` 的可选源码集参数 `UI_FRAGMENTS`/`APP_FRAGMENTS` 等，`reload` 按模块分 app/ui，`ui-klib` 守护进程失败时回退（§5，TECHNICAL-NOTES §11）。工具链 `2.5.255-hotreload.5`（不升接口）：编译器在 split 编译下于启动时绑定 ObjCExport 的 WritableTypeInfo 字段（TECHNICAL-NOTES §1.8），`kotlin.patchSha256` 变为 `40c81628…`，其余组件和身份字段与 .4 相同。工具链 `2.5.255-hotreload.6`（不升接口，只新增可选开关）：reload 成功后强制完整重组（Compose 补丁里 `ui` 模块的 `HotReloadRecompose.ios.kt`，TECHNICAL-NOTES §1.6），新环境开关 `KONAN_HR_FORCE_RECOMPOSE`（默认开，§7）；LLVM 补丁修启动时 `simplifyDepGroups` 的越界读（LIMITATIONS 第 6 条）。`compose.patchSha256`、`llvm.patchSha256`、`llvm.kaldoIossimSha256` 随之变化，字段格式不变；compose-klibs 组件只有 `ui` 一个 klib 变化。公开 klib（`externalKlibs`）改为 Compose 构建实际解析到的那组：补上缺的 `navigationevent-compose`（androidx 1.1.1 和 org.jetbrains 1.1.0）、`lifecycle-viewmodel-compose` 2.11.0、`graphics-shapes` 1.1.0，并把 collection 1.5.0→1.6.0、lifecycle 2.9.4→2.11.0、navigationevent 1.0.1→1.1.1、savedstate 1.3.3→1.5.0、atomicfu 0.27.0→0.33.0 对齐（.5 缺这几个，`Dialog`、`BackHandler` 运行时 `IrLinkageError`，LIMITATIONS 第 18 条）；`pack-toolchain.sh` 打包前用 `check-klib-deps.py` 检查 klib 集合闭合。工具链 `2.5.255-hotreload.7`（不升接口）：Compose 基线改为官方标签 `v1.13.0-rc01`（`compose.version` `1.13.0-rc01`，`compose.baseCommit` `f39822e6a77e…`），补丁不变（`compose.patchSha256` 仍是 `335d7a32…`）；`compose-klibs` 19 个模块全部重编（公开 ABI 与官方 rc01 klib 相同），`cmp-uikit-utils` 用 rc01 的源码重编；公开 klib 跟随 rc01：Compose runtime 1.13.0-rc01、skiko 0.156.1、atomicfu 0.28.0。skiko 0.156.1 在 Maven Central 上，所以 `bundledKlibs` 为空，不再有 `bundled-klibs` 组件（字段和组件格式不变，`fetch-toolchain.py` 本来就允许它为空）。工具链 `2.5.255-hotreload.8`（不升接口，只新增可选开关和日志行）：libKaldo 每次 reload 摘掉上一层 JITDylib 的宿主符号生成器，加载耗时不再随 reload 次数增长（Issue #5，`llvm.patchSha256` `3e0dafa3…`、`llvm.kaldoIossimSha256` `6810d16b…`）；Kotlin/Native runtime 把 reload 放到主队列上、两帧之间执行，2 s 内主线程没接手就不应用补丁并打印 `HR reload: NOT applied: …`，每次 reload 打印 `HR reload: ran on the main queue requestEpochMs=… waitMs=… runMs=…`，新环境开关 `KONAN_HR_RELOAD_ON_MAIN`、`KONAN_HR_MAIN_WAIT_MS`（§7，Issue #27，`kotlin.patchSha256` `4f560d86…`）；Compose `ui` 在回调里当场失效，`HR forceRecompose` 日志行在 `deferred=` 后多一个 `via=reload|frame|task` 字段（`compose.patchSha256` `42e1eba6…`，compose-klibs 只有 `ui` 变化）。发送方应把 `HR reload: NOT applied` 行显示为这次热重载失败 |
 
 ## 9. 分发：打包 → 发布 → 下载（v6）
 
@@ -366,6 +370,7 @@ fetch-toolchain.py MANIFEST --cache DIR [--llvm-home official|PATH] [--extra-kli
   `ORC_RUNTIME`、`UIKIT_UTILS`，source 之后可以直接用 `hotreload.sh` 和 `run.sh`。
 - 退出码：0 成功；1 其他错误（只打印一行原因；设 `FETCH_DEBUG=1` 才显示完整堆栈）；2 清单或参数不对（包括清单不是有效 JSON）；3 字节数或 sha256 不一致；4 缺 `zstd` 或解包失败；5 下载失败。
 - 重试：清单和 GitHub API 请求最多尝试 `FETCH_RETRIES` 次（默认 4），间隔按指数增长（`FETCH_BACKOFF`，默认 1 s：1、2、4 s）。传输中断、超时、连接错误和 HTTP 408/429/5xx 会重试，404 等不会。每次重试和最终失败都打印中英文短提示，不打印 Python 堆栈。组件和公开 klib 用 `curl` 下载（自带重试和断点续传）。测试：`scripts/test-fetch-toolchain.py`。
+- 解包（Issue #31）：同一版本同时只有一个 fetch 在工作（`<cache>/<version>/.fetch.lock`，后来的等前一个结束，再看到组件已完成就跳过）；组件先解到目标旁边的新临时目录，再逐个文件移进目标目录（几个组件共用一个目录时互不覆盖），目标里不会出现写了一半的文件；解包失败重试一次（`FETCH_EXTRACT_ATTEMPTS`，默认 2），报错带 zstd/tar 的原文，已校验的下载文件留在 `.download`，不标记完成，重新运行会再校验后直接解包。上次中断留下的临时目录在加锁后清掉。
 - 公开仓库的 Release 附件和公开 klib 都不需要 token。设了 `$GITHUB_TOKEN` 时，Release 附件会带上它（私有仓库通过 GitHub API 按 tag 查 asset id）。
   Release 走 https 这条路在首次公开发布时第一次实测；公开 klib 的 https 下载已经实测（Maven Central、Google Maven）。
 - `KLIB_AUTO_CACHE_FROM` 只包含工具链自己的 klib 目录（`compose-klibs`、`external-klibs`、`bundled-klibs`），`--auto-cache-from` 默认为空（v7 及以前默认是 `~/.gradle/caches`）。
@@ -377,9 +382,9 @@ fetch-toolchain.py MANIFEST --cache DIR [--llvm-home official|PATH] [--extra-kli
 
 ```
 compat-classify.py snapshot --klib <klib> --out <json> [--klib-tool <klib-tool>] [--daemon <sock>] [--cache-dir <dir>]
-compat-classify.py classify --old <json> --new <json> [--json]
+compat-classify.py classify --old <json> --new <json> [--json] [--force-recompose]
 compat-classify.py baseline --baseline-dir <dir> --module <name>=<klib> ... [--klib-tool ..] [--daemon ..] [--cache-dir ..]   # v8
-compat-classify.py check    --baseline-dir <dir> --module <name>=<klib|-> ... [--klib-tool ..] [--daemon ..] [--cache-dir ..] [--prior-ms <name>=<ms>]   # v8
+compat-classify.py check    --baseline-dir <dir> --module <name>=<klib|-> ... [--klib-tool ..] [--daemon ..] [--cache-dir ..] [--prior-ms <name>=<ms>] [--force-recompose]   # v8
 ```
 
 v8 新增（`snapshot`/`classify` 的行为和退出码不变）：
@@ -396,7 +401,8 @@ v8 新增（`snapshot`/`classify` 的行为和退出码不变）：
 
 - `classes`：类（含嵌套/companion）的可见性、超类型、构造函数签名、字段列表（名字、类型、`val`/`var`、可见性、
   **声明顺序**，私有字段也记录）、方法签名（含 `inline`/`suspend` 标记）；
-- `topProperties` / `topFunctions`：包级声明；
+- `topProperties` / `topFunctions`：包级声明（0.2.4 起 `topFunctions` 按 `名字(参数)` 存，重载各占一项；旧脚本写的按名字存的
+  基线照常可比）；函数项新增 `composable`（带 `@Composable`）；
 - `bodies`：所有 `inline` 和 `suspend` 函数的 IR 正文哈希（用于发现正文改动）；
 - `topOther` / `classes[].other`：未识别的成员原文，用于保守拦截。
 
@@ -406,8 +412,8 @@ v8 新增（`snapshot`/`classify` 的行为和退出码不变）：
 | 类别 | 触发条件 |
 |---|---|
 | `field-layout` | 类字段新增/删除/类型变化/顺序变化，或构造函数签名变化 |
-| `signature` | 函数签名变化；open/abstract/sealed 类、enum、interface、ObjC 子类（父类型是 `platform/*` 或带 `@ExportObjCClass`）新增方法，或任何类新增 override/open 方法；超类型变化；类的 modality（final/open/abstract/sealed）变化；涉及 `private` 的顶层函数可见性变化；typealias 改指向或删除 |
-| `inline` | 已有 inline 函数的正文变化（IR 哈希不同） |
+| `signature` | 函数签名变化（0.2.4 起只限下文「签名变化」之外的情形）；open/abstract/sealed 类、enum、interface、ObjC 子类（父类型是 `platform/*` 或带 `@ExportObjCClass`）新增方法，或任何类新增 override/open 方法；超类型变化；类的 modality（final/open/abstract/sealed）变化；涉及 `private` 的顶层函数可见性变化；typealias 改指向或删除 |
+| `inline` | 已有 inline 函数的正文变化（IR 哈希不同），或其签名变化 |
 | `suspend` | 已有 suspend 函数的正文变化，或其签名变化 |
 | `top-level-property` | 顶层属性新增/删除/类型或 `val`/`var` 变化 |
 | `class-removed` | 类被删除（旧实例可能还活着） |
@@ -417,6 +423,27 @@ v8 新增（`snapshot`/`classify` 的行为和退出码不变）：
 新增类和嵌套类、`const val` 的值变化（初始化值不属于布局）；首发后（0.1.2，不升版本）另外放行：final 类（非 enum、非 ObjC 子类）
 和 object/companion 新增 **final** 方法、新增 typealias、顶层函数在 `internal` 与 `public` 之间改可见性（两者符号名相同）。
 新加的字段只读新快照，旧版脚本写的基线照常可比，升级后不会多一次温重启。用例表：`gradle-plugin/test-projects/classifier-cases/cases.py`。
+
+**签名变化（0.2.4，Issue #28，依据 REPORT §33）**：同名函数的重载集合变了（加/删参数、改参数类型或默认值、改返回值类型、删掉
+某个重载）时，下列情形判 **HOT**，因为增量编译会把所有调用方一起重编进补丁，新代码只引用新符号：
+
+- 顶层函数（含 `expect`/`actual` 函数：klib 元数据里它们就是普通函数）；
+- final 类（非 enum、非 ObjC 子类、不带 `@ExportObjCClass`）和 object/companion 的 final 成员（元数据里 override 显示为 `open`，不算）；
+  在这类类里整个删掉一个 final 成员也判 HOT；
+- `@Composable` 函数：只有带 `--force-recompose`（运行中的 app 开着强制重组，`KONAN_HR_FORCE_RECOMPOSE=1`）时 HOT，
+  并输出一行 `NOTE remember-reset <符号>: …`（这个 composable 自己的 remember 重置一次）；不带时判 `WARM signature … (@Composable with forceRecompose off)`，
+  因为 slot table 里的重启 lambda 还带着旧参数。
+
+仍为 WARM：`inline`（类别 `inline`）、`suspend`（类别 `suspend`）、open/abstract/override/接口成员、enum 和 ObjC 子类的成员
+（类别 `signature`），构造函数（`field-layout`）。私有函数（非 composable）的签名变化照旧不报。
+
+**#20 放宽与收紧（0.2.4）**：顶层 `const val` 的新增和删除不再报（常量没有要初始化的存储，调用方内联取值）；final 类/object/companion
+新增的 `inline`、`suspend` 成员不再报（补丁之外没有调用方或挂起中的协程）；open/abstract/sealed 类（非 enum、非 ObjC 子类）新增
+final 成员不再报（直接调用，不经虚表）。`@ExportObjCClass` 不记录在 klib 元数据里，分类器看不到它的增删（ObjC 子类的成员改动本来就判 WARM）。
+书面评估见 `gradle-plugin/test-projects/classifier-cases/RELAXATIONS.md`。
+
+输出新增一种行 `NOTE <类别> <符号>: <说明>`，只是提示，不影响退出码；`classify --json` 里对应 `notes`。`hotreload.sh` 不传
+`--force-recompose`，所以在那里改 composable 签名仍然温重启。
 
 ### 10.2 在 `hotreload.sh` 里
 

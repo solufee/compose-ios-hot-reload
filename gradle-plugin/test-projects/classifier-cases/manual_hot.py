@@ -96,6 +96,23 @@ STEPS = [
     ("new typealias", chain(append(f'\ntypealias Label{X} = String\n\nfun lab{X}(): Label{X} = "alias"\n'), hrx(f"lab{X}()")), "|alias|"),
     ("new internal function", chain(append(f'\ninternal fun vis{X}(): String = "vint"\n'), hrx(f"vis{X}()")), "|vint|"),
     ("internal -> public (and body)", sub(f'internal fun vis{X}(): String = "vint"', f'fun vis{X}(): String = "vpub"'), "|vpub|"),
+    # 0.2.4 (#28): signature changes; every caller (here hrx) is recompiled into the patch.
+    ("top-level: parameter with a default added", chain(sub(f'fun lab{X}(): Label{X} = "alias"', f'fun lab{X}(s: String = "2"): Label{X} = "alias" + s'), hrx(f"lab{X}()")), "|alias2|"),
+    ("top-level: parameter removed", sub(f'fun lab{X}(s: String = "2"): Label{X} = "alias" + s', f'fun lab{X}(): Label{X} = "al3"'), "|al3|"),
+    ("top-level: return type changed", chain(sub(f'fun lab{X}(): Label{X} = "al3"', f'fun lab{X}(): Int = 4'), hrx(f'"r" + lab{X}()')), "|r4|"),
+    ("final member: parameter with a default added", chain(sub("fun thrice(): Int = a * 4", "fun thrice(k: Int = 6): Int = a * k"), hrx(f'"c" + Calc{X}(5).thrice()')), "|c30|"),
+    ("object member: return type changed", chain(sub('    fun b(): String = "ob"\n', '    fun b(): Int = 7\n'), hrx(f'"o" + Fmt{X}.b()')), "|o7|"),
+    ("companion member: parameter added (no default), caller changed", chain(sub('        fun two(): String = "c2"\n', '        fun two(n: Int): String = "c$n"\n'), hrx(f"Box{X}.two(9)")), "|c9|"),
+    ("final member removed", chain(sub("    fun thrice(k: Int = 6): Int = a * k\n", ""), hrx(f'"c" + Calc{X}(5).twice()')), "|c10|"),
+    # 0.2.4 (#20): relaxed cases and already-hot cases now covered.
+    ("const val added", chain(append(f'\nconst val K{X} = "k1"\n'), hrx(f"K{X}")), "|k1|"),
+    ("inline method added to a final class", chain(sub("    fun twice(): Int = a * 2\n", "    fun twice(): Int = a * 2\n    inline fun quad(): Int = a * 4\n"), hrx(f'"q" + Calc{X}(5).quad()')), "|q20|"),
+    ("suspend method added to an object", chain(sub('    fun a(): String = "oa"\n', '    fun a(): String = "oa"\n    suspend fun later(): String = "os"\n'), hrx(f"kotlinx.coroutines.runBlocking {{ Fmt{X}.later() }}")), "|os|"),
+    ("new open class with a subclass", chain(append(f'\nopen class Shape{X} {{\n    open fun sides(): Int = 0\n}}\n\nclass Tri{X} : Shape{X}() {{\n    override fun sides(): Int = 3\n}}\n'), hrx(f'"s" + Tri{X}().sides()')), "|s3|"),
+    ("final method added to an open class, called on a subclass instance", chain(sub("    open fun sides(): Int = 0\n", "    open fun sides(): Int = 0\n    fun twiceSides(): Int = sides() * 2\n"), hrx(f'"t" + Tri{X}().twiceSides()')), "|t6|"),
+    ("new sealed class with a subclass", chain(append(f'\nsealed class Pick{X}\nclass PickA{X} : Pick{X}()\n\nfun pickName{X}(p: Pick{X}): String = when (p) {{\n    is PickA{X} -> "pa"\n}}\n'), hrx(f"pickName{X}(PickA{X}())")), "|pa|"),
+    ("subclass added to a sealed class (exhaustive when updated)", chain(sub(f"class PickA{X} : Pick{X}()\n", f"class PickA{X} : Pick{X}()\nclass PickB{X} : Pick{X}()\n"), sub(f'    is PickA{X} -> "pa"\n', f'    is PickA{X} -> "pa"\n    is PickB{X} -> "pb"\n'), hrx(f"pickName{X}(PickB{X}())")), "|pb|"),
+    ("companion object added to an existing class", chain(sub(f"class Calc{X}(val a: Int) {{\n", f"class Calc{X}(val a: Int) {{\n    companion object {{\n        fun seven(): Calc{X} = Calc{X}(7)\n    }}\n"), hrx(f'"m" + Calc{X}.seven().twice()')), "|m14|"),
 ]
 
 orig = open(F).read()

@@ -1,0 +1,70 @@
+# three-modules, branch feat/classifier-relaxations (wt20 working tree), toolchain 2.5.255-hotreload.7, 2026-11-20 23:55:58
+package timing ms=121584 compile=112140 merge=7176 embed+bundle=2268
+BUILD SUCCESSFUL in 2m 6s
+CMP hot reload: app started (attempt 1, pid 51913, 6.0 s, port 5568, log <REPO>/gradle-plugin/test-projects/three-modules/launch.log)
+BUILD SUCCESSFUL in 7s
+# manual hot-swap proof: core/src/main/kotlin/core.kt in three-modules, app pid 51913
+step00 OK 10383ms hot=True loaded=True on_screen=True pid 51913->51913 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 6897ms hot=True loaded=True on_screen=True pid 51913->51913 [new final class] expect '|c10|'
+step02 OK 6463ms hot=True loaded=True on_screen=True pid 51913->51913 [method added to a final class] expect '|c15|'
+step03 OK 6334ms hot=True loaded=True on_screen=True pid 51913->51913 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 6355ms hot=True loaded=True on_screen=True pid 51913->51913 [new object] expect '|oa|'
+step05 OK 6259ms hot=True loaded=True on_screen=True pid 51913->51913 [method added to an object] expect '|ob|'
+step06 OK 6213ms hot=True loaded=True on_screen=True pid 51913->51913 [new class with a companion] expect '|c1|'
+step07 OK 6357ms hot=True loaded=True on_screen=True pid 51913->51913 [method added to a companion object] expect '|c2|'
+step08 OK 6374ms hot=True loaded=True on_screen=True pid 51913->51913 [new typealias] expect '|alias|'
+step09 OK 6300ms hot=True loaded=True on_screen=True pid 51913->51913 [new internal function] expect '|vint|'
+step10 OK 6257ms hot=True loaded=True on_screen=True pid 51913->51913 [internal -> public (and body)] expect '|vpub|'
+step11 OK 5914ms hot=True loaded=True on_screen=True pid 51913->51913 [top-level: parameter with a default added] expect '|alias2|'
+step12 OK 5766ms hot=True loaded=True on_screen=True pid 51913->51913 [top-level: parameter removed] expect '|al3|'
+step13 OK 5684ms hot=True loaded=True on_screen=True pid 51913->51913 [top-level: return type changed] expect '|r4|'
+step14 OK 6303ms hot=True loaded=True on_screen=True pid 51913->51913 [final member: parameter with a default added] expect '|c30|'
+step15 OK 6272ms hot=True loaded=True on_screen=True pid 51913->51913 [object member: return type changed] expect '|o7|'
+step16 OK 5732ms hot=True loaded=True on_screen=True pid 51913->51913 [companion member: parameter added (no default), caller changed] expect '|c9|'
+step17 OK 6123ms hot=True loaded=True on_screen=True pid 51913->51913 [final member removed] expect '|c10|'
+step18 OK 6196ms hot=True loaded=True on_screen=True pid 51913->51913 [const val added] expect '|k1|'
+step19 OK 6125ms hot=True loaded=True on_screen=True pid 51913->51913 [inline method added to a final class] expect '|q20|'
+step20 OK 6299ms hot=True loaded=True on_screen=True pid 51913->51913 [suspend method added to an object] expect '|os|'
+step21 OK 6280ms hot=True loaded=True on_screen=True pid 51913->51913 [new open class with a subclass] expect '|s3|'
+step22 OK 6251ms hot=True loaded=True on_screen=True pid 51913->51913 [final method added to an open class, called on a subclass instance] expect '|t6|'
+step23 OK 6572ms hot=True loaded=True on_screen=True pid 51913->51913 [new sealed class with a subclass] expect '|pa|'
+step24 OK 6348ms hot=True loaded=True on_screen=True pid 51913->51913 [subclass added to a sealed class (exhaustive when updated)] expect '|pb|'
+step25 OK 6443ms hot=True loaded=True on_screen=True pid 51913->51913 [companion object added to an existing class] expect '|m14|'
+# file restored
+summary: 26/26 hot and on screen, same pid
+# ui from a fresh package and launch
+package timing ms=14269 compile=9262 merge=2661 embed+bundle=2346
+BUILD SUCCESSFUL in 15s
+CMP hot reload: app started (attempt 1, pid 56781, 6.3 s, port 5568, log <REPO>/gradle-plugin/test-projects/three-modules/launch.log)
+BUILD SUCCESSFUL in 7s
+# manual hot-swap proof: ui/src/main/kotlin/ui.kt in three-modules, app pid 56781
+step00 OK 5496ms hot=True loaded=True on_screen=True pid 56781->56781 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 4877ms hot=True loaded=True on_screen=True pid 56781->56781 [new final class] expect '|c10|'
+step02 OK 4748ms hot=True loaded=True on_screen=True pid 56781->56781 [method added to a final class] expect '|c15|'
+step03 OK 4777ms hot=True loaded=True on_screen=True pid 56781->56781 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 4806ms hot=True loaded=True on_screen=True pid 56781->56781 [new object] expect '|oa|'
+step05 OK 4741ms hot=True loaded=True on_screen=True pid 56781->56781 [method added to an object] expect '|ob|'
+step06 OK 4780ms hot=True loaded=True on_screen=True pid 56781->56781 [new class with a companion] expect '|c1|'
+step07 OK 4716ms hot=True loaded=True on_screen=True pid 56781->56781 [method added to a companion object] expect '|c2|'
+step08 OK 4779ms hot=True loaded=True on_screen=True pid 56781->56781 [new typealias] expect '|alias|'
+step09 OK 4906ms hot=True loaded=True on_screen=True pid 56781->56781 [new internal function] expect '|vint|'
+step10 OK 4744ms hot=True loaded=True on_screen=True pid 56781->56781 [internal -> public (and body)] expect '|vpub|'
+step11 OK 4834ms hot=True loaded=True on_screen=True pid 56781->56781 [top-level: parameter with a default added] expect '|alias2|'
+step12 OK 4829ms hot=True loaded=True on_screen=True pid 56781->56781 [top-level: parameter removed] expect '|al3|'
+step13 OK 5048ms hot=True loaded=True on_screen=True pid 56781->56781 [top-level: return type changed] expect '|r4|'
+step14 OK 4808ms hot=True loaded=True on_screen=True pid 56781->56781 [final member: parameter with a default added] expect '|c30|'
+step15 OK 4786ms hot=True loaded=True on_screen=True pid 56781->56781 [object member: return type changed] expect '|o7|'
+step16 OK 4825ms hot=True loaded=True on_screen=True pid 56781->56781 [companion member: parameter added (no default), caller changed] expect '|c9|'
+step17 OK 4961ms hot=True loaded=True on_screen=True pid 56781->56781 [final member removed] expect '|c10|'
+step18 OK 4921ms hot=True loaded=True on_screen=True pid 56781->56781 [const val added] expect '|k1|'
+step19 OK 4837ms hot=True loaded=True on_screen=True pid 56781->56781 [inline method added to a final class] expect '|q20|'
+step20 OK 4829ms hot=True loaded=True on_screen=True pid 56781->56781 [suspend method added to an object] expect '|os|'
+step21 OK 4714ms hot=True loaded=True on_screen=True pid 56781->56781 [new open class with a subclass] expect '|s3|'
+step22 OK 4827ms hot=True loaded=True on_screen=True pid 56781->56781 [final method added to an open class, called on a subclass instance] expect '|t6|'
+step23 OK 4725ms hot=True loaded=True on_screen=True pid 56781->56781 [new sealed class with a subclass] expect '|pa|'
+step24 OK 4804ms hot=True loaded=True on_screen=True pid 56781->56781 [subclass added to a sealed class (exhaustive when updated)] expect '|pb|'
+step25 OK 4829ms hot=True loaded=True on_screen=True pid 56781->56781 [companion object added to an existing class] expect '|m14|'
+# file restored
+summary: 26/26 hot and on screen, same pid
+crash lines in launch.log: 0
+source files differing from git:        0

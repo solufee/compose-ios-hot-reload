@@ -12,6 +12,32 @@ import java.io.File
  * No module object was rebuilt since the running app last got new code (#7): there is nothing to send. Not an
  * error: `hotReload` reports it and succeeds, so an edit-free run (or the first run of `-t`) does not fail.
  */
+/** The running app did not apply a sent patch (toolchain .8+: `HR reload: NOT applied`). hotReload fails; a watch keeps watching. */
+class PatchNotApplied(message: String) : GradleException(message)
+
+/** What the app's log says about a sent patch (lines since sending). */
+sealed class ReloadOutcome {
+    data class NotApplied(val line: String, val waitMs: Long?) : ReloadOutcome()
+    data class Applied(val line: String, val waitMs: Long?, val runMs: Long?) : ReloadOutcome()
+    /** Only the loader's `[kaldo] ::` lines so far. */
+    object Loaded : ReloadOutcome()
+    object None : ReloadOutcome()
+}
+
+/** Reads the app's answer to a patch from its log lines since the patch was sent (#40). */
+fun reloadOutcome(sinceSend: String): ReloadOutcome {
+    val lines = sinceSend.replace('\r', '\n').lines()
+    lines.firstOrNull { it.contains("HR reload: NOT applied") }?.let { l ->
+        val ms = Regex("""within (\d+) ms""").find(l)?.groupValues?.get(1)?.toLongOrNull()
+        return ReloadOutcome.NotApplied(l.substring(l.indexOf("HR reload:")).trim(), ms)
+    }
+    lines.firstOrNull { it.contains("HR reload: ran") }?.let { l ->
+        fun num(key: String) = Regex("""\b$key=(\d+)""").find(l)?.groupValues?.get(1)?.toLongOrNull()
+        return ReloadOutcome.Applied(l.substring(l.indexOf("HR reload:")).trim(), num("waitMs"), num("runMs"))
+    }
+    return if (lines.any { it.contains("[kaldo] ::") }) ReloadOutcome.Loaded else ReloadOutcome.None
+}
+
 class NothingChanged(val modules: Int) :
     GradleException("CMP hot reload: nothing changed ($modules hot module${if (modules == 1) "" else "s"} checked); nothing sent")
 
@@ -235,13 +261,63 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     private fun compilerMessages(log: String): String =
         log.lines().filterNot { it.startsWith("REQ ") || it.isBlank() }.joinToString("\n").takeLast(6000)
 
+    /** What the last successful klib compile of a module was built from (#21): one `kind key value` line per input. */
+    fun klibInputsFile(m: HrModule): File = File(s.klibOf(m).parentFile, "inputs.txt")
+
+    /**
+     * Inputs of a library klib (#21), sorted `kind key value` lines: the compiler arguments, every Kotlin source of the
+     * module (generated ones included) by path and sha256, each module klib it links by sha256 (an upstream module whose
+     * klib bytes changed rebuilds its dependents; klibs are deterministic, so an unchanged upstream rebuild does not),
+     * and each dependency klib from Gradle by size and mtime. The toolchain's own klibs are covered by the arguments
+     * (paths of the pinned toolchain) and the toolchain identity.
+     */
+    fun libraryInputs(m: HrModule, out: File = s.klibOf(m)): List<String> {
+        val lines = mutableListOf(
+            "args - ${Tools.sha256(libraryArgs(m, out).joinToString("\u0000").toByteArray())}",
+            "toolchain - ${Tools.sha256("${s.compilerJar}|${s.composePlugin}|${s.klibList}".toByteArray())}",
+        )
+        m.sourceDirs.map(::File).filter { it.isDirectory }.forEach { d ->
+            d.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { f -> lines += "source ${f.path} ${Tools.sha256(f.readBytes())}" }
+        }
+        s.libraries.filter { it.path in m.deps }.forEach { d ->
+            val k = s.klibOf(d)
+            lines += "module ${d.label} ${if (k.isFile) Tools.sha256(k.readBytes()) else "missing"}"
+        }
+        externalKlibStamps().forEach { (path, stamp) -> lines += "external $path $stamp" }
+        return lines.sorted()
+    }
+
+    /**
+     * Compiles [m] to its klib unless the klib exists and was built from exactly the same inputs ([libraryInputs]):
+     * Gradle may re-run the task for reasons that do not affect this module (#21). Prints why it compiles.
+     */
     fun compileLibrary(m: HrModule, daemons: Daemons?) {
-        val out = s.klibOf(m)
+        if (compileKlibIfChanged(m, s.klibOf(m), klibInputsFile(m), "klib ${m.label}", daemons)) {
+            logger.lifecycle("klib ${m.label}: ${s.klibOf(m).path}")
+        }
+    }
+
+    /**
+     * Compiles [m] to [out] unless [out] exists and was built from the same [libraryInputs] (recorded in [record]).
+     * Returns whether it compiled. [what] starts the log lines.
+     */
+    private fun compileKlibIfChanged(m: HrModule, out: File, record: File, what: String, daemons: Daemons?): Boolean {
         out.parentFile.mkdirs()
+        val t0 = System.currentTimeMillis()
+        val inputs = libraryInputs(m, out)
+        val before = if (record.isFile && out.isFile) record.readLines().filter { it.isNotBlank() } else null
+        if (before == inputs) {
+            val n = inputs.count { it.startsWith("source ") }
+            logger.lifecycle("$what: inputs unchanged ($n source files, ${System.currentTimeMillis() - t0} ms to check); not recompiled")
+            return false
+        }
+        logger.lifecycle("$what: compiling (${klibChangeReason(before, inputs)})")
+        record.delete()
         out.deleteRecursively()
-        compile(libraryArgs(m), if (daemons != null) s.klibSocket else null, "klib", cacheOnly = false, daemons = daemons)
+        compile(libraryArgs(m, out), if (daemons != null) s.klibSocket else null, "klib", cacheOnly = false, daemons = daemons)
         if (!out.exists()) throw GradleException("CMP hot reload: compiler reported success but ${out.path} is missing")
-        logger.lifecycle("klib ${m.label}: ${out.path}")
+        record.writeText(inputs.joinToString("\n", postfix = "\n"))
+        return true
     }
 
     /**
@@ -251,10 +327,8 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     fun compileAppKlib(daemons: Daemons?): File {
         writeGeneratedMain()
         val out = File(s.compatDir, "app.klib")
-        out.parentFile.mkdirs()
-        out.deleteRecursively()
-        compile(libraryArgs(s.app, out), if (daemons != null) s.klibSocket else null, "klib", cacheOnly = false, daemons = daemons)
-        if (!out.exists()) throw GradleException("CMP hot reload: compiler reported success but ${out.path} is missing")
+        // #21: a warm restart's baseline needs the same app klib the classifier just compiled; it is reused.
+        compileKlibIfChanged(s.app, out, File(s.compatDir, "app.inputs.txt"), "app klib (classifier)", daemons)
         return out
     }
 
@@ -362,36 +436,68 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         sendPatch(patch)
     }
 
+    /**
+     * Sends the patch and waits for the app's answer in its log. Only a patch the app took becomes the applied state;
+     * when the app reports `HR reload: NOT applied` (toolchain .8+: its main thread did not take the reload in time),
+     * [PatchNotApplied] is thrown and the same objects are sent again by the next run.
+     */
     fun sendPatch(merged: File) {
         val log = File(s.launchLog)
         val before = if (log.isFile) log.length() else -1L
-        val t0 = System.currentTimeMillis()
         val sentAt = System.currentTimeMillis()
         ReloadSender.send(s.port, listOf(merged.path))
-        markApplied(sentAt)
         logger.lifecycle("sent ${merged.path} port ${s.port}")
-        if (before >= 0) confirmLoaded(log, before, t0)
+        if (before >= 0) confirmLoaded(log, before, sentAt)
+        markApplied(sentAt)
+    }
+
+    /**
+     * Toolchain .8+: the runtime applies a reload on the main queue and logs `HR reload: ran on the main queue … waitMs=…
+     * runMs=…`, or `HR reload: NOT applied: the main thread did not take the reload within … ms` (then nothing changed
+     * in the app). Before .8 (or with KONAN_HR_RELOAD_ON_MAIN=0) only the loader's `[kaldo] ::` lines show up.
+     */
+    private fun confirmLoaded(log: File, from: Long, t0: Long) {
+        // The runtime gives up after mainWaitMs; allow for linking before and for a loaded machine.
+        val deadline = t0 + s.mainWaitMs + 6000
+        var loadedAt = 0L
+        while (System.currentTimeMillis() < deadline) {
+            val text = log.inputStream().use { input ->
+                input.skip(from)
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+            when (val o = reloadOutcome(text)) {
+                is ReloadOutcome.NotApplied -> throw PatchNotApplied(
+                    "CMP hot reload: the app was busy, patch not applied: its main thread did not take the reload within " +
+                        "${o.waitMs ?: s.mainWaitMs} ms (\"${o.line}\"). Save again or rerun ./gradlew hotReload; the same change is sent again.",
+                )
+                is ReloadOutcome.Applied -> {
+                    logger.lifecycle("app loaded the patch (${System.currentTimeMillis() - t0} ms; on the main queue after " +
+                        "${o.waitMs ?: "?"} ms, applied in ${o.runMs ?: "?"} ms); it shows on the next recomposition")
+                    return
+                }
+                ReloadOutcome.Loaded -> {
+                    if (loadedAt == 0L) loadedAt = System.currentTimeMillis()
+                    // No `HR reload:` line at all (toolchain before .8, or the reload on the listener thread): loaded.
+                    if (System.currentTimeMillis() - loadedAt > s.mainWaitMs + 1500) {
+                        logger.lifecycle("app loaded the patch (${System.currentTimeMillis() - t0} ms); it shows on the next recomposition")
+                        return
+                    }
+                }
+                ReloadOutcome.None -> {}
+            }
+            Thread.sleep(100)
+        }
+        if (loadedAt != 0L) {
+            logger.lifecycle("app loaded the patch (${System.currentTimeMillis() - t0} ms); it shows on the next recomposition")
+            return
+        }
+        logger.warn("CMP hot reload: no reaction from the app in ${log.path} within ${(deadline - t0) / 1000} s; is it running (./gradlew hotReloadRun) and listening on port ${s.port}?")
     }
 
     /**
      * The app's loader (libKaldo) logs `[kaldo] ::` lines while it links a patch. Seeing them in the launch log
      * confirms the running app took the patch; the new code then shows on the next recomposition.
      */
-    private fun confirmLoaded(log: File, from: Long, t0: Long) {
-        val deadline = t0 + 5000
-        while (System.currentTimeMillis() < deadline) {
-            val text = log.inputStream().use { input ->
-                input.skip(from)
-                input.readBytes().toString(Charsets.UTF_8)
-            }
-            if (text.contains("[kaldo] ::")) {
-                logger.lifecycle("app loaded the patch (${System.currentTimeMillis() - t0} ms); it shows on the next recomposition")
-                return
-            }
-            Thread.sleep(100)
-        }
-        logger.warn("CMP hot reload: no reaction from the app in ${log.path} within 5 s; is it running (./gradlew hotReloadRun) and listening on port ${s.port}?")
-    }
 
     /** Compile (cache-only), collect this run's objects, merge them and check the symbols; returns the object to send. */
     fun preparePatch(daemons: Daemons?): File {
@@ -559,6 +665,27 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
          * compiling (the compiler lists only what it built in this run) plus this run's, de-duplicated.
          * The list is cleared when a patch is sent or the app is packaged.
          */
+        /** Why a klib is compiled: "first build", or what differs between two [libraryInputs] (#21). */
+        fun klibChangeReason(before: List<String>?, now: List<String>): String {
+            if (before == null) return "no previous build"
+            fun keyed(lines: List<String>) = lines.associate { l -> l.substringBeforeLast(' ') to l.substringAfterLast(' ') }
+            val a = keyed(before)
+            val b = keyed(now)
+            val changed = (a.keys + b.keys).filter { a[it] != b[it] }.sorted()
+            fun describe(kind: String, label: String): String? {
+                val keys = changed.filter { it.startsWith("$kind ") }.map { it.removePrefix("$kind ") }
+                if (keys.isEmpty()) return null
+                val names = keys.map { if (kind == "source" || kind == "external") File(it).name else it }
+                return "$label: ${names.take(3).joinToString()}" + (if (names.size > 3) " and ${names.size - 3} more" else "")
+            }
+            return listOfNotNull(
+                describe("source", "sources changed"),
+                describe("module", "module klibs changed"),
+                describe("external", "dependency klibs changed"),
+                if (changed.any { it.startsWith("args ") || it.startsWith("toolchain ") }) "compiler arguments or toolchain changed" else null,
+            ).joinToString("; ").ifEmpty { "inputs changed" }
+        }
+
         fun pendingArchives(pending: List<String>, built: List<String>): List<String> =
             (pending + built).map { it.trim() }.filter { it.contains("per-file-cache/") && it.endsWith(".a") }.distinct()
 

@@ -1,0 +1,11 @@
+ui-klib-daemon PASS rc=0 ui-klib: daemon
+package PASS rc=0 PACKAGE ms=17155 ui_klib=21 compile=10882 merge=2851 embed=989 bundle=1496 baseline=909
+launch PASS pid=27081 EH check: 128531 FDE ui-kmp tick=0 KMP[common-1 ios-1(iOS) hi-kmp-ios-1] APPKMP[appc-1 appios-1(cpu=16)]
+ui-common-body PASS want=HOT pid=27081 changed objects: app=3 ui=1 KMP[common-2 ios-1(iOS) hi-kmp-ios-1]
+ui-actual-body PASS want=HOT pid=27081 changed objects: app=1 ui=2 KMP[common-2 ios-2(iOS) hi-kmp-ios-2]
+app-common-body PASS want=HOT pid=27081 changed objects: app=2 ui=0 APPKMP[appc-2 appios-1(cpu=16)]
+app-actual-body PASS want=HOT pid=27081 changed objects: app=2 ui=0 APPKMP[appc-2 appios-2(cpu=16)]
+ui-expect-sig PASS want=HOT pid=27081 changed objects: app=1 ui=2 KMP[common-2 ios-3[sig](iOS) hi-kmp-ios-2]
+summary: 8/8 passed
+note: sources restored; the app now runs the KMP modules; run 'hotreload.sh package' (without the *_FRAGMENTS variables) to go back
+rc=0

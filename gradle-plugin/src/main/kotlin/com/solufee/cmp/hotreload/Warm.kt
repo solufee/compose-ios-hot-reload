@@ -24,7 +24,8 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
 
     fun savedState(bundleId: String): State? = savedStateFile(bundleId)?.let { parseState(it.toString(Charsets.UTF_8)) }
 
-    fun run(pipeline: Pipeline, tools: Tools, daemons: Daemons?, compat: Compat) {
+    /** Returns how long the warm restart took (ms), as printed in `WARM OK ms=`. */
+    fun run(pipeline: Pipeline, tools: Tools, daemons: Daemons?, compat: Compat): Long {
         val t0 = System.currentTimeMillis()
         val info = pipeline.appInfo()
         // The whole file travels across the reinstall (any fields the app keeps, INTERFACE §10.3 plus the
@@ -33,7 +34,8 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
         val state = stateFile?.let { parseState(it.toString(Charsets.UTF_8)) }
         logger.lifecycle(
             when {
-                stateFile == null -> "warm: the app saved no state (Documents/$STATE_FILE); restarting from its first page"
+                stateFile == null -> "warm: the app saved no state (Documents/$STATE_FILE); restarting from its first page " +
+                    "(to come back where you were, write that file: README, \"State across a warm restart\")"
                 state != null -> "warm: restoring page=${state.page} count=${state.count} (Documents/$STATE_FILE, ${stateFile.size} bytes)"
                 else -> "warm: carrying the app's Documents/$STATE_FILE (${stateFile.size} bytes) into the new install"
             },
@@ -55,6 +57,7 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
             "WARM OK ms=${end - t0} ms_package=${tPkg - t0} ms_relaunch=${end - tPkg}" +
                 (state?.let { " page=${it.page} count=${it.count}" } ?: " page=- count=-"),
         )
+        return end - t0
     }
 
     companion object {

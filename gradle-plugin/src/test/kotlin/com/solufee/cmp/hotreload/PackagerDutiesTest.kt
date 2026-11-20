@@ -38,6 +38,10 @@ class PackagerDutiesTest {
         // forceRecompose (0.2.1, toolchain .6): on by default, passed explicitly; off gives 0.
         assertEquals("1", env["SIMCTL_CHILD_KONAN_HR_FORCE_RECOMPOSE"])
         assertEquals("0", Launcher(s.copy(forceRecompose = false), logger).appEnvironment()["SIMCTL_CHILD_KONAN_HR_FORCE_RECOMPOSE"])
+        // #40 (toolchain .8): reload on the main queue, and how long it may wait for the main thread
+        assertEquals("1", env["SIMCTL_CHILD_KONAN_HR_RELOAD_ON_MAIN"])
+        assertEquals("2000", env["SIMCTL_CHILD_KONAN_HR_MAIN_WAIT_MS"])
+        assertEquals("5000", Launcher(s.copy(mainWaitMs = 5000), logger).appEnvironment()["SIMCTL_CHILD_KONAN_HR_MAIN_WAIT_MS"])
     }
 
     @Test

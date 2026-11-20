@@ -348,8 +348,9 @@ def main():
 
     hot("08a-add-fun", lambda: open(UI, "a").write('\nfun fmt(x: Int): String = "fmt$x"\n'),
         change_shot=False)
-    warm("08b-signature", lambda: edit(
-        UI, 'fun fmt(x: Int): String = "fmt$x"', 'fun fmt(x: Long): String = "fmt$x"'))
+    # #28: a signature change of a top-level or final function is HOT (its callers are recompiled with it).
+    hot("08b-signature", lambda: edit(
+        UI, 'fun fmt(x: Int): String = "fmt$x"', 'fun fmt(x: Long): String = "fmt$x"'), change_shot=False)
 
     hot("09a-add-inline", lambda: open(UI, "a").write('\ninline fun twice2(x: Int): Int = x * 2\n'),
         change_shot=False)

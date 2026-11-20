@@ -8,8 +8,10 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 /**
- * 0.2.0 must-pass rule: adding or removing an expect/actual pair is a warm restart; edits that keep the set of
- * pairs are left to the classifier (bodies hot, signatures warm through compat-classify.py).
+ * 0.2.0 rule, narrowed in 0.2.4 (#28): adding or removing an expect/actual pair of a class, object, interface,
+ * property or typealias is a warm restart; an `expect fun` pair is a plain function after actualization, so adding,
+ * removing or renaming one is hot. Edits that keep the set of pairs are left to the classifier (bodies hot,
+ * function signatures hot through compat-classify.py since #28).
  * Each case is a module with commonMain + iosMain before and after the edit; the table lists the reasons expected.
  * The same rule is proved on a simulator by test-projects/kmp-template/accept-kmp.py.
  */
@@ -23,23 +25,22 @@ class ExpectActualCasesTest {
     private data class Case(val name: String, val common: String, val ios: String, val expect: List<String>, val extraFile: Pair<String, String>? = null)
 
     private val cases = listOf(
-        // positive: a pair added or removed
-        Case("add an expect/actual fun pair", common0 + "expect fun flavor(): String\n", ios0 + "actual fun flavor(): String = \"sim\"\n",
-            listOf("WARM expect-actual flavor: expect fun added")),
-        Case("remove the only pair", "package k\n\nfun dateLine(): String = \"d1\"\n", "package k\n",
-            listOf("WARM expect-actual platformTag: expect fun removed")),
+        // positive: a pair that is not a function added or removed
         Case("add an expect class pair", common0 + "expect class Clock() { fun now(): Long }\n", ios0 + "actual class Clock actual constructor() { actual fun now(): Long = 0 }\n",
             listOf("WARM expect-actual Clock: expect class added")),
         Case("add an expect val pair", common0 + "internal expect val tag: String\n", ios0 + "internal actual val tag: String = \"t\"\n",
             listOf("WARM expect-actual tag: expect val added")),
         Case("add an annotated expect object pair", common0 + "@OptIn(ExperimentalStdlibApi::class)\nexpect object Env\n", ios0 + "actual object Env\n",
             listOf("WARM expect-actual Env: expect object added")),
-        Case("replace one pair by another (rename)", common0.replace("platformTag", "platformName"), ios0.replace("platformTag", "platformName"),
-            listOf("WARM expect-actual platformName: expect fun added", "WARM expect-actual platformTag: expect fun removed")),
-        // negative: the set of pairs is unchanged
+        Case("add an expect interface pair", common0 + "expect interface Source { fun read(): Int }\n", ios0 + "actual interface Source { actual fun read(): Int }\n",
+            listOf("WARM expect-actual Source: expect interface added")),
+        // negative: the set of pairs is unchanged, or only expect fun pairs changed (#28)
+        Case("add an expect/actual fun pair (#28: hot)", common0 + "expect fun flavor(): String\n", ios0 + "actual fun flavor(): String = \"sim\"\n", emptyList()),
+        Case("remove the only fun pair (#28: hot)", "package k\n\nfun dateLine(): String = \"d1\"\n", "package k\n", emptyList()),
+        Case("replace one fun pair by another (rename, #28: hot)", common0.replace("platformTag", "platformName"), ios0.replace("platformTag", "platformName"), emptyList()),
         Case("actual body only", common0, ios0.replace("tag-1", "tag-2"), emptyList()),
         Case("common body only", common0.replace("d1", "d2"), ios0, emptyList()),
-        Case("expect signature only (the classifier makes it warm)", common0.replace("platformTag()", "platformTag(n: Int = 0)"),
+        Case("expect signature only (judged by the classifier: hot since #28)", common0.replace("platformTag()", "platformTag(n: Int = 0)"),
             ios0.replace("platformTag()", "platformTag(n: Int)"), emptyList()),
         Case("a plain function added", common0 + "fun helper(): Int = 1\n", ios0, emptyList()),
         Case("text that only looks like expect", common0 + "// expect fun notReal()\nval s = \"expect fun fake(): Int\"\n", ios0, emptyList()),
@@ -59,7 +60,11 @@ class ExpectActualCasesTest {
     private fun declarations(dirs: List<File>) = dirs.flatMap { expectDeclarations(it) }.toSortedSet()
 
     @Test
-    fun `adding or removing an expect-actual pair is warm, other edits are left to the classifier`() {
+    fun `adding or removing an expect-actual pair other than a function is warm, other edits are left to the classifier`() {
+        // A removed expect class pair (the set before has one).
+        val withBox = declarations(module("box", common0 + "expect class Box(v: Int)\n", ios0 + "actual class Box actual constructor(v: Int)\n", null))
+        assertEquals(listOf("WARM expect-actual Box: expect class removed"), expectActualReasons(withBox, declarations(module("nobox", common0, ios0, null))))
+
         val before = declarations(module("before", common0, ios0, null))
         val results = cases.mapIndexed { i, c ->
             val after = declarations(module("after$i", c.common, c.ios, c.extraFile))
@@ -67,8 +72,8 @@ class ExpectActualCasesTest {
         }
         val failed = results.filter { (_, got, want) -> got != want }
         assertEquals(emptyList<String>(), failed.map { (c, got, want) -> "${c.name}: got $got, want $want" })
-        assertEquals(6, cases.count { it.expect.isNotEmpty() })
-        assertEquals(6, cases.count { it.expect.isEmpty() })
+        assertEquals(4, cases.count { it.expect.isNotEmpty() })
+        assertEquals(9, cases.count { it.expect.isEmpty() })
     }
 
     @Test

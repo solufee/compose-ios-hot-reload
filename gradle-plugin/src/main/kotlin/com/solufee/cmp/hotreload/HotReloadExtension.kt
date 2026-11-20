@@ -159,6 +159,13 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
     abstract val forceRecompose: Property<Boolean>
 
     /**
+     * Toolchain .8+: a reload is applied on the app's main thread. When the main thread does not take it within this
+     * many milliseconds (default 2000; KONAN_HR_MAIN_WAIT_MS), the patch is not applied and hotReload fails with "the app
+     * was busy"; save again or rerun. Also `-Pcmp.hotreload.mainWaitMs=…`. Takes effect at the next app launch.
+     */
+    abstract val mainWaitMs: Property<Int>
+
+    /**
      * UIDeviceFamily of the Info.plist the plugin generates for an app module without one (#9): listOf(1) iPhone
      * (default), listOf(1, 2) iPhone and iPad, listOf(2) iPad. Also `-Pcmp.hotreload.deviceFamily=1,2`. An app module
      * that has its own Info.plist uses it as is (this setting is then ignored, with a warning).

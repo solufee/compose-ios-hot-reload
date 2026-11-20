@@ -66,6 +66,8 @@ data class HrSettings(
     val warmRestart: Boolean,
     /** KONAN_HR_FORCE_RECOMPOSE for the app (toolchain .6+, INTERFACE §7). */
     val forceRecompose: Boolean = true,
+    /** Toolchain .8+: how long a reload waits for the app's main thread before it is given up (KONAN_HR_MAIN_WAIT_MS). */
+    val mainWaitMs: Int = 2000,
     // 0.2.0: Kotlin Multiplatform projects
     /** Klibs from the modules' Gradle dependencies, after the toolchain's own copies were taken out. */
     val extraKlibs: List<String> = emptyList(),
@@ -89,6 +91,10 @@ data class HrSettings(
     val appDir: File get() = File(workDir, "app")
     val hotSymbols: File get() = File(appDir, "hot-symbols.txt")
     val compatDir: File get() = File(workDir, "compat")
+    /** "1"/"0": forceRecompose of the app as it was last launched (the DSL value takes effect only at launch). */
+    val launchedForceRecomposeFile: File get() = File(workDir, "launched-force-recompose.txt")
+    /** forceRecompose of the running app: as launched, or the DSL value when the app was not launched by this version. */
+    val runningForceRecompose: Boolean get() = launchedForceRecomposeFile.takeIf { it.isFile }?.readText()?.trim()?.let { it == "1" } ?: forceRecompose
     /** Generated sources (the UIKit entry for iosEntry); added to the app's leaf fragment. */
     val generatedDir: File get() = File(workDir, "generated/kotlin")
     /** Kotlin/Native `klib` tool, used by compat-classify.py snapshot. */

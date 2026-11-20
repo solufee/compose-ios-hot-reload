@@ -210,6 +210,27 @@ index 62275db0f..6d803513f 100644
  				OTHER_LDFLAGS = "-ObjC";
  				PRODUCT_NAME = "$(TARGET_NAME)";
  				SKIP_INSTALL = NO;
+diff --git a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/platform/FrameChoreographer.ios.kt b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/platform/FrameChoreographer.ios.kt
+index e2d7e3385f8..6a77d982b7c 100644
+--- a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/platform/FrameChoreographer.ios.kt
++++ b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/platform/FrameChoreographer.ios.kt
+@@ -16,6 +16,7 @@
+ 
+ package androidx.compose.ui.platform
+ 
++import androidx.compose.ui.scene.forceRecomposeBeforeFrameIfReloaded
+ import androidx.annotation.VisibleForTesting
+ import androidx.compose.runtime.TestOnly
+ import androidx.compose.ui.node.WeakReference
+@@ -237,6 +238,8 @@ internal class FrameChoreographer private constructor(
+     private var isPerformingRecomposerFrame = false
+     fun performRecomposerFrameIfNeeded() {
+         if (isPerformingRecomposerFrame) return
++        // Hot reload (debug toolchain): a pending forced invalidation runs before this frame.
++        forceRecomposeBeforeFrameIfReloaded()
+         isPerformingRecomposerFrame = true
+         try {
+             frameRecomposer.performFrame(displayLink.targetTimestamp.toNanoSeconds())
 diff --git a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/ComposeSceneMediator.ios.kt b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/ComposeSceneMediator.ios.kt
 index dd57ae408..927127808 100644
 --- a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/ComposeSceneMediator.ios.kt
@@ -231,10 +252,10 @@ index dd57ae408..927127808 100644
                  }
 diff --git a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/HotReloadRecompose.ios.kt b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/HotReloadRecompose.ios.kt
 new file mode 100644
-index 000000000..e458d294a
+index 00000000000..bd0f6897f2b
 --- /dev/null
 +++ b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/HotReloadRecompose.ios.kt
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,285 @@
 +/*
 + * Copyright 2026 The Android Open Source Project
 + *
@@ -273,12 +294,15 @@ index 000000000..e458d294a
 +import androidx.compose.runtime.tooling.ObservableComposition
 +import kotlin.experimental.ExperimentalNativeApi
 +import kotlin.native.Platform
++import kotlin.concurrent.AtomicInt
++import kotlin.concurrent.AtomicLong
 +import kotlin.native.runtime.HotReload
 +import kotlin.native.runtime.NativeRuntimeApi
 +import kotlinx.cinterop.ExperimentalForeignApi
 +import kotlinx.cinterop.toKString
 +import kotlinx.coroutines.CoroutineScope
 +import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.delay
 +import kotlinx.coroutines.flow.first
 +import kotlinx.coroutines.launch
 +import kotlinx.coroutines.withTimeoutOrNull
@@ -300,27 +324,40 @@ index 000000000..e458d294a
 + *    composition (HotReloadRecomposeRoot). The composer then keeps a recompose scope for every
 + *    restartable group, not only for groups that read state; compositions created below it
 + *    (Dialog/Popup layers, lazy list items, subcompositions) inherit this.
-+ * 2. After each successful reload (HotReload success handler, called on the reload thread) the
++ * 2. After each successful reload (HotReload success handler) the
 + *    main thread invalidates every scope of every composition of every running Recomposer
 + *    (ControlledComposition.invalidateAll). The next frame re-runs each restartable body with
 + *    the arguments its caller passes now. The slot tables are kept, so remember and
 + *    rememberSaveable state survive.
 + *
 + * The work runs on the main thread, which also runs the recomposers, so it never runs inside a
-+ * composition or apply. If a composition is composing or has unapplied changes, the attempt is
-+ * re-queued on the main thread and logged.
++ * composition or apply. The handler marks the reload as pending, then:
++ *  - The runtime of hot reload toolchains from .8 on runs the reload itself on the main queue,
++ *    between two frames, and calls the handler there: it invalidates at once (via=reload).
++ *  - Otherwise (handler on another thread, or a composition busy) the main thread invalidates at
++ *    whichever comes first: the start of the next recomposer frame of any window
++ *    (FrameChoreographer.performRecomposerFrameIfNeeded calls forceRecomposeBeforeFrameIfReloaded,
++ *    via=frame) or the main-queue task the handler posts (via=task).
++ * So no frame recomposes anything before the invalidation: otherwise a composable that recomposes
++ * alone in that frame would run a restart lambda migrated from the old code, whose captured
++ * parameters do not match the new function after a signature change (Issue #27).
++ * If a composition is composing or has unapplied changes, the attempt is retried and logged.
 + *
 + * Only in debug binaries (Platform.isDebugBinary; hot reload builds use -g). In an optimized
 + * binary built with these klibs the code is present but does nothing.
 + * KONAN_HR_FORCE_RECOMPOSE=0 in the app's environment turns both steps off.
++ * Test switches (acceptance only): KONAN_HR_TEST_TASK_DELAY_MS=<n> delays the posted task by n ms;
++ * KONAN_HR_TEST_NO_FRAME_ENTRY=1 skips the frame-entry check and the invalidation inside the handler
++ * (with KONAN_HR_RELOAD_ON_MAIN=0 for the runtime, the behaviour before Issue #27).
 + *
 + * Log lines (stdout, prefix "HR forceRecompose"):
 + *   on | off (KONAN_HR_FORCE_RECOMPOSE=0)
 + *   deferred (composition busy), retrying on main
-+ *   recomposers=R compositions=C invalidated=I recomposed=S deferred=D dispatchMs=..
-+ *     forceMs=.. frameMs=.. totalMs=.. frameEpochMs=..
-+ * invalidated: scopes invalidated; recomposed: scopes entered in the forced frame;
-+ * dispatchMs: reload success -> main thread; forceMs: invalidation; frameMs: invalidation ->
++ *   recomposers=R compositions=C invalidated=I recomposed=S deferred=D via=reload|frame|task
++ *     dispatchMs=.. forceMs=.. frameMs=.. totalMs=.. frameEpochMs=..
++ * invalidated: scopes invalidated; recomposed: scopes entered in the forced frame; via: who
++ * invalidated (the handler on the main queue, the frame entry or the posted task); dispatchMs: reload success -> main thread;
++ * forceMs: invalidation; frameMs: invalidation ->
 + * all recomposers idle again (recomposed and applied); totalMs: reload success -> idle.
 + */
 +
@@ -332,6 +369,13 @@ index 000000000..e458d294a
 +    val on = getenv("KONAN_HR_FORCE_RECOMPOSE")?.toKString() != "0"
 +    println(if (on) "HR forceRecompose: on" else "HR forceRecompose: off (KONAN_HR_FORCE_RECOMPOSE=0)")
 +    on
++}
++
++private val testTaskDelayMs: Long by lazy {
++    getenv("KONAN_HR_TEST_TASK_DELAY_MS")?.toKString()?.toLongOrNull() ?: 0L
++}
++private val testNoFrameEntry: Boolean by lazy {
++    getenv("KONAN_HR_TEST_NO_FRAME_ENTRY")?.toKString() == "1"
 +}
 +
 +// Main thread only.
@@ -359,14 +403,34 @@ index 000000000..e458d294a
 +
 +private fun nowMs(): Double = NSDate().timeIntervalSince1970 * 1000.0
 +
-+// Reload thread.
++// 1 from a successful reload until the main thread has invalidated (reload thread sets, main clears).
++private val reloadPending = AtomicInt(0)
++private val reloadedAtMs = AtomicLong(0)
++
++// Main queue (runtime from .8) or the reload thread.
 +private fun onReloadSuccess() {
-+    val reloaded = nowMs()
++    reloadedAtMs.value = nowMs().toLong()
++    reloadPending.value = 1
++    // Between two frames on the main thread: invalidate now, before any frame can run.
++    if (NSThread.isMainThread && !testNoFrameEntry && forceNow(via = "reload", deferred = 0)) return
 +    try {
-+        CoroutineScope(Dispatchers.Main).launch { forceRecomposeOnMain(reloaded) }
++        CoroutineScope(Dispatchers.Main).launch {
++            if (testTaskDelayMs > 0) delay(testTaskDelayMs)
++            forceRecomposeOnMain()
++        }
 +    } catch (e: Throwable) {
 +        println("HR forceRecompose: cannot reach the main thread: $e")
 +    }
++}
++
++/**
++ * Main thread, right before a recomposer frame (FrameChoreographer), outside composition and
++ * apply. Does the pending forced invalidation of a reload first, so that frame already recomposes
++ * from the parents down. Costs one atomic read when nothing is pending.
++ */
++internal fun forceRecomposeBeforeFrameIfReloaded() {
++    if (reloadPending.value == 0 || testNoFrameEntry) return
++    forceNow(via = "frame", deferred = 0)
 +}
 +
 +private class ScopeCounter : CompositionObserver {
@@ -415,23 +479,49 @@ index 000000000..e458d294a
 +    return compositions
 +}
 +
-+private suspend fun forceRecomposeOnMain(reloaded: Double) {
++// Main thread. Invalidates if nothing has done it yet; returns false if a composition was busy
++// (the reload stays pending, and the next frame or a retry does it).
++private fun forceNow(via: String, deferred: Int): Boolean {
++    if (!reloadPending.compareAndSet(1, 0)) return true
 +    val onMain = nowMs()
 +    val counter = ScopeCounter()
 +    val handles = mutableListOf<CompositionObserverHandle>()
++    val compositions = forceRecomposeAllForHotReload(counter, handles)
++    if (compositions == null) {
++        reloadPending.value = 1
++        return false
++    }
++    val forced = nowMs()
++    CoroutineScope(Dispatchers.Main).launch {
++        reportForcedFrame(via, deferred, onMain, forced, compositions.size, counter, handles)
++    }
++    return true
++}
++
++private suspend fun forceRecomposeOnMain() {
 +    var deferred = 0
-+    var compositions: List<ControlledComposition>?
-+    while (true) {
-+        compositions = forceRecomposeAllForHotReload(counter, handles)
-+        if (compositions != null) break
++    while (reloadPending.value == 1) {
++        if (forceNow(via = "task", deferred = deferred)) return
 +        if (deferred == 0) println("HR forceRecompose: deferred (composition busy), retrying on main")
 +        if (++deferred > MAX_DEFERRALS) {
 +            println("HR forceRecompose: gave up after $deferred attempts")
++            reloadPending.value = 0
 +            return
 +        }
 +        yield()
 +    }
-+    val forced = nowMs()
++}
++
++private suspend fun reportForcedFrame(
++    via: String,
++    deferred: Int,
++    onMain: Double,
++    forced: Double,
++    compositions: Int,
++    counter: ScopeCounter,
++    handles: List<CompositionObserverHandle>,
++) {
++    val reloaded = reloadedAtMs.value.toDouble()
 +    val recomposers = Recomposer.runningRecomposers.value
 +    val idle =
 +        try {
@@ -444,9 +534,9 @@ index 000000000..e458d294a
 +        }
 +    val done = nowMs()
 +    println(
-+        "HR forceRecompose recomposers=${recomposers.size} compositions=${compositions!!.size} " +
++        "HR forceRecompose recomposers=${recomposers.size} compositions=$compositions " +
 +            "invalidated=${counter.invalidated} recomposed=${counter.entered} deferred=$deferred " +
-+            "dispatchMs=${(onMain - reloaded).toLong()} forceMs=${(forced - onMain).toLong()} " +
++            "via=$via dispatchMs=${(onMain - reloaded).toLong()} forceMs=${(forced - onMain).toLong()} " +
 +            "frameMs=${if (idle) (done - forced).toLong().toString() else "timeout"} " +
 +            "totalMs=${(done - reloaded).toLong()} frameEpochMs=${done.toLong()}"
 +    )

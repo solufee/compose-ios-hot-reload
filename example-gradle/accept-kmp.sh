@@ -9,7 +9,8 @@
 #   ui-actual-body    iosMain actual fun + actual class body (ui) -> HOT
 #   app-common-body   commonMain function body (app)             -> HOT
 #   app-actual-body   iosMain actual fun body (app)              -> HOT
-#   ui-expect-sig     expect signature and its actual (ui)       -> WARM
+#   ui-expect-sig     expect signature and its actual (ui)       -> HOT (#28: signature changes of
+#                     top-level/final functions, expect/actual included, are HOT)
 # Optional: EXTRA_KLIB=<third-party ios_simulator_arm64 .klib> is added with -l
 # (its directory joins the auto-cache roots); EXTRA_KLIB_USE=<Kotlin expression
 # of type String> is called from the ui's iosMain and reloaded once.
@@ -125,7 +126,7 @@ step ui-common-body  HOT  "$UI_LINE"  "common-2" 'C|fun commonLabel(): String = 
 step ui-actual-body  HOT  "$UI_LINE"  "ios-2(iOS) hi-kmp-ios-2" 'I|ios-1(|ios-2(;;I|-ios-1"|-ios-2"'
 step app-common-body HOT  "$APP_LINE" "appc-2 " 'AC|"appc-1"|"appc-2"'
 step app-actual-body HOT  "$APP_LINE" "appios-2(" 'AI|"appios-1(|"appios-2('
-step ui-expect-sig   WARM "$UI_LINE"  "ios-3[sig](iOS)" 'C|expect fun platformLabel(): String|expect fun platformLabel(tag: String): String;;C|${platformLabel()}|${platformLabel("sig")};;I|actual fun platformLabel(): String =|actual fun platformLabel(tag: String): String =;;I|ios-2(|ios-3[$tag]('
+step ui-expect-sig   HOT  "$UI_LINE"  "ios-3[sig](iOS)" 'C|expect fun platformLabel(): String|expect fun platformLabel(tag: String): String;;C|${platformLabel()}|${platformLabel("sig")};;I|actual fun platformLabel(): String =|actual fun platformLabel(tag: String): String =;;I|ios-2(|ios-3[$tag]('
 if [ -n "${EXTRA_KLIB:-}" ]; then
   step extra-klib-body HOT "$UI_LINE" "x2:" 'I|"x1:"|"x2:"'
 fi

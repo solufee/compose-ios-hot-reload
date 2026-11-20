@@ -46,6 +46,15 @@ fun Other() {
 class Foo(val a: Int) {
     fun f(): Int = a + 1
     private fun hidden(): Int = a
+    @Composable
+    fun Show(t: Int) { Text("show $t") }
+}
+
+fun label(n: Int): String = "n$n"
+
+@Composable
+private fun Row2(t: Int) {
+    Text("row $t")
 }
 
 open class Base {
@@ -136,12 +145,62 @@ CASES = [
     ("add-extension-fun", "hot", add("\nfun Foo.ext(): Int = a * 7\n"), "extension function"),
     ("add-typealias", "hot", add("\ntypealias Count = Int\n"), "typealias"),
     ("add-nested-class", "hot", sub("    class Inner(val i: Int)\n", "    class Inner(val i: Int)\n    class Inner2(val k: Int)\n"), "new nested class"),
+    # #28: a changed signature of a top-level function or a final member of a final class/object is hot (every
+    # caller is recompiled into the patch); a @Composable needs forceRecompose (cases run with it unless in
+    # FORCE_OFF) and prints NOTE remember-reset.
+    ("sig-member-default-param-added", "hot", sub("fun f(): Int = a + 1", "fun f(x: Int = 0): Int = a + 1"), "final member: parameter with a default added"),
+    ("sig-member-return-changed", "hot", sub("fun f(): Int = a + 1", "fun f(): Long = a + 1L"), "final member: return type"),
+    ("sig-member-removed", "hot", sub("    fun f(): Int = a + 1\n", ""), "final member removed (its callers changed too)"),
+    ("sig-object-member", "hot", sub("    fun o(): Int = 1\n", "    fun o(k: Int = 0): Int = 1 + k\n"), "object member: parameter added"),
+    ("sig-companion-member", "hot", sub("        fun c(): Int = 1\n", "        fun c(k: String): Int = k.length\n"), "companion member: parameter added (no default)"),
+    ("sig-top-param-added", "hot", sub('fun label(n: Int): String = "n$n"', 'fun label(n: Int, suffix: String = "!"): String = "n$n$suffix"'), "top-level: parameter with a default added"),
+    ("sig-top-param-removed", "hot", sub('fun label(n: Int): String = "n$n"', 'fun label(): String = "n"'), "top-level: parameter removed"),
+    ("sig-top-param-type", "hot", sub('fun label(n: Int): String = "n$n"', 'fun label(n: Long): String = "n$n"'), "top-level: parameter type"),
+    ("sig-top-return-changed", "hot", sub('fun label(n: Int): String = "n$n"', 'fun label(n: Int): Int = n'), "top-level: return type"),
+    ("sig-top-overload-added", "hot", add('\nfun label(n: String): String = n\n'), "top-level: overload added"),
+    ("sig-composable-param-added", "hot", sub("fun Screen(tick: Int) {", 'fun Screen(tick: Int, rim: String = "R") {'), "@Composable, forceRecompose on: parameter added (NOTE remember-reset)"),
+    ("sig-composable-param-removed", "hot", sub("fun Screen(tick: Int) {\n    Text(\"tick $tick $MARK\")", "fun Screen() {\n    Text(\"tick $MARK\")"), "@Composable, forceRecompose on: parameter removed"),
+    ("sig-composable-member", "hot", sub('    fun Show(t: Int) { Text("show $t") }', '    fun Show(t: Int, u: Int = 2) { Text("show $t $u") }'), "@Composable member of a final class, forceRecompose on"),
+    ("sig-private-composable", "hot", sub("private fun Row2(t: Int) {", 'private fun Row2(t: Int, s: String = "") {'), "private @Composable, forceRecompose on"),
+    ("sig-composable-annotation-added", "hot", sub("internal fun helper(): Int = 1", "@Composable\ninternal fun helper(): Int = 1"), "@Composable added to an existing function, forceRecompose on (NOTE remember-reset)"),
+    ("sig-default-value-changed", "hot", sub("fun f(): Int = a + 1", "fun f(x: Int = 0): Int = a + 1 + x"), "step 1: a parameter with a default (step 2 changes only the default value)"),
+    ("default-value-only", "hot", sub("fun f(x: Int = 0): Int", "fun f(x: Int = 5): Int"), "default value changed (no signature change: the $default body only)", "sig-default-value-changed"),
+    # #20 (RELAXATIONS.md): relaxed in 0.2.4 (hot), already hot and now covered, and the tightened @ExportObjCClass.
+    ("relax-const-added", "hot", add('\nconst val MARK2 = "two"\n'), "const val added (no storage to initialize)"),
+    ("relax-const-removed", "hot", sub('\nconst val MARK2 = "two"\n', ''), "const val removed (step 2 of relax-const-added)", "relax-const-added"),
+    ("relax-inline-method-final-class", "hot", sub("    fun f(): Int = a + 1\n", "    fun f(): Int = a + 1\n    inline fun f4(): Int = a + 4\n"), "inline method added to a final class"),
+    ("relax-suspend-method-final-class", "hot", sub("    fun f(): Int = a + 1\n", "    fun f(): Int = a + 1\n    suspend fun f5(): Int = a + 5\n"), "suspend method added to a final class"),
+    ("relax-suspend-method-object", "hot", sub("    fun o(): Int = 1\n", "    fun o(): Int = 1\n    suspend fun o5(): Int = 5\n"), "suspend method added to an object"),
+    ("relax-final-method-open-class", "hot", sub("    open fun g(): Int = 1\n", "    open fun g(): Int = 1\n    fun g3(): Int = 3\n"), "final method added to an open class (direct call)"),
+    ("abstract-class-method-added", "hot", sub("    abstract fun area(): Int\n", "    abstract fun area(): Int\n    fun perimeter(): Int = 0\n"), "final method added to an abstract class (#20: direct call; was warm)"),
+    ("covered-new-object-with-property", "hot", add('\nobject Settings2 {\n    val limit: Int = 3\n}\n'), "new object with a property"),
+    ("covered-sealed-class", "hot", sub("enum class Mode", "sealed class Pick\nclass PickA : Pick()\n\nenum class Mode"), "step 1: a sealed class with one subclass"),
+    ("covered-sealed-subclass-added", "hot", sub("class PickA : Pick()\n", "class PickA : Pick()\nclass PickB : Pick()\n"), "subclass added to a sealed class", "covered-sealed-class"),
+    ("covered-companion-added", "hot", sub("    class Inner(val i: Int)\n", "    class Inner(val i: Int) {\n        companion object {\n            fun mk(): Inner = Inner(1)\n        }\n    }\n"), "companion object added to an existing class"),
     ("visibility-internal-to-public", "hot", sub("internal fun helper()", "fun helper()"), "top-level function visibility only"),
     ("edit-new-method-body", "hot", sub("    fun f2(): Int = a + 5\n", "    fun f2(): Int = a + 6\n"), "body of a method added by the previous reload (step 2 of add-method-final-class)", "add-method-final-class"),
     ("add-private-method-object", "hot", sub("    fun o(): Int = 1\n", "    fun o(): Int = 1\n    private fun o3(): Int = 3\n"), "private method on an object"),
     # ---- must stay warm ----
+    ("sig-composable-force-off", "warm", sub("fun Screen(tick: Int) {", 'fun Screen(tick: Int, rim: String = "R") {'), "@Composable with forceRecompose off: the restart lambda keeps the old parameters"),
+    ("sig-private-composable-force-off", "warm", sub("private fun Row2(t: Int) {", 'private fun Row2(t: Int, s: String = "") {'), "private @Composable with forceRecompose off"),
+    ("sig-composable-member-force-off", "warm", sub('    fun Show(t: Int) { Text("show $t") }', '    fun Show(t: Int, u: Int = 2) { Text("show $t $u") }'), "@Composable member with forceRecompose off"),
+    ("sig-composable-annotation-force-off", "warm", sub("internal fun helper(): Int = 1", "@Composable\ninternal fun helper(): Int = 1"), "@Composable added to an existing function, forceRecompose off"),
+    ("counter-val-added-existing-file", "warm", add('\nval limit2: Int = 2\n'), "#20 counter: a val (not const) added to an existing file"),
+    ("counter-open-method-added", "warm", sub("    open fun g(): Int = 1\n", "    open fun g(): Int = 1\n    open fun g4(): Int = 4\n"), "#20 counter: an open method added to an open class (vtable)"),
+    ("counter-abstract-method-added", "warm", sub("    abstract fun area(): Int\n", "    abstract fun area(): Int\n    abstract fun side(): Int\n"), "#20 counter: an abstract method added (vtable)"),
+    ("counter-inline-body-of-existing", "warm", sub("inline fun twice(x: Int): Int = x * 2", "inline fun twice(x: Int): Int = x * 4"), "#20 counter: body of an existing inline function"),
+    ("counter-suspend-body-of-existing", "warm", sub("suspend fun later(x: Int): Int = x", "suspend fun later(x: Int): Int = x * 2"), "#20 counter: body of an existing suspend function"),
+    ("counter-final-method-enum", "warm", sub("fun label(): String = name }", "fun label(): String = name\n    fun label2(): String = name }"), "#20 counter: final method added to an enum class"),
+    ("covered-export-objc-added", "hot", sub("class Holder : NSObject() {", "@kotlinx.cinterop.ExportObjCClass\nclass Holder : NSObject() {"), "#20: @ExportObjCClass added - not recorded in the klib metadata, so not visible to the classifier (RELAXATIONS.md 6b)"),
+    ("sig-inline", "warm", sub("inline fun twice(x: Int): Int = x * 2", "inline fun twice(x: Int, y: Int = 2): Int = x * y"), "inline function signature (callers inline the body)"),
+    ("sig-suspend", "warm", sub("suspend fun later(x: Int): Int = x", "suspend fun later(x: Int, y: Int = 0): Int = x + y"), "suspend function signature (continuations)"),
+    ("sig-open-member", "warm", sub("    open fun g(): Int = 1\n", "    open fun g(k: Int = 0): Int = 1 + k\n"), "open member signature (vtable)"),
+    ("sig-interface-member", "warm", sub("    fun h(): Int\n", "    fun h(k: Int = 0): Int\n"), "interface member signature (itable)"),
+    ("sig-abstract-class-member", "warm", sub("    abstract fun area(): Int\n", "    abstract fun area(scale: Int = 1): Int\n"), "abstract member signature"),
+    ("sig-objc-subclass-member", "warm", sub("    fun held(): Int = 1\n", "    fun held(k: Int = 0): Int = 1 + k\n"), "member of a Kotlin subclass of an ObjC class (selector)"),
+    ("sig-enum-member", "warm", sub("fun label(): String = name }", "fun label(p: String = \"\"): String = p + name }"), "member of an enum class"),
+    ("sig-constructor", "warm", sub("class Foo(val a: Int) {", "class Foo(val a: Int, unused: String = \"\") {"), "constructor parameter added (constructors stay warm)"),
     ("field-added", "warm", sub("class Foo(val a: Int) {", "class Foo(val a: Int, val b: Int = 0) {"), "field layout"),
-    ("signature-changed", "warm", sub("fun f(): Int = a + 1", "fun f(x: Int = 0): Int = a + 1"), "signature"),
     ("inline-body", "warm", sub("inline fun twice(x: Int): Int = x * 2", "inline fun twice(x: Int): Int = x * 3"), "inline body"),
     ("suspend-body", "warm", sub("suspend fun later(x: Int): Int = x", "suspend fun later(x: Int): Int = x + 1"), "suspend body"),
     ("top-property-added", "warm", add("\nval topProp2: Int = 2\n"), "new top-level property"),
@@ -157,7 +216,6 @@ CASES = [
     ("modality-final-to-open", "warm", sub("class Foo(val a: Int) {", "open class Foo(val a: Int) {"), "final class made open (subclasses could override formerly direct calls)"),
     ("override-added-final-class", "warm", sub("class WithCompanion {", "class WithCompanion {\n    override fun toString(): String = \"wc\""), "override added in a final class (vtable entry changes)"),
     ("typealias-changed", "warm", sub("typealias Size = Int", "typealias Size = Long"), "existing typealias retargeted (functions using it change ABI)"),
-    ("abstract-class-method-added", "warm", sub("    abstract fun area(): Int\n", "    abstract fun area(): Int\n    fun perimeter(): Int = 0\n"), "method on an abstract class"),
     ("objc-subclass-method-added", "warm", sub("    fun held(): Int = 1\n", "    fun held(): Int = 1\n    fun held2(): Int = 2\n"), "method on a Kotlin subclass of an ObjC class (selector registration)"),
     ("enum-method-added", "warm", sub("fun label(): String = name }", "fun label(): String = name\n    fun short(): String = name.take(1) }"), "method on an enum class"),
     ("property-no-field-added", "warm", sub("    fun f(): Int = a + 1\n", "    val doubled: Int get() = a * 2\n    fun f(): Int = a + 1\n"), "property without a backing field on a final class"),
@@ -168,6 +226,10 @@ CASES = [
     ("modality-abstract-to-open", "warm", sub("abstract class Shape {\n    abstract fun area(): Int", "open class Shape {\n    open fun area(): Int = 0"), "abstract class made open"),
     ("modality-open-to-final", "warm", sub("open class Base {\n    open fun g(): Int = 1", "class Base {\n    fun g(): Int = 1"), "open class made final"),
 ]
+
+
+# Cases classified as for an app running with forceRecompose off (all others: on, the plugin's default).
+FORCE_OFF = {"sig-composable-force-off", "sig-composable-annotation-force-off", "sig-private-composable-force-off", "sig-composable-member-force-off"}
 
 
 def main():
@@ -224,12 +286,13 @@ def main():
     for c in cases:
         name, expect, _, note = c[:4]
         frm = c[4] if len(c) > 4 else "_base"
-        r = subprocess.run(["python3", "-I", a.classifier, "classify", "--old", snaps[frm], "--new", snaps[name]],
+        force = [] if name in FORCE_OFF else ["--force-recompose"]
+        r = subprocess.run(["python3", "-I", a.classifier, "classify", "--old", snaps[frm], "--new", snaps[name], *force],
                            capture_output=True, text=True)
         got = {0: "hot", 3: "warm"}.get(r.returncode, f"err{r.returncode}")
         ok = got == expect
         failed += not ok
-        reasons = "; ".join(l for l in r.stdout.splitlines() if l.startswith("WARM ")) or "-"
+        reasons = "; ".join(l for l in r.stdout.splitlines() if l.startswith(("WARM ", "NOTE "))) or "-"
         print(f"{name:30} {expect:6} {got:6} {'OK' if ok else 'DIFF':4} {reasons[:230]}  [{note}]")
     print(f"summary: {len(cases) - failed}/{len(cases)} as expected")
     return 1 if failed else 0

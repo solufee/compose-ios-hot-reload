@@ -6,8 +6,10 @@ and kotlinx-datetime from Maven Central), then applies only the steps of docs/TR
 
   package -> run (EH check, STUB-SEL) -> real tap shows the greeting
   commonMain body -> HOT; commonMain use of kotlinx-datetime -> HOT; iosMain actual body -> HOT
-  expect signature -> WARM and back up; HOT again in the new process
-  add an expect/actual pair -> WARM; remove it -> WARM
+  expect/actual signature -> HOT (0.2.4, #28); add an expect/actual fun pair and use it -> HOT; remove it -> HOT;
+  add an expect/actual class pair -> WARM (counter-example)
+  --signatures (#28): signature changes of top-level functions, a final member and @Composable functions are HOT
+  (same PID, new output without taps); a cross-module caller (--multi); forceRecompose off -> WARM (counter-example)
   counter-examples: klibs with edited manifests (ABI 2.7.0, metadata 2.7.0, ABI 1.4.1) stop the build before compiling
   release: hotReloadVerifyRelease passes; the KMP plugin's release/debug task graphs are identical with and without the plugin
 
@@ -45,6 +47,8 @@ ap.add_argument("--force-recompose", action="store_true",
 ap.add_argument("--dialog", action="store_true", help="toolchain .6+: a Dialog opens before and after reloads, an open Dialog updates")
 ap.add_argument("--compose", default=None, help="set the template's Compose Multiplatform (and material3) version, e.g. 1.13.0-beta02")
 ap.add_argument("--back-handler", action="store_true", help="a BackHandler panel: back events reach the handler, a HOT edit changes it")
+ap.add_argument("--signatures", action="store_true",
+                help="0.2.4 #28: signature changes are HOT (needs --force-recompose for the counter-example)")
 ap.add_argument("--adaptive", action="store_true", help="at the end: MainViewController hosting a content-sized ComposeUIView (Compose 1.13)")
 ap.add_argument("--prop", action="append", default=[], help="extra key=value for local.properties (e.g. tools of a local toolchain)")
 ap.add_argument("--plist-workaround", action="store_true",
@@ -59,6 +63,8 @@ EXE, BUNDLE = "KmpHr", "org.example.kmphr.hotreload"
 BACK = os.path.join(P, "shared/src/commonMain/kotlin/org/example/kmphr/BackPanel.kt")
 MVC_FILE = os.path.join(P, "shared/src/iosMain/kotlin/org/example/kmphr/MainViewController.kt")
 BASE = os.path.join(P, "base/src/commonMain/kotlin/org/example/base/Base.kt")
+SIG = os.path.join(P, "shared/src/commonMain/kotlin/org/example/kmphr/Sig.kt")
+SIG_CALLER = os.path.join(P, "shared/src/commonMain/kotlin/org/example/kmphr/SigCaller.kt")
 CORE = os.path.join(P, "core/src/commonMain/kotlin/org/example/core/Core.kt")
 CORE_IOS = os.path.join(P, "core/src/iosMain/kotlin/org/example/core/Core.ios.kt")
 CORE_RES = os.path.join(P, "core/src/commonMain/composeResources/values/strings.xml")
@@ -219,7 +225,7 @@ def reload(name, expect_kind, screen, *, warm_reason=None, prefix="Compose: "):
 # ---------------------------------------------------------------- 0. fresh template
 say(f"# KMP template acceptance, {time.strftime('%F %T')}, simulator {a.udid}, port {a.port}")
 say(f"# wizard zip sha256 {hashlib.sha256(open(a.zip, 'rb').read()).hexdigest()}")
-say(f"# plugin repository {a.plugin_repo}")
+say("# plugin repository " + ("a local Maven directory" if a.plugin_repo.startswith("file:") else a.plugin_repo))
 if os.path.exists(WORK):
     shutil.rmtree(WORK)
 os.makedirs(WORK)
@@ -283,6 +289,35 @@ fun BackPanel() {
         edit(APP, '                Text("Click me!")\n            }\n', '                Text("Click me!")\n            }\n            BackPanel()\n')
         say("   fixture: a BackHandler panel (Backs counter, SimBack button)")
     edit(APP, 'Text("Compose: $greeting")', 'Text("Compose: $greeting | ${platformTag()} | ${dateLine()}")')
+    if a.signatures:
+        write(SIG, """package org.example.kmphr
+
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+
+fun sigLabel(): String = "sl-1"
+
+class Describer {
+    fun describe(): String = "ds-1"
+}
+
+@Composable
+fun SigBadge(text: String) {
+    var taps by remember { mutableStateOf(0) }
+    Text("Badge: $text | taps=$taps")
+    Button(onClick = { taps += 1 }) { Text("BadgeTap") }
+}
+""")
+        write(SIG_CALLER, 'package org.example.kmphr\n\nfun sigLine(): String = "${sigLabel()}/${Describer().describe()}"\n')
+        edit(APP, '                Text("Click me!")\n            }\n',
+             '                Text("Click me!")\n            }\n            Text("Sig: ${sigLine()} | ${sigLabel()}")\n            SigBadge("b-1")\n')
+        say("   fixture (--signatures): Sig.kt (sigLabel, Describer.describe, @Composable SigBadge with a remember counter), "
+            "SigCaller.kt (a caller in another file)")
     if a.force_recompose or a.dialog:
         edit(APP, "var showContent by remember { mutableStateOf(false) }",
              "var showContent by remember { mutableStateOf(false) }\n        var dialogOpen by remember { mutableStateOf(false) }")
@@ -470,17 +505,21 @@ fun CoreBadge() {
     reload("iosMain actual body (platformTag)", "HOT", ["tag-ios-2"])
     edit(EXTRAS, "expect fun platformTag(): String", "expect fun platformTag(n: Int = 0): String")
     edit(EXTRAS_IOS, 'actual fun platformTag(): String = "tag-ios-2"', 'actual fun platformTag(n: Int): String = "tag-ios-3"')
-    reload("expect/actual signature (platformTag(n: Int = 0))", "WARM", ["tag-ios-3", "Hello again", "2026-11-21"], warm_reason=r"platformTag")
-    edit(EXTRAS_IOS, '"tag-ios-3"', '"tag-ios-4"')
-    reload("after the warm restart: iosMain actual body", "HOT", ["tag-ios-4"])
+    # 0.2.4 (#28): an expect/actual function is a plain function after actualization; its callers are in the patch.
+    reload("expect/actual signature (platformTag(n: Int = 0))", "HOT", ["tag-ios-3", "Hello again", "2026-11-21"])
     edit(EXTRAS, "fun dateLine()", "expect fun flavor(): String\n\nfun dateLine()")
     edit(EXTRAS_IOS, "actual fun platformTag", 'actual fun flavor(): String = "sim"\n\nactual fun platformTag')
-    reload("add an expect/actual pair (flavor)", "WARM", ["tag-ios-4"], warm_reason=r"^WARM expect-actual flavor: expect fun added")
+    edit(EXTRAS_IOS, '"tag-ios-3"', '"tag-ios-4 " + flavor()')
+    reload("add an expect/actual fun pair (flavor) and use it", "HOT", ["tag-ios-4 sim"])
     edit(EXTRAS, "expect fun flavor(): String\n\n", "")
     edit(EXTRAS_IOS, 'actual fun flavor(): String = "sim"\n\n', "")
-    reload("remove the expect/actual pair (flavor)", "WARM", ["tag-ios-4"], warm_reason=r"^WARM expect-actual flavor: expect fun removed")
+    edit(EXTRAS_IOS, '"tag-ios-4 " + flavor()', '"tag-ios-5"')
+    reload("remove the expect/actual fun pair (flavor)", "HOT", ["tag-ios-5"])
+    edit(EXTRAS, "fun dateLine()", "expect class Clock() {\n    fun now(): Long\n}\n\nfun dateLine()")
+    edit(EXTRAS_IOS, "actual fun platformTag", "actual class Clock actual constructor() {\n    actual fun now(): Long = 7L\n}\n\nactual fun platformTag")
+    reload("add an expect/actual class pair (counter-example)", "WARM", ["tag-ios-5"], warm_reason=r"^WARM expect-actual Clock: expect class added")
     edit(GREET, '"Hello again, ', '"Hello once more, ')
-    reload("commonMain body after both warm restarts", "HOT", ["Hello once more, iOS", "tag-ios-4"])
+    reload("commonMain body after the pair changes", "HOT", ["Hello once more, iOS", "tag-ios-5"])
 
     if a.multi:
         say("## 4m. library modules: core (direct) and base (only through core)")
@@ -492,19 +531,75 @@ fun CoreBadge() {
         reload("core iosMain actual body", "HOT", ["core-ios-2"], prefix="Core: ")
         edit(CORE, "expect fun coreTag(): String", "expect fun coreTag(n: Int = 0): String")
         edit(CORE_IOS, 'actual fun coreTag(): String = "core-ios-2"', 'actual fun coreTag(n: Int): String = "core-ios-3"')
-        reload("core expect/actual signature", "WARM", ["core-ios-3", "core-2 base-2"], warm_reason=r"coreTag", prefix="Core: ")
+        reload("core expect/actual signature", "HOT", ["core-ios-3", "core-2 base-2"], prefix="Core: ")
         edit(CORE, "fun coreLine()", "expect fun coreFlavor(): String\n\nfun coreLine()")
         edit(CORE_IOS, "actual fun coreTag", 'actual fun coreFlavor(): String = "sim"\n\nactual fun coreTag')
-        reload("add an expect/actual pair in core", "WARM", ["core-ios-3"], warm_reason=r"^WARM expect-actual coreFlavor: expect fun added", prefix="Core: ")
+        edit(CORE_IOS, '"core-ios-3"', '"core-ios-4 " + coreFlavor()')
+        reload("add an expect/actual fun pair in core and use it", "HOT", ["core-ios-4 sim"], prefix="Core: ")
         edit(CORE, "expect fun coreFlavor(): String\n\n", "")
         edit(CORE_IOS, 'actual fun coreFlavor(): String = "sim"\n\n', "")
-        reload("remove the expect/actual pair in core", "WARM", ["core-ios-3"], warm_reason=r"^WARM expect-actual coreFlavor: expect fun removed", prefix="Core: ")
+        edit(CORE_IOS, '"core-ios-4 " + coreFlavor()', '"core-ios-5"')
+        reload("remove the expect/actual fun pair in core", "HOT", ["core-ios-5"], prefix="Core: ")
         edit(BASE, '"base-2"', '"base-3"')
-        reload("base body after the warm restarts", "HOT", ["core-2 base-3"], prefix="Core: ")
+        reload("base body after the pair changes", "HOT", ["core-2 base-3"], prefix="Core: ")
         say("## 4r. a Compose string resource of core: one hotReload -> warm restart (resources are copied at package time)")
         edit(CORE_RES, "Core title v1", "Core title v2")
-        reload("core string resource (composeResources)", "WARM", ["Core title v2", "core-ios-3", "core-2 base-3"],
+        reload("core string resource (composeResources)", "WARM", ["Core title v2", "core-ios-5", "core-2 base-3"],
                warm_reason=r"^WARM compose-resources: 1 file\(s\) changed", prefix="Core: ")
+
+    if a.signatures:
+        say("## 4s. signature changes are HOT (#28): every caller is recompiled into the patch")
+
+        def sig_reload(name, want, *, note=None, timeout=20):
+            ok, out, p0, p1 = reload_only()
+            seen = wait(lambda ls: any(want in l for l in ls), timeout=timeout)
+            got = [l for l in labels() if l.startswith(("Sig: ", "Badge: "))]
+            notes = grep(out, r"^compat: note: ")
+            okn = (note is None and not notes) or (note is not None and any(note in l for l in notes))
+            check(f"{name} -> HOT, same PID, new output without taps", ok and seen and p0 == p1 and okn,
+                  f"pid {p0}->{p1} {got} notes={notes}")
+            return ok and seen
+
+        if not wait(lambda ls: "Sig: sl-1/ds-1 | sl-1" in ls, timeout=10):
+            check("fixture: Sig line shown", False, str([l for l in labels() if l.startswith("Sig")]))
+        edit(SIG, 'fun sigLabel(): String = "sl-1"', 'fun sigLabel(suffix: String = "!"): String = "sl-2$suffix"')
+        sig_reload("top-level: parameter with a default added (callers in two files)", "Sig: sl-2!/ds-1 | sl-2!")
+        edit(SIG, 'fun sigLabel(suffix: String = "!"): String = "sl-2$suffix"', 'fun sigLabel(): String = "sl-3"')
+        sig_reload("top-level: parameter removed", "Sig: sl-3/ds-1 | sl-3")
+        edit(SIG, 'fun sigLabel(): String = "sl-3"', 'fun sigLabel(): List<String> = listOf("sl-4")')
+        sig_reload("top-level: return type changed (String -> List<String>)", "Sig: [sl-4]/ds-1 | [sl-4]")
+        edit(SIG, '    fun describe(): String = "ds-1"', '    fun describe(prefix: String = "P"): String = "$prefix-ds-2"')
+        sig_reload("final member: parameter added", "Sig: [sl-4]/P-ds-2 | [sl-4]")
+        tap("BadgeTap")
+        tap("BadgeTap")
+        before = wait(lambda ls: "Badge: b-1 | taps=2" in ls, timeout=10)
+        greet_before = greeting()
+        edit(SIG, "fun SigBadge(text: String) {", 'fun SigBadge(text: String, rim: String = "R") {')
+        edit(SIG, 'Text("Badge: $text | taps=$taps")', 'Text("Badge: $text$rim | taps=$taps")')
+        sig_reload("@Composable: parameter added (forceRecompose on), remember-reset note", "Badge: b-1R | taps=",
+                   note="SigBadge changed its signature")
+        after = next((l for l in labels() if l.startswith("Badge: ")), None)
+        check("the composable's own remember state starts over, its caller's state is kept (recorded)",
+              before and after == "Badge: b-1R | taps=0" and greeting() == greet_before,
+              f"before taps=2: {before}; after: {after!r}; greeting kept: {greeting() == greet_before}")
+        tap("BadgeTap")
+        check("the changed composable keeps working (a tap counts)", wait(lambda ls: "Badge: b-1R | taps=1" in ls, timeout=10))
+        if a.multi:
+            say("## 4s-m. cross-module callers")
+            edit(BASE, 'fun baseLine(): String = "base-3"', 'fun baseLine(n: Int = 4): String = "base-$n"')
+            reload("base: parameter added, caller in core (another module)", "HOT", ["core-2 base-4"], prefix="Core: ")
+            edit(CORE, "fun CoreBadge() {", 'fun CoreBadge(suffix: String = "!") {')
+            edit(CORE, '${coreLine()}")', '${coreLine()}$suffix")')
+            p0 = pid()
+            rc, out, dt = gradle("hotReload")
+            notes = grep(out, r"^compat: note: ")
+            seen = wait(lambda ls: any(l.startswith("Core: ") and l.endswith("base-4!") for l in ls), timeout=20)
+            check("core @Composable: parameter added, caller in shared (another module) -> HOT with a note",
+                  rc == 0 and "compat: HOT" in out and seen and pid() == p0 and any("CoreBadge" in l for l in notes),
+                  f"{dt:.1f}s notes={notes} {[l for l in labels() if l.startswith('Core: ')]}")
+        log = open(LOG, errors="replace").read()
+        crash = re.search(r"Uncaught|IrLinkageError|EXC_|SIGSEGV|SIGBUS", log)
+        check("no crash or IrLinkageError after the signature changes", not crash, crash.group(0) if crash else "")
 
     if a.force_recompose:
         say("## 4f. control: relaunched with -Pcmp.hotreload.forceRecompose=false, the static call site stays stale")
@@ -518,6 +613,15 @@ fun CoreBadge() {
         check("forceRecompose=false: app starts with it off, the reload is HOT, the static call site stays stale",
               rc == 0 and ok and stale and p0 == p1 and "HR forceRecompose: off" in startup and not forced,
               f"startup line {re.findall(r'HR forceRecompose: [^\n]*', startup)}, forced recompositions {len(forced)}, labels={[l for l in labels() if l.startswith('Static')]}")
+        if a.signatures:
+            # #28 counter-example: with forceRecompose off the restart lambda keeps the old parameters -> WARM.
+            edit(SIG, 'fun SigBadge(text: String, rim: String = "R") {', 'fun SigBadge(text: String, rim: String = "R", tail: String = "") {')
+            rc, out, dt = gradle("hotReload", "--no-warm", "-Pcmp.hotreload.forceRecompose=false")
+            warm = grep(out, r"^WARM signature SigBadge")
+            check("forceRecompose off: a @Composable signature change is WARM (not sent)",
+                  rc != 0 and "compat: WARM" in out and any("forceRecompose off" in l for l in warm) and pid() == p0,
+                  f"{warm}")
+            edit(SIG, 'fun SigBadge(text: String, rim: String = "R", tail: String = "") {', 'fun SigBadge(text: String, rim: String = "R") {')
         # hotReloadRun reinstalls the last packaged app (patches are not in it): package first, then run with the default.
         rc1, _, _ = gradle("hotReloadPackage")
         rc2, _, _ = gradle("hotReloadRun")

@@ -12,13 +12,14 @@
 | 改文案、颜色、普通（非 composable）函数体 | ✅ 10/10 |
 | 增删 composable、改 if 分支 | ✅ 10/10 |
 | 保留页面与 `remember` 状态、PID 不变 | ✅ |
-| 类字段布局 / 函数签名 / inline / suspend / 新增顶层属性 | ✅ 分类器拦下并自动温重启 |
+| 顶层函数、final 成员改签名（含 `expect`/`actual` 函数、增删一对 `expect fun`） | ✅ 0.2.4 起热替换，调用方一起重编；`@Composable` 改签名时它自己的 `remember` 重置一次（要求 forceRecompose 开着） |
+| 类字段布局 / 构造函数 / open、override、接口成员的签名 / inline / suspend / 新增顶层属性 | ✅ 分类器拦下并自动温重启 |
 | 温重启恢复页面与计数器 | ✅ 回到原页面，状态从 `hr-state.json` 恢复（`--hr-state` 启动参数） |
 | iOS 模拟器（arm64），macOS arm64 主机 | ✅ |
 | Gradle 双模块示例（app + ui），一条命令出包 | ✅ |
-| 已有的 Kotlin Multiplatform 工程（向导模板，插件加在 `shared` 上） | ✅ 0.2.0：commonMain/iosMain 函数体热替换，`expect`/`actual` 签名改动和增删一对自动温重启 |
+| 已有的 Kotlin Multiplatform 工程（向导模板，插件加在 `shared` 上） | ✅ 0.2.0：commonMain/iosMain 函数体热替换；0.2.4 起 `expect`/`actual` 函数改签名、增删一对 `expect fun` 也热替换，增删一对类等仍自动温重启 |
 | KMP 工程的第三方 iOS 依赖 | ✅ 从 Gradle 解析（含传递依赖）；工具链自带的库（stdlib、kotlinx、Compose、AndroidX）只链工具链那一份 |
-| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.3 / 工具链 .7：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
+| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.4 / 工具链 .8：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
 | KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
 | 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
 | Compose 1.13 的 `ComposeUIView`（嵌在 app 自己的 `UIViewController` 里） | ✅ 0.2.3 实测（工具链 .7，CMP 1.13.0-beta02）：插件生成的入口只调用 `MainViewController()`，和它不冲突；给定宽高时正常显示，热替换后不用点就刷新。⚠️ 两点：`ComposeUIView` 里的内容不进无障碍树；只设 `preferredSizeReportingStrategy = IntrinsicContentSize`、不给宽高时，这个视图在热重载 app 里没有得到尺寸（空白），是否 Compose 本身的行为没有核实，暂时请给定宽高 |
@@ -62,11 +63,14 @@
    每次启动有 658 个这样的定义（TECHNICAL-NOTES §1.5）。修复后不收窄 `KALDO_HOT_SYMBOLS`、不重试，冷启动 30/30。
    收窄仍是默认：启动更快（p50 5.3 s 对 6.5 s），热替换范围也限定在用户模块；只是不再是稳定性所必需。
    用 .5 及以前的工具链时仍要收窄；`run.sh` 保留最多 3 次重试兜底。
-7. **长会话退化**。同一个 app 进程里，每次 reload 在 app 内的加载耗时和之前做过的 reload 次数成正比：工具链 .6、KEEP 开、
-   强制重组开，3 小时 341 次 reload（每 30 s 一次），app 模块从发出到新帧的 app 内耗时从 0.3 s 涨到 3.2 s，ui 模块从 0.08 s 涨到
-   0.64 s（每多 100 次 reload，app 约 +1 s、ui 约 +0.2 s）；编译守护进程、klib 守护进程和强制重组那一帧都不涨，内存也不增长，
-   341 次全部成功（REPORT §30.1）。重启 app（温重启约 16 s）恢复。慢在 Kaldo 加载的哪一步（JIT 符号查找、ObjC 注册、EH 登记）
-   还没定位。旧观察：工具链 .4 手动会话 3.5 小时后发送到首帧 0.9 s → 1.86 s。
+7. **长会话退化（根因已修，工具链 .8 起没有；.7 及以前仍有）**。同一个 app 进程里，每次 reload 在 app 内的加载耗时
+   和之前做过的 reload 次数成正比：工具链 .6、3 小时 341 次 reload，app 模块从发出到新帧的 app 内耗时从 0.3 s 涨到 3.2 s，
+   ui 模块从 0.08 s 涨到 0.64 s（REPORT §30.1）。根因（REPORT §32）：每个 `reload<N>` JITDylib 都挂着宿主数据和 dlsym 两个
+   符号生成器，后一次 reload 的链接顺序里排着之前所有的 `reload<k>`；补丁里大部分外部引用定义在 JIT 的主程序里，宿主和 dlsym
+   都找不到，于是每一层的生成器都白跑一遍，链接阶段每多一次 reload 多约 10 ms。修法：下一次 reload 开始时摘掉上一层的这两个
+   生成器（它们只在自己那次链接时有用）。同一个库对照 55 次 reload：链接阶段 9.89 → 0.00 ms/次，app 内耗时 app 模块
+   10.0 → 0.05 ms/次、ui 模块 10.25 → 0.01 ms/次，0 失败。`KALDO_KEEP_RELOAD_GENERATORS=1` 恢复旧行为（只用于对照）。
+   用 .7 及以前的工具链时，重启 app（温重启约 16 s）恢复。
 8. **release 构建的确定性**。`__text` 大小和符号表一致，但每次链接整文件 md5 都不同（`LC_UUID`、
    `__objc_methname`、`__LINKEDIT`），不能用整文件 md5 做验收口径，应比较 section 大小 + 符号表 + `__text` 内容。
    另外，同一源码、同样参数两次 release 构建，`__text` 偶发 78 字节差异。根因已查清（REPORT §28）：Apple 链接器给
@@ -93,6 +97,9 @@
    - 只在 debug 二进制里生效。在 app 的环境里设 `KONAN_HR_FORCE_RECOMPOSE=0` 可关闭（参考脚本：`KONAN_HR_FORCE_RECOMPOSE=0 bash run.sh`），
      恢复 .5 的行为。插件以后在 DSL 里开放这个开关。
    - 用 .5 及以前的工具链时，限制照旧：给 composable 传一个会变化的参数**并在函数体里读到它**，或者让它读一个 `State`。
+   - .6、.7 有一个时间窗口：reload 恰好打断一帧的重组时，这一帧在恢复后会接着跑新代码，早于强制失效；如果这时只重组某个
+     改了参数表的 composable（例如它每帧读一个动画值），会调用迁移过来的旧重启 lambda，进程退出。.8 起 reload 在主队列上、
+     两帧之间执行，随后立即失效，窗口关闭（`KONAN_HR_RELOAD_ON_MAIN`，INTERFACE §7；REPORT §34）。
 12. **libKaldo 位置与打包义务**。两个 dylib 只装在 `<KALDO_INSTALL>/lib/`，编译器按 `konan.properties` 的
     `kaldoLinkerFlags`（`-L<KALDO_INSTALL>/lib`）直接链接；不往 LLVM 安装目录、也不往 `~/.konan/dependencies` 放。
     打包只认 `KALDO_DYLIB` 或 `toolchain.json` 的 `llvm.kaldoIossim`，并校验 sha256。打包时必须删掉可执行文件里的
@@ -120,6 +127,14 @@
    `depends=` 里有，klib 集合里没有）。编译、链接都能过（partial linkage），用到它们的代码到运行时才报 `IrLinkageError`：打开 `Dialog` 时
    `Can not get instance of singleton 'LocalNavigationEventDispatcherOwner'`，进程退出。`Popup` 不受影响。
    .6 补齐这几个 klib，并在打包时检查 klib 集合是否闭合（`scripts/check-klib-deps.py`，缺一个就不打包）。
+
+19. **只改函数体、但改了 `remember` 的类型或个数：旧值会被当成新类型使用（工具链 .8 及以前都有，.9 修复）**。分类器把这种改动判为
+   HOT，热替换后 `remember` 的槽位按位置复用，旧值直接交给新代码。例如把 `remember { intArrayOf(0) }` 改成 `remember { longArrayOf(0L) }`，
+   新代码会把旧的 `IntArray` 当 `LongArray` 读；在已有的 `remember` 前面插入一个 `remember { "x" }`，这个 `String` 变量拿到的是旧的
+   `IntArray`。Kotlin/Native 不检查这种转换，所以不会报 `ClassCastException`：可能显示错值，对象布局不同时可能崩溃。
+   **做法**：改了 `remember` 的类型、个数或顺序后，用温重启（插件的 warm restart / `hotreload.sh warm`），不要用热重载。
+   只改 `remember` 里的计算、或不碰 `remember` 的函数体改动不受影响。根治（Issue #29）：`remember` 的类型、个数或顺序一变，
+   这个 composable 的状态安全重置，随工具链 .9 发布。
 
 ## 已解决（旧文档里可能还会看到）
 

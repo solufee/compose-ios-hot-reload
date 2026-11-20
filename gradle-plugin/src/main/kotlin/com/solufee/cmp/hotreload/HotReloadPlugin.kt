@@ -48,6 +48,7 @@ class HotReloadPlugin : Plugin<Project> {
         ext.keepCompactUnwind.convention(prop("cmp.hotreload.keepCompactUnwind").map { it.toBoolean() }.orElse(true))
         ext.warmRestart.convention(prop("cmp.hotreload.warmRestart").map { it.toBoolean() }.orElse(true))
         ext.forceRecompose.convention(prop("cmp.hotreload.forceRecompose").map { it.toBoolean() }.orElse(true))
+        ext.mainWaitMs.convention(prop("cmp.hotreload.mainWaitMs").map { it.trim().toInt() }.orElse(2000))
         ext.deviceFamily.convention(prop("cmp.hotreload.deviceFamily").map { v -> v.split(',').mapNotNull { it.trim().toIntOrNull() } })
         // No fixed default here: see resolveBinaries (toolchain download layout first, then tools/).
         ext.orcRuntime.convention(project.layout.file(prop("cmp.hotreload.orcRuntime").map { File(home(it)) }))
@@ -217,6 +218,7 @@ class HotReloadPlugin : Plugin<Project> {
                     reinstall = ext.simulator.reinstall.get(),
                     warmRestart = ext.warmRestart.get(),
                     forceRecompose = ext.forceRecompose.get(),
+                    mainWaitMs = ext.mainWaitMs.get(),
                     iosEntry = iosEntry,
                     composeResources = composeResources,
                     infoPlistContent = plistContent,

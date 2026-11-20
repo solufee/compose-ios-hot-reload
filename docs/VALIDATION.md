@@ -91,6 +91,19 @@ Gradle 插件的数字见第 7 节。每轮另外检查：补丁里每个改过�
 
 细节和逐项数字见 REPORT §29。
 
+`example-gradle/accept-default-param.sh`（Issue #19、#27，.8 开发视图，`example-gradle/accept-default-param-27.txt`）：参数表末尾加带默认值的参数后
+强行热替换，再在「每帧只重组被改组件」的界面上来回改签名：
+
+| 测试内容 | 结果 | 备注 |
+|---|---|---|
+| C1 顶层函数、C2 `@Composable`、C3 final 成员函数，调用方在同文件、ui 另一文件、app 模块 | 3/3，同一 PID，三处都显示新结果 | C2 里被改 composable 的 `remember` 归零（REPORT §33） |
+| WINDOW：Badge 每帧单独重组，签名来回改 50 次 | 0 次退出，50 次 reload 全在主队列上执行并当场失效（`via=reload`） | 每次都显示新签名的输出 |
+| WINDOW-DELAY：同上，把回调派出的任务推迟 300 ms | 同上（50 次） | 失效不依赖派出的任务 |
+| BUSY：补丁到达时主线程被阻塞 4 s | 2 s 后 `HR reload: NOT applied`，不挂住、不崩，补丁不生效；之后重发成功 | 明确失败，不退回监听线程 |
+| LATENCY：同一页面开关各 20 次，reload 请求 → 新帧应用完 | 主队列中位 49.5 / 最大 62 ms，监听线程中位 56.0 / 最大 359 ms | 不增加延迟 |
+| 其他线程（`Dispatchers.Default` 上不睡眠的循环）在 reload 期间停住 | 140/140 | stop-the-world 不变 |
+| 反例：C2off（强制重组关）、WINDOW-NOMAIN（`KONAN_HR_RELOAD_ON_MAIN=0`，只有帧入口）、WINDOW-NOFRAME（.7 的行为） | 三个都退出（SIGSEGV） | 不计入；说明 runtime 的主队列这一处是必需的（REPORT §34） |
+
 ---
 
 ## 3. 启动
@@ -252,6 +265,8 @@ compact unwind、没有可用的 `__eh_frame`，所以 libKaldo 在启动时由 
 
 - **真机**：没做。只在 iOS 模拟器（arm64）、macOS arm64 主机上测过。
 - **长会话**：最长测到单个 app 进程连续运行 3.5 小时（工具链 .4，发送到首帧约 0.9 s 涨到 1.86 s）。工具链 .6、EH 合成和强制重组都开，
+  长会话退化的根因已修（REPORT §32，Issue #5）：约 55 次 reload 的对照里，app 内耗时斜率 app 10.00 → 0.05 ms/次、ui 10.25 → 0.01 ms/次，
+  工具链 .8 起生效（`example-gradle/accept-reload-growth.txt`）。
   3 小时 341 次 reload 全部成功、内存不增长，但 app 内的加载耗时和 reload 次数成正比（app 模块 0.3 s → 3.2 s，REPORT §30.1），
   重启进程后恢复；慢在加载的哪一步未定位。超过 3.5 小时的会话没测。
 - **https 下载**：预构建工具链只跑通了本地 `file://`；从私有 GitHub Release（走 API）和 GitHub Packages（带 token）下载的代码写了，

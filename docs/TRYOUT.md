@@ -1,4 +1,4 @@
-# 试用指南（0.2.3，实验性）
+# 试用指南（0.2.4，实验性）
 
 这份指南带你在自己的 Mac 上，把 Compose Multiplatform 的 iOS 模拟器热重载接进工程：改 Kotlin 代码、执行一条命令，
 正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。有两种接法：
@@ -32,16 +32,16 @@
 
 ## 2. 下载工具链
 
-工具链版本：**2.5.255-hotreload.7**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
+工具链版本：**2.5.255-hotreload.8**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
 
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.8/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.7/`（下文记作 `<TOOLCHAIN>`）：
+完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.8/`（下文记作 `<TOOLCHAIN>`）：
 
 | 目录 | 内容 |
 |---|---|
@@ -59,7 +59,7 @@ sha256 对不上时脚本会删掉文件并以退出码 3 结束，不会留下�
 App 还要用到二十多个公开的 klib（kotlinx-coroutines、atomicfu、kotlinx-datetime、kotlinx-serialization、
 androidx collection/annotation/lifecycle/savedstate/navigationevent、Compose runtime 等）。下载脚本会按清单里固定的地址，
 直接从 Maven Central 和 Google Maven 下载它们，并逐个校验 sha256，放在 `<TOOLCHAIN>/external-klibs/`。工具链 .6 用的
-skiko 预发布版本这两个仓库里没有，它的 2 个 klib 随工具链一起分发（`<TOOLCHAIN>/bundled-klibs/`）；工具链 .7 用的 skiko 0.156.1 在 Maven Central 上，
+skiko 预发布版本这两个仓库里没有，它的 2 个 klib 随工具链一起分发（`<TOOLCHAIN>/bundled-klibs/`）；工具链 .7 和 .8 用的 skiko 0.156.1 在 Maven Central 上，
 不再随工具链分发，也就没有 `bundled-klibs/`。整个过程不读你本机的 Gradle 缓存。
 所以下载时需要能访问 `github.com`、`repo1.maven.org` 和 `dl.google.com`。这些 klib 的来源和许可证列在 [NOTICE](../NOTICE) 里。
 
@@ -102,7 +102,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.3"
+    id("com.solufee.cmp.hotreload") version "0.2.4"
 }
 
 cmpHotReload {
@@ -325,8 +325,52 @@ Ctrl-C 结束。它用的是 Gradle 的连续构建（`-t`，也可以写 `./gra
 继续监视。不加 `-t` 时 `hotReloadWatch` 只跑一次并提示加 `-t`。
 
 改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（约 17 秒，其中重新打包约 11 秒）：
-类的字段布局、函数签名、`inline` 函数、`suspend` 函数，以及新增顶层属性。输出里会逐行列出 `WARM …` 原因，最后是
-`WARM OK ms=…`。
+类的字段布局和构造函数、open/override/接口成员的签名、`inline` 函数、`suspend` 函数，以及新增顶层属性。输出里会逐行列出
+`WARM …` 原因，每条下面跟一行建议（`-> …`），然后是 `WARM OK ms=…`，最后一行是总结，例如
+`compat: 2 ABI changes, cannot hot-patch; warm restart took 17.1 s`（0.2.4 起）。完整清单见下面“总是温重启的改动”。
+
+插件 0.2.4 起，**顶层函数和 final 成员（final 类、object、companion 里不是 override 的函数）改签名可以热替换**：加参数、删参数、
+改参数类型、改默认值、改返回值类型都行，`expect`/`actual` 函数也一样。所有调用方会一起重编进补丁。`@Composable` 改签名时，
+这个 composable 自己的 `remember` 状态会重置一次（输出 `compat: note: … resets once`），调用它的地方状态不变；这要求强制重组开着
+（默认开，`forceRecompose = false` 时改 composable 签名仍然温重启）。
+
+#### 总是温重启的改动
+
+下表是分类器（`compat-classify.py`）和插件实际会输出的全部 `WARM` 类别，按代码核对过（插件 0.2.4）。
+“怎么保持热替换”一列就是输出里 `-> …` 那行建议的意思。
+
+| 输出 | 什么改动 | 例子 | 为什么不能热替换 | 怎么保持热替换 |
+|---|---|---|---|---|
+| `WARM field-layout X: fields added=[…]` / `field order changed` | 类（含 data class、object、companion）加字段、删字段、改字段类型或顺序 | `data class Uniforms(val a: Float, val rimColor: Color)` | 运行中的对象按旧布局分配，补丁改不了已有对象 | 新状态放进新类，或者作为参数传 |
+| `WARM field-layout X: constructor signature changed` | 改构造函数参数 | `class Foo(val a: Int, b: String = "")` | 构造方式和布局一起变了 | 加一个顶层工厂函数，不改构造函数 |
+| `WARM class-removed X: class removed` | 删掉一个类 | 删掉 `class Old` | 旧对象可能还活着 | 先留着这个类，下次重启再删 |
+| `WARM signature X: supertypes changed` | 改父类或接口 | `class Foo : Iface` | 已有对象的类型信息不能改 | — |
+| `WARM signature X: modality changed` | 类在 final/open/abstract/sealed 之间改 | `open class Foo` | 方法的分派方式变了 | — |
+| `WARM signature X.m: method added/removed` / `return type …` / `signature changed …` | open/abstract 类的 open/abstract 成员增删改、接口成员、enum 和 ObjC 子类（父类是 `platform.*`）的成员增删改；任何 override（0.2.4 起 open/abstract/sealed 类**新增 final 成员**不在此列，可以热替换） | `open fun g(k: Int = 0)` | 这些成员走虚表/接口表，已有对象共用 | 改成扩展函数、顶层函数，或新增一个 final 成员 |
+| `WARM signature X: … (open/override member)` | final 类里 override 的签名变化 | — | 同上 | 新写一个 final 函数 |
+| `WARM signature X: … (@Composable with forceRecompose off)` | `forceRecompose = false` 时改 composable 签名（含加/去 `@Composable`） | `Badge(text, rim = "R")` | 组合里还存着带旧参数的重启 lambda | 打开 `forceRecompose`（默认）并重启一次 app |
+| `WARM signature f: visibility changed` | 顶层函数在 private 和非 private 之间改 | `private fun f()` → `internal fun f()` | 符号名不同 | internal ↔ public 不受影响 |
+| `WARM signature T: typealias retargeted/removed` | typealias 改指向或删掉 | `typealias Size = Long` | 用到它的函数签名全变了 | 新增 typealias 不受影响 |
+| `WARM inline f: body changed` / `signature changed … (inline function)` | 已有 inline 函数改正文或签名（0.2.4 起给 final 类/object 新增 inline 函数可以热替换） | `inline fun twice(x: Int) = x * 3` | 调用方里内联着旧正文 | 调试期间先去掉 `inline` |
+| `WARM suspend f: body changed` / `… (suspend function)` | 已有 suspend 函数改正文或签名（0.2.4 起给 final 类/object 新增 suspend 函数可以热替换） | `suspend fun load()` | 运行中的协程持有旧状态机 | 把要改的代码挪进它调用的普通函数 |
+| `WARM top-level-property p: added/removed/type changed` | 顶层属性增删、改类型或 val/var（0.2.4 起 `const val` 的增删不在此列） | `val limit = 10` | 顶层属性在文件第一次使用时初始化一次 | 改成函数 `fun limit() = 10` |
+| `WARM class-shape X: unclassified … changed` | 分类器不分析的声明变化：enum 加条目、没有幕后字段的属性等 | `enum class Color { RED, GREEN, BLUE }` | 保守处理 | — |
+| `WARM expect-actual X: expect class/object/interface/val added/removed` | 增删一对 `expect`/`actual` 类、object、接口、属性 | `expect class Clock()` | 在每个平台加/删一个类型或全局量 | `expect fun` 对不受影响 |
+| `WARM compose-resources: N file(s) changed since packaging` | 改 `composeResources/` 下的字符串、图片、字体 | `strings.xml` | 资源在打包时拷进 app | — |
+| `WARM external-klibs: N changed since packaging` | 没声明 `includedModule` 的 included build 模块有改动 | — | app 整体链接那个 klib | 用 `includedModule(…)` 声明它 |
+
+不在这张表里、0.2.4 起可以热替换的：顶层函数和 final 类/object/companion 的 final 成员改签名（参数、默认值、返回值类型），
+`expect`/`actual` 函数和增删一对 `expect fun`，以及强制重组开着时 `@Composable` 改签名（它自己的 `remember` 重置一次）（#28）；
+顶层 `const val` 的增删、给 final 类或 object 新增 `inline`/`suspend` 函数、给 open/abstract/sealed 类新增 final（不是 open、
+不是 override）函数（#20，逐项评估见 `gradle-plugin/test-projects/classifier-cases/RELAXATIONS.md`）。
+
+**暂时检测不到（工具链 .8 及以前）**：只改了某个 composable 里 `remember { }` 的类型或个数（签名没变）时，分类器会判 HOT，
+但这个 composable 可能把旧槽位当成新类型来读，显示错值甚至崩溃。做了这种改动后请重启 app，不要热重载：
+`./gradlew hotReloadPackage hotReloadRun`（重新打包并重新安装，app 从第一屏开始）。计划在工具链 .9 / 插件 0.2.5 里根治。
+
+温重启时 app 的内存状态会丢，想回到原来的页面，见第 3 节“可选：温重启时保留状态”（根目录 README 的
+“State across a warm restart”是英文简版）。输出 `warm: the app saved no state (Documents/hr-state.json)` 表示开始温重启时
+app 还没写过这个文件，app 会从第一屏重新开始，别的不受影响。
 
 ### 停止
 
@@ -343,8 +387,11 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 ## 5. 已知限制
 
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
-- 工具链版本固定，插件只认 2.5.255-hotreload.7。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
+- 工具链版本固定，插件只认 2.5.255-hotreload.8。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
+- 工具链 .8 起，补丁在 app 的主线程上应用（两帧之间，不会落在一帧中途）。主线程 2 s 内没空接手（例如卡在一段很长的计算里）时，
+  这次补丁**不应用**：`hotReload` 失败并提示 `the app was busy, patch not applied`，app 照常运行；再保存一次或重跑 `hotReload`，
+  同一处改动会重新发送。等待时间用 `cmpHotReload { mainWaitMs = 5000 }` 调整。
 - 温重启约 17 s（实测 17–24 s），其中约 11 s 是重新打包；清理过 `build/hotreload`（`hotReloadClean`）后的第一次打包要重建缓存，约 2 分钟。温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
 - 兼容性检查（判断能不能热替换）和编译同时进行。只改 app 时检查本身约 0.6 s，但被编译时间盖住，端到端只多十几毫秒。
 - 被替换的 `@Composable` 要在下一次重组时真的被执行，新代码才会显示。Compose 会跳过参数没变、也不读任何 state 的 composable：只传一个会变的参数还不够，**函数体里必须读到它**（或者读一个 `State`），否则热替换已经生效，画面却要等这块被重新绘制（例如翻页再回来）才会变。
@@ -434,7 +481,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.3"
+    id("com.solufee.cmp.hotreload") version "0.2.4"
 }
 ```
 
@@ -465,8 +512,9 @@ cmp.hotreload.toolchainDir=<TOOLCHAIN>/kotlin-native
 ```
 
 - 改 `commonMain` 或 `iosMain` 里函数的**函数体**（包括 `actual` 函数的函数体）：热替换，输出 `compat: HOT`，进程不变；
-- 改 `expect`/`actual` 的**签名**，或者**增删一对** `expect`/`actual`：不能热替换，自动温重启（输出里有
-  `WARM signature …` 或 `WARM expect-actual …`，最后是 `WARM OK`），约 20 秒；
+- 改 `expect`/`actual` 函数的**签名**，或者**增删一对** `expect fun`/`actual fun`：0.2.4 起热替换（`compat: HOT`，进程不变）；
+- **增删一对** `expect`/`actual` 的类、object、接口、属性：不能热替换，自动温重启（输出里有 `WARM expect-actual …`，
+  最后是 `WARM OK`），约 20 秒；
 - 工具链 .6 起，热替换成功后整个界面会完整重组一次（`remember` 的状态保留，最多多几十毫秒），参数没变的调用点、
   已有的 lambda、打开着的 `Dialog` 也会马上显示新代码，不用点任何东西。想对比旧行为时写 `cmpHotReload { forceRecompose = false }`
   （或 `-Pcmp.hotreload.forceRecompose=false`），下次启动 app（`hotReloadRun` 或温重启）生效；
@@ -530,7 +578,7 @@ Gradle 不让一个构建在配置阶段看到另一个构建的工程模型，�
 |---|---|---|
 | included build 的模块怎么进来 | 由那个构建用它自己的 Kotlin 插件编成 klib，app 链接这个 klib | 插件用工具链直接编译它的源码，和主构建里的库模块一样 |
 | 改它的代码 | 能用，`hotReload` 会自动温重启（输出 `WARM external-klibs: …`） | 热替换（`compat: HOT`），规则同第 4、7 节 |
-| 它的 `expect`/`actual`、Compose 资源 | 资源会打进 app | 都支持（改签名、增删一对、改资源时温重启） |
+| 它的 `expect`/`actual`、Compose 资源 | 资源会打进 app | 都支持（函数改签名、增删一对 `expect fun` 热替换；增删一对类、改资源时温重启） |
 | 打包时的提示 | 每个这样的模块打印一行 `… comes from the included build … To hot reload it: cmpHotReload { includedModule(…) }` | 无 |
 
 声明写在应用插件的 app 模块里，按依赖顺序写（被依赖的写在前面）：
