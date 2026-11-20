@@ -1,0 +1,44 @@
+# 0.1.2 classifier narrowing: manual hot-swap proofs + B4, commit 406fa03 + working tree (compat-classify.py both copies), 2026-11-19 21:26:02
+package timing ms=16980 compile=11790 merge=2861 embed+bundle=2329
+BUILD SUCCESSFUL in 20s
+CMP hot reload: app started (attempt 1, pid 58287, 5.9 s, port 5568, log <WORK>/accept-v7/example-gradle/launch.log)
+BUILD SUCCESSFUL in 6s
+## example-gradle ui module
+# manual hot-swap proof: ui/src/main/kotlin/ui.kt in example-gradle, app pid 58287
+step00 OK 9847ms hot=True loaded=True on_screen=True pid 58287->58287 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 5752ms hot=True loaded=True on_screen=True pid 58287->58287 [new final class] expect '|c10|'
+step02 OK 6074ms hot=True loaded=True on_screen=True pid 58287->58287 [method added to a final class] expect '|c15|'
+step03 OK 6035ms hot=True loaded=True on_screen=True pid 58287->58287 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 6023ms hot=True loaded=True on_screen=True pid 58287->58287 [new object] expect '|oa|'
+step05 OK 6122ms hot=True loaded=True on_screen=True pid 58287->58287 [method added to an object] expect '|ob|'
+step06 OK 6008ms hot=True loaded=True on_screen=True pid 58287->58287 [new class with a companion] expect '|c1|'
+step07 OK 6032ms hot=True loaded=True on_screen=True pid 58287->58287 [method added to a companion object] expect '|c2|'
+step08 OK 5887ms hot=True loaded=True on_screen=True pid 58287->58287 [new typealias] expect '|alias|'
+step09 OK 5068ms hot=True loaded=True on_screen=True pid 58287->58287 [new internal function] expect '|vint|'
+step10 OK 5139ms hot=True loaded=True on_screen=True pid 58287->58287 [internal -> public (and body)] expect '|vpub|'
+# file restored
+summary: 11/11 hot and on screen, same pid
+## B4 through the plugin (example-gradle)
+BUILD SUCCESSFUL in 21s
+started app pid 64317
+
+=== B4 matrix ===
+01-text                    hot   PASS pid 64317->64317 render=True shot_changed=True 
+02-color                   hot   PASS pid 64317->64317 render=True shot_changed=True 
+03-if                      hot   PASS pid 64317->64317 render=True shot_changed=True 
+03b-revert-if              hot   PASS pid 64317->64317 render=True shot_changed=True 
+04-fnbody                  hot   PASS pid 64317->64317 render=True shot_changed=True 
+05-add-composable          hot   PASS pid 64317->64317 render=True shot_changed=True 
+06-remove-composable       hot   PASS pid 64317->64317 render=True shot_changed=True 
+07a-add-class              hot   PASS pid 64317->64317 render=True shot_not_checked 
+07b-field-layout           warm  PASS reason=True WARM_OK=True pid 64317->66953 shot_same=True warm_ms=23733 package_ms=11984 relaunch_ms=11749 [compile=5756 merge=2877 embed+bundle=2320]
+08a-add-fun                hot   PASS pid 66953->66953 render=True shot_not_checked 
+08b-signature              warm  PASS reason=True WARM_OK=True pid 66953->67936 shot_same=True warm_ms=23479 package_ms=11853 relaunch_ms=11626 [compile=5673 merge=2842 embed+bundle=2371]
+09a-add-inline             hot   PASS pid 67936->67936 render=True shot_not_checked 
+09b-inline-body            warm  PASS reason=True WARM_OK=True pid 67936->69210 shot_same=True warm_ms=18683 package_ms=11936 relaunch_ms=6747 [compile=5722 merge=2835 embed+bundle=2450]
+10a-add-suspend            hot   PASS pid 69210->69210 render=True shot_not_checked 
+10b-suspend-body           warm  PASS reason=True WARM_OK=True pid 69210->69595 shot_same=True warm_ms=18550 package_ms=11828 relaunch_ms=6722 [compile=5635 merge=2882 embed+bundle=2349]
+11-top-level-property      warm  PASS reason=True WARM_OK=True pid 69595->69915 shot_same=True warm_ms=18575 package_ms=11870 relaunch_ms=6705 [compile=5646 merge=2824 embed+bundle=2438]
+12-tap-after-warm          tap   PASS pid 69915->69915 Back@(201.2,528.3)->count=3/page=0 +@(247.5,499.4)->count=4/page=0 Next@(201,569.7)->count=4/page=1 Back@(201.2,528.3)->count=4/page=0 page2_kept4=True page1_counter4=True crash=none
+summary: 17/17 passed
+# done 21:35:21

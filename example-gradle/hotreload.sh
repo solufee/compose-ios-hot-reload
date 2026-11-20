@@ -23,6 +23,30 @@ AUTO_CACHE=${AUTO_CACHE:-$BUILD/auto-cache}
 APP_SRC=${APP_SRC:-$ROOT/app/src/main/kotlin/main.kt}
 APP_SRC_DIR=${APP_SRC_DIR:-$(dirname "$APP_SRC")}
 UI_SRC_DIR=${UI_SRC_DIR:-$ROOT/ui/src/main/kotlin}
+# Optional Kotlin Multiplatform layout, per module: one directory per fragment,
+# <root>/<fragment>/kotlin (the Gradle source-set layout).
+#   UI_FRAGMENTS="commonMain iosMain iosSimulatorArm64Main"   (all fragments)
+#   UI_FRAGMENT_REFINES="iosMain:commonMain iosSimulatorArm64Main:iosMain"
+#   UI_FRAGMENT_ROOT=<dir>   (APP_FRAGMENTS, APP_FRAGMENT_REFINES, APP_FRAGMENT_ROOT
+#                             do the same for the app module instead of APP_SRC)
+# The compiler gets -Xmulti-platform, -Xfragments, -Xfragment-refines and one
+# -Xfragment-sources=<fragment>:<file> per file; the files are also free
+# arguments. All paths are absolute, so the compile daemons get the same
+# arguments as kotlinc-native. The ui result is an ordinary ios_simulator_arm64
+# klib. Packages of the app's non-main files must be listed in
+# KALDO_HOT_PACKAGES like the ui packages (merge-payloads picks hot symbols by package).
+UI_FRAGMENTS=${UI_FRAGMENTS:-}
+UI_FRAGMENT_REFINES=${UI_FRAGMENT_REFINES:-}
+if [ -n "$UI_FRAGMENTS" ]; then
+  UI_FRAGMENT_ROOT=$(cd "${UI_FRAGMENT_ROOT:?UI_FRAGMENT_ROOT is required with UI_FRAGMENTS}" && pwd)
+  UI_SRC_DIR=$UI_FRAGMENT_ROOT   # staleness checks scan every fragment
+fi
+APP_FRAGMENTS=${APP_FRAGMENTS:-}
+APP_FRAGMENT_REFINES=${APP_FRAGMENT_REFINES:-}
+if [ -n "$APP_FRAGMENTS" ]; then
+  APP_FRAGMENT_ROOT=$(cd "${APP_FRAGMENT_ROOT:?APP_FRAGMENT_ROOT is required with APP_FRAGMENTS}" && pwd)
+  APP_SRC_DIR=$APP_FRAGMENT_ROOT  # the classifier's "app sources changed" check
+fi
 OUT=${OUT:-$ROOT/build/ComposeHR}
 STAMP_FILE=$BUILD/.reload-start
 # Compatibility classifier (interface v7). Baseline snapshots live next to the
@@ -54,6 +78,36 @@ UIKIT_UTILS=${UIKIT_UTILS:-$ROOT/tools/libCMPUIKitObjcUtils.a}
 # Colon-separated roots whose klibs get per-file caches built automatically.
 KLIB_AUTO_CACHE_FROM=${KLIB_AUTO_CACHE_FROM:-~/.gradle/caches}
 
+# fragment_args <root> "<fragments>" "<refines>": sets FRAG_ARGS to the
+# multiplatform arguments for <root>/<fragment>/kotlin/**/*.kt.
+fragment_args() {
+  local root=$1 frags=$2 refines=$3 f r src names="" files=() fsrc=() refs=()
+  for f in $frags; do
+    names="$names${names:+,}$f"
+    while IFS= read -r src; do
+      files+=("$src")
+      fsrc+=("-Xfragment-sources=$f:$src")
+    done < <(find "$root/$f/kotlin" -name '*.kt' 2>/dev/null | sort)
+  done
+  for r in $refines; do refs+=("-Xfragment-refines=$r"); done
+  [ ${#files[@]} -gt 0 ] || { echo "no .kt files under $root/{${frags// /,}}/kotlin" >&2; return 1; }
+  FRAG_ARGS=(-Xmulti-platform -Xexpect-actual-classes "-Xfragments=$names" ${refs[@]+"${refs[@]}"} "${fsrc[@]}" "${files[@]}")
+}
+
+# Sets UI_SRC_ARGS / APP_SRC_ARGS: the plain sources, or the fragment arguments.
+ui_source_args() {
+  UI_SRC_ARGS=("$UI_SRC_DIR")
+  [ -n "$UI_FRAGMENTS" ] || return 0
+  fragment_args "$UI_FRAGMENT_ROOT" "$UI_FRAGMENTS" "$UI_FRAGMENT_REFINES" || return 1
+  UI_SRC_ARGS=("${FRAG_ARGS[@]}")
+}
+app_source_args() {
+  APP_SRC_ARGS=("$APP_SRC")
+  [ -n "$APP_FRAGMENTS" ] || return 0
+  fragment_args "$APP_FRAGMENT_ROOT" "$APP_FRAGMENTS" "$APP_FRAGMENT_REFINES" || return 1
+  APP_SRC_ARGS=("${FRAG_ARGS[@]}")
+}
+
 auto_cache_args() {
   local IFS=: d
   for d in $KLIB_AUTO_CACHE_FROM; do echo "-Xauto-cache-from=$d"; done
@@ -84,9 +138,10 @@ now_ms() { perl -MTime::HiRes=time -e 'printf "%d\n", time*1000'; }
 build_app_klib() {
   mkdir -p "$COMPAT_DIR"
   rm -f "$COMPAT_DIR/app.klib"
+  app_source_args || return 2
   local args=(-target ios_simulator_arm64 -p library -g
     -Xplugin="$PLUGIN" -opt-in=kotlinx.cinterop.ExperimentalForeignApi
-    "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" "$APP_SRC" -o "$COMPAT_DIR/app")
+    "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" "${APP_SRC_ARGS[@]}" -o "$COMPAT_DIR/app")
   if [ -S "$HRC_KLIB_SOCKET" ]; then
     python3 "$ROOT/tools/hrc.py" "$HRC_KLIB_SOCKET" "${args[@]}" >/dev/null
   else
@@ -196,16 +251,25 @@ ui-klib)
   mkdir -p "$BUILD/ui"
   rm -rf "$BUILD/ui/ui.klib"
   KLIB_SOCK=$HRC_KLIB_SOCKET
+  ui_source_args
   ARGS=(-target ios_simulator_arm64 -p library -g
     -Xplugin="$PLUGIN" -opt-in=kotlinx.cinterop.ExperimentalForeignApi
-    "${KLIBS[@]}" "$UI_SRC_DIR" -o "$BUILD/ui/ui")
+    "${KLIBS[@]}" "${UI_SRC_ARGS[@]}" -o "$BUILD/ui/ui")
   if [ -S "$KLIB_SOCK" ]; then
     echo "ui-klib: daemon $KLIB_SOCK"
-    python3 "$ROOT/tools/hrc.py" "$KLIB_SOCK" "${ARGS[@]}" >/dev/null
+    # A compile error, or a stale socket after the daemon died: rerun with
+    # kotlinc-native, which prints the compiler's messages.
+    if ! python3 "$ROOT/tools/hrc.py" "$KLIB_SOCK" "${ARGS[@]}" >/dev/null; then
+      echo "ui-klib: daemon compile failed; rerunning with kotlinc-native" >&2
+      "$KC" "${ARGS[@]}"
+    fi
   else
     echo "ui-klib: kotlinc-native"
     "$KC" "${ARGS[@]}"
   fi
+  # What the klib was built from (source list or fragment arguments): package
+  # rebuilds when this changes, e.g. when switching to or from UI_FRAGMENTS.
+  printf '%s\n' "${UI_SRC_ARGS[@]}" > "$BUILD/ui/ui.inputs"
   echo "ui klib: $BUILD/ui/ui.klib"
   ;;
 
@@ -214,8 +278,10 @@ package)
   pkg_step() { local t; t=$(now_ms); PKG_STEPS="$PKG_STEPS $1=$((t - T_LAST))"; T_LAST=$t; }
   # A stale ui.klib would build the app (and the compat baseline) from old UI
   # code. Gradle's packageApp depends on compileKlib; a manual run may not.
+  ui_source_args
   if [ ! -f "$BUILD/ui/ui.klib" ] || \
-     [ -n "$(find "$UI_SRC_DIR" -name '*.kt' -newer "$BUILD/ui/ui.klib" -print -quit 2>/dev/null)" ]; then
+     [ -n "$(find "$UI_SRC_DIR" -name '*.kt' -newer "$BUILD/ui/ui.klib" -print -quit 2>/dev/null)" ] || \
+     ! printf '%s\n' "${UI_SRC_ARGS[@]}" | cmp -s - "$BUILD/ui/ui.inputs"; then
     echo "package: ui.klib stale; rebuilding"
     "$ROOT/hotreload.sh" ui-klib
   fi
@@ -243,8 +309,9 @@ package)
     exit 1
   fi
   echo "kaldo: $KALDO_DYLIB sha256=${KALDO_SHA:0:12}${WANT_SHA:+ (matches manifest)}"
+  app_source_args
   PKG_ARGS=($(common_args) "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" \
-    -o "$BUILD/app/ComposeHR-base.kexe" "$APP_SRC")
+    -o "$BUILD/app/ComposeHR-base.kexe" "${APP_SRC_ARGS[@]}")
   # The ordinary compile daemon (hr-klib.sock, never cache-only) saves the JVM
   # start and warm-up (~3 s). It cannot see per-call environment, so
   # KONAN_SPLIT_MERGED_BOOTSTRAP still goes to kotlinc-native; on a daemon
@@ -297,9 +364,10 @@ reload)
   mkdir -p "$BUILD" "$AUTO_CACHE" "$IC_DIR"
   date +%s > "$STAMP_FILE"
   rm -f "$BUILD/caches.txt"
+  app_source_args
   ARGS=($(common_args) "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" \
     -Xdump-built-caches-to="$BUILD/caches.txt" \
-    -o "$BUILD/app/ComposeHR-patch.kexe" "$APP_SRC")
+    -o "$BUILD/app/ComposeHR-patch.kexe" "${APP_SRC_ARGS[@]}")
   if [ -S "$HRC_SOCKET" ]; then
     echo "compile: daemon $HRC_SOCKET"
     python3 "$ROOT/tools/hrc.py" "$HRC_SOCKET" "${ARGS[@]}" >/dev/null
@@ -315,10 +383,16 @@ reload)
     [ "$(stat -f %m "$a")" -lt "$START" ] && { echo "skip stale: $a"; continue; }
     d="$BUILD/patch/$(basename "$a" .a)"; mkdir -p "$d"
     (cd "$d" && ar x "$a")
+    # Classify by module, from the cache path: the user modules' caches live
+    # under IC_DIR, the ui klib's in "<klib unique name>-per-file-cache", the
+    # app (program) module's in "<hash>-per-file-cache", one per source file.
+    # Anything else (a library cache) is never sent.
     for o in "$d"/*.o; do
-      if nm -g -U "$o" 2>/dev/null | grep -q "_kfun:#main"; then APP_OBJS+=("$o")
-      elif nm -g -U "$o" 2>/dev/null | grep -q "_kfun:expui"; then UI_OBJS+=("$o")
-      else echo "unclassified object: $o" >&2; exit 1; fi
+      case "$a" in
+        "$IC_DIR"/*/ui-per-file-cache/*) UI_OBJS+=("$o") ;;
+        "$IC_DIR"/*-per-file-cache/*) APP_OBJS+=("$o") ;;
+        *) echo "unclassified object: $o (from $a)" >&2; exit 1 ;;
+      esac
     done
   done < "$BUILD/caches.txt"
   [ ${#APP_OBJS[@]} -gt 0 ] || [ ${#UI_OBJS[@]} -gt 0 ] || { echo "no module object rebuilt" >&2; exit 1; }

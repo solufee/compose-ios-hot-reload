@@ -19,6 +19,25 @@ import java.util.concurrent.ExecutionException
  * patched from), `<module>.new.json` the candidate written by `check`; `app.klib` the app compiled as a library;
  * `app.stamp` the time of the app sources that app.json describes; `cache/` the snapshot cache.
  */
+/**
+ * Warm-restart reasons for expect/actual pairs added or removed between two sets of `expect` declarations
+ * ("kind name", from [expectDeclarations]). Only the presence of a pair is judged here; a changed signature
+ * is caught by the classifier (compat-classify.py) like any other signature change.
+ */
+fun expectActualReasons(before: Set<String>, now: Set<String>): List<String> =
+    (now - before).sorted().map { "WARM expect-actual ${it.substringAfter(' ')}: expect ${it.substringBefore(' ')} added" } +
+        (before - now).sorted().map { "WARM expect-actual ${it.substringAfter(' ')}: expect ${it.substringBefore(' ')} removed" }
+
+private val MODS = "(?:(?:public|internal|private|protected|open|abstract|sealed|data|inline|value|annotation|enum|inner|fun|suspend|external|infix|operator|tailrec)\\s+)*"
+private val EXPECT_DECL = Regex("""(?m)^\s*(?:@[\w.]+(?:\([^)]*\))?\s+)*""" + MODS + """expect\s+""" + MODS +
+    """(fun|val|var|class|object|interface|typealias)\s+(?:<[^>]*>\s*)?(?:\S*\.)?(\w+)""")
+
+/** "kind name" of every `expect` declaration in the Kotlin files under [dir]. */
+fun expectDeclarations(dir: File): Set<String> =
+    if (!dir.isDirectory) emptySet()
+    else dir.walkTopDown().filter { it.isFile && it.extension == "kt" }
+        .flatMap { f -> EXPECT_DECL.findAll(f.readText()).map { "${it.groupValues[1]} ${it.groupValues[2]}" } }.toSet()
+
 class Compat(private val s: HrSettings, private val logger: Logger, private val pipeline: Pipeline, private val tools: Tools) {
     enum class Verdict { HOT, WARM }
 
@@ -31,6 +50,10 @@ class Compat(private val s: HrSettings, private val logger: Logger, private val 
 
     fun hasBaseline(): Boolean = s.modules.all { base(it).isFile }
 
+    /** expect declarations of every module ("kind name"), from the sources: klib metadata keeps no expect/actual marker. */
+    private val expectFile get() = File(dir, "expect-declarations.txt")
+    fun expectDeclarations(): Set<String> = s.modules.flatMap { m -> m.sourceDirs.flatMap { expectDeclarations(File(it)) } }.toSortedSet()
+
     /** Writes the baseline for what `hotReloadPackage` just built (§10.2: at the end of package). */
     fun baseline(daemons: Daemons?) {
         dir.mkdirs()
@@ -42,6 +65,7 @@ class Compat(private val s: HrSettings, private val logger: Logger, private val 
             throw GradleException("CMP hot reload: compat-classify baseline failed (exit ${r.exit}):\n${r.output.trim().takeLast(3000)}")
         }
         appStamp.writeText("")
+        expectFile.writeText(expectDeclarations().joinToString("\n"))
         s.modules.forEach { candidate(it).delete() }
         logger.lifecycle("compat: baseline written for ${s.modules.joinToString(",") { it.label }} (${System.currentTimeMillis() - t0} ms)")
     }
@@ -57,9 +81,13 @@ class Compat(private val s: HrSettings, private val logger: Logger, private val 
         val modules = s.libraries.map { it.label to s.klibOf(it).path } + (s.app.label to app)
         val r = Proc.run(command("check", modules, daemons), env = env(), echo = false)
         val ms = System.currentTimeMillis() - t0
+        // An expect/actual pair added or removed: warm restart (Kotlin Multiplatform, 0.2.0).
+        val expectReasons = if (expectFile.isFile) {
+            expectActualReasons(expectFile.readLines().filter { it.isNotBlank() }.toSet(), expectDeclarations())
+        } else emptyList()
         when (r.exit) {
-            0 -> Result(Verdict.HOT, emptyList(), ms)
-            3 -> Result(Verdict.WARM, r.output.lines().filter { it.startsWith("WARM ") }, ms)
+            0 -> if (expectReasons.isEmpty()) Result(Verdict.HOT, emptyList(), ms) else Result(Verdict.WARM, expectReasons, ms)
+            3 -> Result(Verdict.WARM, r.output.lines().filter { it.startsWith("WARM ") } + expectReasons, ms)
             else -> throw GradleException(
                 "CMP hot reload: compat-classify check failed (exit ${r.exit}); patch not sent:\n${r.output.trim().takeLast(3000)}",
             )
@@ -77,12 +105,13 @@ class Compat(private val s: HrSettings, private val logger: Logger, private val 
     fun commit() {
         for (m in s.modules) candidate(m).takeIf { it.isFile }?.let { f -> f.copyTo(base(m), overwrite = true); f.delete() }
         appStamp.writeText("")
+        expectFile.writeText(expectDeclarations().joinToString("\n"))
     }
 
     private fun appSourcesChanged(): Boolean {
         val stamp = appStamp
         if (!stamp.isFile) return true
-        return File(s.app.srcDir).walkTopDown().any { it.isFile && it.extension == "kt" && it.lastModified() > stamp.lastModified() }
+        return s.app.sourceDirs.any { d -> File(d).walkTopDown().any { it.isFile && it.extension == "kt" && it.lastModified() > stamp.lastModified() } }
     }
 
     private fun env() = mapOf("JAVA_HOME" to s.javaHome)

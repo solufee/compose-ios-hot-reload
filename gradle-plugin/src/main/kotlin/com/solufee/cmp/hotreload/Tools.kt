@@ -12,13 +12,14 @@ class Tools private constructor(val dir: File, val origin: String, val shas: Map
     val embedMerged get() = File(dir, "embed-merged.py")
     val daemonSource get() = File(dir, "HrCompileDaemon.java")
     val compatClassify get() = File(dir, "compat-classify.py")
+    val releaseTextDigest get() = File(dir, "release-text-digest.py")
 
     fun describe(): String = "tools from $origin (sha256 " +
         shas.toSortedMap().entries.joinToString(", ") { "${it.key}=${it.value.take(12)}" } + ")"
 
     companion object {
         private const val RES = "/com/solufee/cmp/hotreload/tools/"
-        val NAMES = listOf("merge-payloads.py", "embed-merged.py", "HrCompileDaemon.java", "compat-classify.py")
+        val NAMES = listOf("merge-payloads.py", "embed-merged.py", "HrCompileDaemon.java", "compat-classify.py", "release-text-digest.py")
 
         fun sha256(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

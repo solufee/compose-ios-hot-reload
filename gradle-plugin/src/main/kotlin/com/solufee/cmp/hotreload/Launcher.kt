@@ -26,7 +26,11 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
      * counts as started only when one console line contains the ready marker and every token (e.g. the
      * restored `page=2` and `count=3`).
      */
-    fun launch(pipeline: Pipeline, appArgs: List<String> = emptyList(), readyTokens: List<String> = emptyList()): Started {
+    /** [documents]: files written into the app's Documents/ after install, before launch (warm restart state). */
+    fun launch(
+        pipeline: Pipeline, appArgs: List<String> = emptyList(), readyTokens: List<String> = emptyList(),
+        documents: Map<String, ByteArray> = emptyMap(),
+    ): Started {
         val info = pipeline.appInfo()
         val bundle = pipeline.appBundle(info)
         if (!bundle.isDirectory) throw GradleException("CMP hot reload: ${bundle.path} not found; run ./gradlew hotReloadPackage first")
@@ -38,6 +42,13 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         if (s.reinstall) {
             Proc.run(listOf("xcrun", "simctl", "uninstall", udid, info.bundleId), echo = false)
             Proc.check(listOf("xcrun", "simctl", "install", udid, bundle.path), logger = logger)
+        }
+        if (documents.isNotEmpty()) {
+            val data = Proc.check(listOf("xcrun", "simctl", "get_app_container", udid, info.bundleId, "data"), echo = false).trim()
+            val docs = File(data, "Documents").apply { mkdirs() }
+            documents.forEach { (name, bytes) -> File(docs, name).writeBytes(bytes) }
+            logger.lifecycle("CMP hot reload: restored ${documents.keys.joinToString { "Documents/$it" }} " +
+                "(${documents.values.sumOf { it.size }} bytes) into the new install")
         }
         val log = File(s.launchLog)
         for (attempt in 1..s.launchRetries) {

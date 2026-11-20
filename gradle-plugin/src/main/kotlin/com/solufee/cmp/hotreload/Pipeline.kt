@@ -18,7 +18,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * compiler adds implicitly). Everything else is linked wherever it lives, including public klibs that the
      * toolchain download put next to the dist; nothing is assumed to be in ~/.gradle.
      */
-    fun externalKlibs(): List<String> = externalKlibs(File(s.klibList).readLines(), File(s.dist))
+    fun externalKlibs(): List<String> = externalKlibs(File(s.klibList).readLines(), File(s.dist)) + s.extraKlibs
 
 
     /** Longest common directory of the external klibs: caches are auto-built for everything below it. */
@@ -31,6 +31,72 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         return prefix?.path ?: "/"
     }
 
+    /**
+     * -Xauto-cache-from roots: the toolchain's klibs, and (separately) the dependency klibs from Gradle. Never a
+     * directory that also holds the project's own klibs - those are compiled per file so they can be hot-swapped.
+     */
+    fun autoCacheRoots(): List<String> {
+        val toolchain = externalKlibs(File(s.klibList).readLines(), File(s.dist))
+        val roots = mutableListOf(autoCacheFrom(toolchain))
+        if (s.extraKlibs.isNotEmpty()) {
+            val common = autoCacheFrom(s.extraKlibs)
+            val home = File(System.getProperty("user.home")).canonicalPath
+            val tooBroad = common == "/" || File(common).canonicalPath == home || File(s.rootDir).canonicalPath.startsWith(File(common).canonicalPath + "/")
+            roots += if (tooBroad) s.extraKlibs.map { File(it).parent }.distinct() else listOf(common)
+        }
+        return roots.distinct()
+    }
+
+    /**
+     * Sources of a module: its directories as free arguments when it has one fragment (as in 0.1.x); otherwise a
+     * multiplatform compilation - every fragment with its own files (-Xfragment-sources) and its dependsOn edges
+     * (-Xfragment-refines). All klibs go to every fragment through -l.
+     */
+    fun sourceArgs(m: HrModule): List<String> {
+        // The generated UIKit entry (iosEntry) joins the app's leaf fragment (the platform one, listed last).
+        val withEntry = m.kind == ModuleKind.APP && s.iosEntry != null
+        val fragments = m.fragments.mapIndexed { i, f -> if (withEntry && i == m.fragments.lastIndex) f.copy(dirs = f.dirs + s.generatedDir.path) else f }
+        if (fragments.size == 1) return fragments.single().dirs.filter { File(it).exists() }
+        val args = mutableListOf("-Xmulti-platform", "-Xexpect-actual-classes", "-Xfragments=" + fragments.joinToString(",") { it.name })
+        for (f in fragments) f.refines.forEach { args += "-Xfragment-refines=${f.name}:$it" }
+        val files = mutableListOf<String>()
+        for (f in fragments) {
+            f.dirs.map(::File).filter { it.isDirectory }.flatMap { d -> d.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList() }
+                .sortedBy { it.path }.forEach { file ->
+                    args += "-Xfragment-sources=${f.name}:${file.path}"
+                    files += file.path
+                }
+        }
+        return args + files
+    }
+
+    /** When the running app last got new code: set by package and after every sent patch. */
+    private val appliedStamp get() = File(work, "applied.stamp")
+
+    private val pendingCaches get() = File(work, "pending-caches.txt")
+
+    private fun markApplied(at: Long) {
+        pendingCaches.delete()
+        appliedStamp.parentFile.mkdirs()
+        appliedStamp.writeText("")
+        appliedStamp.setLastModified(at)
+    }
+
+    /** The UIKit entry generated for [HrSettings.iosEntry] (written by [writeGeneratedMain]). */
+    fun generatedMain(): File = File(s.generatedDir, "HotReloadMain.kt")
+
+    /**
+     * Apps without a Kotlin `main` (the KMP template: Swift calls MainViewController()) get a minimal UIKit entry
+     * that shows the UIViewController returned by [HrSettings.iosEntry]. Written before every compile of the app.
+     */
+    fun writeGeneratedMain() {
+        val entry = s.iosEntry ?: return
+        val f = generatedMain()
+        f.parentFile.mkdirs()
+        val text = generatedMainSource(entry, appInfo().executable)
+        if (!f.isFile || f.readText() != text) f.writeText(text)
+    }
+
     private fun klibLinks(m: HrModule?): List<String> {
         val libs = if (m == null) s.libraries else s.libraries.filter { it.path in m.deps }
         return externalKlibs().flatMap { listOf("-l", it) } + libs.flatMap { listOf("-l", s.klibOf(it).path) }
@@ -39,17 +105,16 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     fun libraryArgs(m: HrModule, out: File = s.klibOf(m)): List<String> = listOf(
         "-target", s.target, "-p", "library", "-g",
         "-Xplugin=${s.composePlugin}", "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
-    ) + klibLinks(m) + listOf(m.srcDir, "-o", out.path.removeSuffix(".klib"))
+    ) + klibLinks(m) + sourceArgs(m) + listOf("-o", out.path.removeSuffix(".klib"))
 
     /** Identical for package and reload, so the incremental caches are shared (only -o and the dump differ). */
     fun programArgs(output: File, dumpCaches: File?): List<String> {
-        val ext = externalKlibs()
         return listOf(
             "-target", s.target, "-p", "program", "-g",
             "-Xcompilation-scheme=split",
             "-Xenable-incremental-compilation", "-Xic-cache-dir=${File(work, "ic").path}",
             "-Xbinary=perFileCacheForStdlib=false",
-            "-Xauto-cache-from=${autoCacheFrom(ext)}",
+            *autoCacheRoots().map { "-Xauto-cache-from=$it" }.toTypedArray(),
             "-Xauto-cache-dir=${File(work, "auto-cache").path}",
             "-Xplugin=${s.composePlugin}",
             "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
@@ -57,7 +122,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             listOf("-linker-option=-force_load", "-linker-option=${s.objcUtilsLib}") +
             klibLinks(null) +
             (dumpCaches?.let { listOf("-Xdump-built-caches-to=${it.path}") } ?: emptyList()) +
-            listOf("-o", output.path, s.app.srcDir)
+            listOf("-o", output.path) + sourceArgs(s.app)
     }
 
     // ---------------------------------------------------------------- compile
@@ -128,6 +193,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * metadata alone does not show inline/suspend body changes (INTERFACE §10.2).
      */
     fun compileAppKlib(daemons: Daemons?): File {
+        writeGeneratedMain()
         val out = File(s.compatDir, "app.klib")
         out.parentFile.mkdirs()
         out.deleteRecursively()
@@ -139,7 +205,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     // ---------------------------------------------------------------- packages / module mapping
 
     /** Packages declared in a module's sources ("" = root package). */
-    fun packagesOf(m: HrModule): Set<String> = sourcePackages(File(m.srcDir))
+    fun packagesOf(m: HrModule): Set<String> = m.sourceDirs.flatMap { sourcePackages(File(it)) }.toSet()
 
     /** Hot packages for merge-payloads: every package of every library, plus the app's named packages. */
     fun hotPackages(): List<String> =
@@ -150,6 +216,10 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     data class AppInfo(val executable: String, val bundleId: String)
 
     fun appInfo(): AppInfo {
+        s.infoPlistContent?.let { content ->
+            val f = File(s.infoPlist)
+            if (!f.isFile || f.readText() != content) { f.parentFile.mkdirs(); f.writeText(content) }
+        }
         fun read(key: String) = Proc.check(listOf("/usr/libexec/PlistBuddy", "-c", "Print :$key", s.infoPlist), echo = false).trim()
         return AppInfo(read("CFBundleExecutable"), read("CFBundleIdentifier"))
     }
@@ -162,6 +232,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      */
     fun packageApp(tools: Tools, daemons: Daemons? = null) {
         val t0 = System.currentTimeMillis()
+        writeGeneratedMain()
         val info = appInfo()
         val app = s.appDir.apply { mkdirs() }
         listOf("ic", "auto-cache").forEach { File(work, it).mkdirs() }
@@ -193,6 +264,11 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         exe.copyTo(File(bundle, info.executable))
         File(bundle, info.executable).setExecutable(true)
         File(s.infoPlist).copyTo(File(bundle, "Info.plist"))
+        // Compose Multiplatform resources (Res.drawable...): looked up under <bundle>/compose-resources/.
+        s.composeResources?.let(::File)?.takeIf { it.isDirectory }?.let { res ->
+            res.copyRecursively(File(bundle, "compose-resources"), overwrite = true)
+            logger.lifecycle("compose resources: ${res.walkTopDown().count { it.isFile }} files -> compose-resources/")
+        }
         File(s.kaldoDylib).copyTo(File(bundle, "Frameworks/${File(s.kaldoDylib).name}"))
         // The linker leaves absolute rpaths (e.g. to the LLVM install). Outside the bundle the simulator
         // rejects the dylib (codesign invalid-page), so keep only bundle-relative rpaths and re-sign ad hoc.
@@ -205,6 +281,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         verifyBundle(bundle, info, merged)
         val tEnd = System.currentTimeMillis()
         logger.lifecycle("package: ${bundle.path} (ad-hoc signed)")
+        markApplied(t0)
         logger.lifecycle("package timing ms=${tEnd - t0} compile=${tCompile - t0} merge=${tMerge - tCompile} embed+bundle=${tEnd - tMerge}")
     }
 
@@ -216,7 +293,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         val log = File(s.launchLog)
         val before = if (log.isFile) log.length() else -1L
         val t0 = System.currentTimeMillis()
+        val sentAt = System.currentTimeMillis()
         ReloadSender.send(s.port, listOf(merged.path))
+        markApplied(sentAt)
         logger.lifecycle("sent ${merged.path} port ${s.port}")
         if (before >= 0) confirmLoaded(log, before, t0)
     }
@@ -243,18 +322,25 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
 
     /** Compile (cache-only), collect this run's objects, merge them and check the symbols; returns the object to send. */
     fun preparePatch(daemons: Daemons?): File {
+        writeGeneratedMain()
         if (!s.hotSymbols.isFile) throw GradleException("CMP hot reload: no packaged app in ${s.appDir}; run ./gradlew hotReloadPackage first")
-        // Archives are filtered by mtime against this start time (second granularity, like the reference driver).
-        val start = System.currentTimeMillis() / 1000 * 1000
+        // Archives are filtered by mtime (second granularity, like the reference driver) against the moment the
+        // running app last got new code (package or a sent patch): what a failed attempt already compiled is
+        // still sent by the next one.
+        val start = (if (appliedStamp.isFile) appliedStamp.lastModified() else System.currentTimeMillis()) / 1000 * 1000
         val caches = File(work, "caches.txt").apply { delete() }
         val patchExe = File(s.appDir, "${appInfo().executable}-patch.kexe")
         compile(programArgs(patchExe, caches), if (daemons != null) s.compileSocket else null, "compile", cacheOnly = true, daemons = daemons)
         if (!caches.isFile) throw GradleException("CMP hot reload: compiler wrote no ${caches.name}")
+        // Caches built since the app last got new code, including by attempts that failed after compiling:
+        // the compiler lists only what it built in this run, so the list is carried until a patch is sent.
+        val archives = pendingArchives(pendingCaches.takeIf { it.isFile }?.readLines() ?: emptyList(), caches.readLines())
+        pendingCaches.writeText(archives.joinToString("\n"))
 
         val patchDir = File(work, "patch").apply { deleteRecursively(); mkdirs() }
         val modulePackages = s.modules.associateWith { packagesOf(it) }
         val objects = linkedMapOf<HrModule, MutableList<File>>()
-        caches.readLines().map { it.trim() }.filter { it.contains("per-file-cache/") && it.endsWith(".a") }.forEachIndexed { i, a ->
+        archives.forEachIndexed { i, a ->
             val archive = File(a)
             if (archive.lastModified() < start) {
                 logger.info("skip stale: $a")
@@ -263,8 +349,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             val dir = File(patchDir, "a$i-${archive.nameWithoutExtension}").apply { mkdirs() }
             Proc.check(listOf("ar", "x", archive.path), cwd = dir, echo = false)
             dir.listFiles { f -> f.name.endsWith(".o") }!!.sorted().forEach { o ->
-                val m = classify(definedSymbols(o), modulePackages)
-                    ?: throw GradleException("CMP hot reload: cannot tell which module ${o.path} belongs to (no matching _kfun: symbols)")
+                // One module (e.g. the KMP template's `shared`): every rebuilt object is its own.
+                val m = moduleOf(s.modules, modulePackages) { definedSymbols(o) }
+                    ?: throw GradleException("CMP hot reload: cannot tell which module ${o.path} belongs to (no Kotlin symbol of a known package)")
                 objects.getOrPut(m) { mutableListOf() } += o
             }
         }
@@ -317,6 +404,45 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     }
 
     companion object {
+        /** Minimal UIKit app around a function returning the root UIViewController (KMP template layout). */
+        fun generatedMainSource(entry: String, executable: String): String = """
+            |// Generated by com.solufee.cmp.hotreload (cmpHotReload { app { iosEntry = "$entry" } }). Do not edit.
+            |@file:OptIn(kotlinx.cinterop.BetaInteropApi::class, kotlinx.cinterop.ExperimentalForeignApi::class)
+            |
+            |import kotlinx.cinterop.*
+            |import platform.Foundation.NSStringFromClass
+            |import platform.UIKit.*
+            |
+            |class HotReloadAppDelegate : UIResponder, UIApplicationDelegateProtocol {
+            |    companion object : UIResponderMeta(), UIApplicationDelegateProtocolMeta {}
+            |
+            |    @OverrideInit
+            |    constructor() : super()
+            |
+            |    private var keyWindow: UIWindow? = null
+            |    override fun window() = keyWindow
+            |    override fun setWindow(window: UIWindow?) { keyWindow = window }
+            |
+            |    override fun application(application: UIApplication, didFinishLaunchingWithOptions: Map<Any?, *>?): Boolean {
+            |        val w = UIWindow(frame = UIScreen.mainScreen.bounds)
+            |        w.rootViewController = $entry()
+            |        w.makeKeyAndVisible()
+            |        keyWindow = w
+            |        return true
+            |    }
+            |}
+            |
+            |fun main(args: Array<String>) {
+            |    println("HR entry: $entry")
+            |    memScoped {
+            |        val argv = (arrayOf("$executable") + args).map { it.cstr.ptr }.toCValues()
+            |        autoreleasepool {
+            |            UIApplicationMain(args.size + 1, argv, null, NSStringFromClass(HotReloadAppDelegate))
+            |        }
+            |    }
+            |}
+            |""".trimMargin()
+
         fun externalKlibs(lines: List<String>, dist: File): List<String> {
             val implicit = File(dist, "klib").canonicalPath + "/"
             return lines.map { it.trim() }
@@ -349,11 +475,28 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
          * Module of an object: vote with every `_kfun:<package>...` symbol for the module that declares the
          * longest matching package; symbols of the root package (`_kfun:#`) vote for the module declaring "".
          */
+        private val KOTLIN_SYMBOL_PREFIXES = listOf("_kfun:", "_kclass:", "_kvar:")
+
+        /**
+         * Per-file cache archives to look at for a patch: those still pending from attempts that failed after
+         * compiling (the compiler lists only what it built in this run) plus this run's, de-duplicated.
+         * The list is cleared when a patch is sent or the app is packaged.
+         */
+        fun pendingArchives(pending: List<String>, built: List<String>): List<String> =
+            (pending + built).map { it.trim() }.filter { it.contains("per-file-cache/") && it.endsWith(".a") }.distinct()
+
+        /** Module of a rebuilt object: with one module (the KMP template's `shared`) every object is its own. */
+        fun moduleOf(modules: List<HrModule>, packages: Map<HrModule, Set<String>>, symbols: () -> Set<String>): HrModule? =
+            if (modules.size == 1) modules.single() else classify(symbols(), packages)
+
         fun classify(symbols: Set<String>, packages: Map<HrModule, Set<String>>): HrModule? {
             val votes = mutableMapOf<HrModule, Int>()
             for (sym in symbols) {
-                if (!sym.startsWith("_kfun:")) continue
-                val rest = sym.removePrefix("_kfun:")
+                // Functions, classes and globals carry the package after their prefix; file initializers
+                // (`__Konan_init_<hash>:<package>...`) after the colon.
+                val rest = KOTLIN_SYMBOL_PREFIXES.firstOrNull { sym.startsWith(it) }?.let { sym.removePrefix(it) }
+                    ?: sym.takeIf { it.startsWith("__Konan_init_") && ':' in it }?.substringAfter(':')
+                    ?: continue
                 var best: HrModule? = null
                 var bestLen = -1
                 for ((m, pkgs) in packages) for (p in pkgs) {

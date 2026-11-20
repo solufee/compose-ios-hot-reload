@@ -1,0 +1,38 @@
+# three-modules: core then ui (core from the combined run; ui rerun from a fresh launch)
+## three-modules: core, then ui, in one running app
+package timing ms=21245 compile=11662 merge=7300 embed+bundle=2283
+BUILD SUCCESSFUL in 26s
+CMP hot reload: app started (attempt 1, pid 61078, 9.4 s, port 5568, log <WORK>/accept-v7/gradle-plugin/test-projects/three-modules/launch.log)
+BUILD SUCCESSFUL in 10s
+# manual hot-swap proof: core/src/main/kotlin/core.kt in three-modules, app pid 61078
+step00 OK 10646ms hot=True loaded=True on_screen=True pid 61078->61078 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 7012ms hot=True loaded=True on_screen=True pid 61078->61078 [new final class] expect '|c10|'
+step02 OK 6792ms hot=True loaded=True on_screen=True pid 61078->61078 [method added to a final class] expect '|c15|'
+step03 OK 6075ms hot=True loaded=True on_screen=True pid 61078->61078 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 7053ms hot=True loaded=True on_screen=True pid 61078->61078 [new object] expect '|oa|'
+step05 OK 6949ms hot=True loaded=True on_screen=True pid 61078->61078 [method added to an object] expect '|ob|'
+step06 OK 6076ms hot=True loaded=True on_screen=True pid 61078->61078 [new class with a companion] expect '|c1|'
+step07 OK 7210ms hot=True loaded=True on_screen=True pid 61078->61078 [method added to a companion object] expect '|c2|'
+step08 OK 6825ms hot=True loaded=True on_screen=True pid 61078->61078 [new typealias] expect '|alias|'
+step09 OK 6897ms hot=True loaded=True on_screen=True pid 61078->61078 [new internal function] expect '|vint|'
+step10 OK 7326ms hot=True loaded=True on_screen=True pid 61078->61078 [internal -> public (and body)] expect '|vpub|'
+# file restored
+summary: 11/11 hot and on screen, same pid
+# three-modules ui module from a fresh launch (the first run reused an app whose core had been restored), 2026-11-19 21:49:29
+BUILD SUCCESSFUL in 19s
+CMP hot reload: app started (attempt 1, pid 84725, 10.9 s, port 5568, log <WORK>/accept-v7/gradle-plugin/test-projects/three-modules/launch.log)
+BUILD SUCCESSFUL in 11s
+# manual hot-swap proof: ui/src/main/kotlin/ui.kt in three-modules, app pid 84725
+step00 OK 9474ms hot=True loaded=True on_screen=True pid 84725->84725 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 6000ms hot=True loaded=True on_screen=True pid 84725->84725 [new final class] expect '|c10|'
+step02 OK 6016ms hot=True loaded=True on_screen=True pid 84725->84725 [method added to a final class] expect '|c15|'
+step03 OK 5952ms hot=True loaded=True on_screen=True pid 84725->84725 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 5814ms hot=True loaded=True on_screen=True pid 84725->84725 [new object] expect '|oa|'
+step05 OK 6052ms hot=True loaded=True on_screen=True pid 84725->84725 [method added to an object] expect '|ob|'
+step06 OK 4960ms hot=True loaded=True on_screen=True pid 84725->84725 [new class with a companion] expect '|c1|'
+step07 OK 6123ms hot=True loaded=True on_screen=True pid 84725->84725 [method added to a companion object] expect '|c2|'
+step08 OK 4949ms hot=True loaded=True on_screen=True pid 84725->84725 [new typealias] expect '|alias|'
+step09 OK 6064ms hot=True loaded=True on_screen=True pid 84725->84725 [new internal function] expect '|vint|'
+step10 OK 7117ms hot=True loaded=True on_screen=True pid 84725->84725 [internal -> public (and body)] expect '|vpub|'
+# file restored
+summary: 11/11 hot and on screen, same pid

@@ -1,7 +1,11 @@
-# 试用指南（0.1.1，实验性）
+# 试用指南（0.2.0，实验性）
 
-这份指南带你在自己的 Mac 上，从一个空目录开始，把 Compose Multiplatform 的 iOS 模拟器热重载接进一个 app + ui
-双模块工程：改 Kotlin 代码、执行一条命令，正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。
+这份指南带你在自己的 Mac 上，把 Compose Multiplatform 的 iOS 模拟器热重载接进工程：改 Kotlin 代码、执行一条命令，
+正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。有两种接法：
+
+- **已有的 Kotlin Multiplatform 工程**（例如 [KMP 向导](https://kmp.jetbrains.com) 生成的 Compose Multiplatform 工程）：
+  看第 2 节下载工具链，然后直接看**第 7 节**；
+- **从空目录开始的 app + ui 双模块工程**（不用 Kotlin Multiplatform 插件）：按第 2–4 节做。
 
 > **实验性质。** 只支持 Apple Silicon Mac + iOS 模拟器；工具链（Kotlin/Native、Compose、LLVM/libKaldo）是
 > 打过补丁的固定版本，插件只认这一套；不要用于发布构建。遇到问题请到
@@ -28,16 +32,16 @@
 
 ## 2. 下载工具链
 
-工具链版本：**2.5.255-hotreload.4**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
+工具链版本：**2.5.255-hotreload.5**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
 
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.4/`（下文记作 `<TOOLCHAIN>`）：
+完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.5/`（下文记作 `<TOOLCHAIN>`）：
 
 | 目录 | 内容 |
 |---|---|
@@ -93,11 +97,11 @@ rootProject.name = "my-app"
 include("app", "ui")
 ```
 
-**第 2 步：根目录 `build.gradle.kts`**，应用插件并声明两个模块（插件只能用在根项目上）：
+**第 2 步：根目录 `build.gradle.kts`**，应用插件并声明两个模块：
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.1.1"
+    id("com.solufee.cmp.hotreload") version "0.2.0"
 }
 
 cmpHotReload {
@@ -190,20 +194,32 @@ import myui.Greeting
 import platform.Foundation.*
 import platform.UIKit.*
 
-// 可选：温重启时保留页面和计数（见下一小节）。
+// 可选：温重启时保留状态（见下一小节）。page、count 之外的字段（这里的 liked）由 app 自己定义。
 object HrState {
     var page = 0
     var count = 0
+    var liked = false
+
+    private fun file(): String? =
+        (NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true).firstOrNull() as? String)?.let { "$it/hr-state.json" }
 
     fun restore(args: Array<String>) {
+        // 温重启时插件把重启前的 hr-state.json 原样放回 Documents/
+        val text = file()?.let { NSString.create(contentsOfFile = it, encoding = NSUTF8StringEncoding, error = null)?.toString() }
+        if (text != null) {
+            page = Regex("\"page\":(\\d+)").find(text)?.groupValues?.get(1)?.toInt() ?: 0
+            count = Regex("\"count\":(\\d+)").find(text)?.groupValues?.get(1)?.toInt() ?: 0
+            liked = text.contains("\"liked\":true")
+        }
+        // 兼容：插件同时用 --hr-state=page,count 传页面和计数
         val v = args.firstOrNull { it.startsWith("--hr-state=") }?.substringAfter('=')?.split(',') ?: return
-        page = v.getOrNull(0)?.toIntOrNull() ?: 0
-        count = v.getOrNull(1)?.toIntOrNull() ?: 0
+        page = v.getOrNull(0)?.toIntOrNull() ?: page
+        count = v.getOrNull(1)?.toIntOrNull() ?: count
     }
 
-    fun save(page: Int, count: Int) {
-        val dir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true).firstOrNull() as? String ?: return
-        NSString.create(string = "{\"page\":$page,\"count\":$count}").writeToFile("$dir/hr-state.json", true, NSUTF8StringEncoding, null)
+    fun save(page: Int, count: Int, liked: Boolean) {
+        val path = file() ?: return
+        NSString.create(string = "{\"page\":$page,\"count\":$count,\"liked\":$liked}").writeToFile(path, true, NSUTF8StringEncoding, null)
     }
 }
 
@@ -211,9 +227,10 @@ object HrState {
 fun App() {
     var page by remember { mutableStateOf(HrState.page) }
     var count by remember { mutableStateOf(HrState.count) }
+    var liked by remember { mutableStateOf(HrState.liked) }
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(1000); tick++ } }   // 每秒一次重组，改动最多 1 秒后显示
-    LaunchedEffect(page, count) { HrState.save(page, count) }
+    LaunchedEffect(page, count, liked) { HrState.save(page, count, liked) }
     println("RENDER_APP page=$page count=$count tick=$tick")       // readyMarker；温重启时插件在这一行里找 page= 和 count=
     MaterialTheme {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally,
@@ -222,6 +239,8 @@ fun App() {
                 Greeting("hot reload", tick)
                 Text("Counter: $count")
                 Button(onClick = { count++ }) { Text("+") }
+                Button(onClick = { liked = !liked }) { Text(if (liked) "Unlike" else "Like") }
+                Text("Liked: $liked")
                 Button(onClick = { page = 1 }) { Text("Next") }
             } else {
                 Text("Page 2, counter kept: $count")
@@ -243,7 +262,7 @@ class AppDelegate : UIResponder, UIApplicationDelegateProtocol {
 
     override fun application(application: UIApplication, didFinishLaunchingWithOptions: Map<Any?, *>?): Boolean {
         val w = UIWindow(frame = UIScreen.mainScreen.bounds)
-        w.rootViewController = ComposeUIViewController(configure = { enforceStrictPlistSanityCheck = false }) { App() }
+        w.rootViewController = ComposeUIViewController { App() }
         w.makeKeyAndVisible()
         keyWindow = w
         return true
@@ -263,13 +282,15 @@ fun main(args: Array<String>) {
 
 ### 可选：温重启时保留状态
 
-遇到不能热替换的改动（见第 4 节），插件会重新打包并重启 app。上面模板里的 `HrState` 让 app 重启后回到原来的页面和计数：
+遇到不能热替换的改动（见第 4 节），插件会重新打包、重新安装并重启 app，内存里的 `remember` 状态都会丢失。
+上面模板里的 `HrState` 演示了怎么把需要的状态带过温重启：
 
-- 页面或计数一变，`HrState.save` 就把它写到 app 沙盒的 `Documents/hr-state.json`（`{"page":N,"count":M}`）；
-- 温重启时插件读这个文件，用参数 `--hr-state=N,M` 启动 app，`HrState.restore(args)` 把它当作初始值；
-- 插件等到 `readyMarker` 那一行同时出现 `page=N` 和 `count=M`，才算状态已经恢复。
-
-不写 `HrState` 也能温重启，只是回到初始页面。插件只保存和恢复这两个整数；其他 `remember` 状态在温重启后都会丢失。
+- 状态一变，`HrState.save` 就把它写到 app 沙盒的 `Documents/hr-state.json`。文件内容由 app 自己决定，模板里是
+  `{"page":N,"count":M,"liked":true}`，可以加任何字段；
+- 温重启时插件在停掉 app 之前读出这个文件，重新安装后**原样放回**新安装的 `Documents/`，然后启动；
+  `HrState.restore` 在 `main` 里读它，作为初始值。文件里有 `page`、`count` 时，插件还会用 `--hr-state=N,M` 传这两个值，
+  并等到 `readyMarker` 那一行同时出现 `page=N` 和 `count=M` 才算恢复完成；
+- 不写这个文件也能温重启，只是回到初始状态。普通的 `hotReloadRun` 每次都重新安装，不会带上旧文件。
 
 ## 4. 运行
 
@@ -309,7 +330,7 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 ## 5. 已知限制
 
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
-- 工具链版本固定，插件只认 2.5.255-hotreload.4。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
+- 工具链版本固定，插件只认 2.5.255-hotreload.5。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
 - 温重启约 17 s（实测 17–24 s），其中约 11 s 是重新打包；清理过 `build/hotreload`（`hotReloadClean`）后的第一次打包要重建缓存，约 2 分钟。温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
 - 兼容性检查（判断能不能热替换）和编译同时进行。只改 app 时检查本身约 0.6 s，但被编译时间盖住，端到端只多十几毫秒。
@@ -352,3 +373,122 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
    `~/Library/Caches/cmp-hot-reload/<12 位哈希>/`。
 6. 兼容性检查的快照：`build/hotreload/compat/*.json`（可选，判断“为什么被判成要温重启”时有用）。
 7. 能复现的最小改动：改了哪个文件的哪一行，改前改后。
+
+## 7. 接入已有的 Kotlin Multiplatform 工程（0.2.0 起）
+
+插件直接读你工程里 Kotlin Multiplatform 插件的设置：iOS 模拟器目标用到的源码集（`commonMain` → `iosMain` →
+`iosSimulatorArm64Main`，按 `dependsOn` 关系，`expect`/`actual` 照常用），以及这个模块的 iOS 依赖（例如
+kotlinx-datetime）。它只**读**这些设置，不改你的 Gradle、Kotlin Multiplatform 和 Xcode 配置；release 构建、
+Xcode 工程（`iosApp/`）和你平时的 debug 构建都和原来一样。热重载用的是插件自己按工具链编出来的一个独立模拟器 app。
+
+### 支持范围
+
+| 项 | 0.2.0 |
+|---|---|
+| 目标 | 只有 `iosSimulatorArm64()`（Apple Silicon 上的 iOS 模拟器）。模块里还有 Android、iosArm64、桌面等目标没关系，热重载不编它们 |
+| 应用插件的模块 | 含 `fun MainViewController()` 的那个模块（向导模板里叫 `shared` 或 `composeApp`）。插件自己生成 UIKit 入口（调用 `MainViewController()`）和 Info.plist |
+| Swift / Xcode 那层 | **不参与热重载**。插件生成的入口绕过模板里的 `iosApp/`（`iOSApp.swift`、`ContentView.swift` 和 Xcode 工程设置）：热重载运行的 app 里，Swift 侧的代码不生效，只有 `MainViewController()` 往下的 Kotlin/Compose 部分。正式 app 仍然用 Xcode 工程构建，不受影响 |
+| 源码 | 这个模块的 `iosSimulatorArm64Main` 和它 `dependsOn` 的全部源码集，包括默认层级里的 `appleMain`、`iosMain`、`commonMain`，以及 Compose 资源（`composeResources/`，第一次打包时由 Compose 插件生成） |
+| 同工程的其他 KMP 模块 | 这个模块直接依赖的会一起热重载（作为库模块，源码必须写 `package`）。0.2.0 的验收只覆盖了单模块的向导模板 |
+| 第三方依赖 | 自动从 `iosSimulatorArm64CompileKlibraries` 解析（含传递依赖）。Kotlin 标准库、kotlinx、Compose、AndroidX 这些工具链自带的库，一律换成工具链里的那一份（不会链进两份） |
+| Compose 版本 | 每个 Compose 模块（`org.jetbrains.compose.*`、`androidx.compose.*`）和工具链里**同名的那一份**比版本（两套版本号各比各的）：比工具链的新就在打包前报错，写出是哪个依赖拉进来的。工具链的 Compose fork 是 **1.13.0-beta01**，所以工程里的 Compose Multiplatform 用 1.13.0-beta01 或更早的版本。工具链里没有的 Compose 模块不做版本判断 |
+| 依赖库的 klib 版本 | klib ABI 在 **1.6.0（Kotlin 1.6.10）到 2.5.0** 之间、metadata 不高于 **2.6.0**，即用 Kotlin 2.5 及更早版本编出的库。超出范围的库在打包前报错，报错里有库名、版本和该怎么换 |
+| 带原生代码的库（cinterop） | **0.2.0 不支持**。依赖里有 cinterop klib（绑定系统框架、静态库或 C 库的那类，例如 SQLite 驱动）时，打包会打印 `warning: cinterop klibs … are not supported in 0.2.0`，并列出是哪些库、谁拉进来的、要链接什么；它们可能链接失败或运行出错。kotlinx-datetime 这类纯 Kotlin 库没有问题 |
+| 你工程里的 Kotlin 版本 | 不受限制（向导模板的 2.4.21 实测可用）：热重载不用它编译，只用它读设置 |
+
+工具链里的 kotlinx、AndroidX 比你工程里用的旧时（例如模板用 lifecycle 2.11.0，工具链里是 2.9.x），打包时会打印一行
+`hot reload compiles against the toolchain's older copies of …`。这时只用到了旧版本里也有的 API 就没问题；用到新 API 的
+代码在热重载里编译不过。
+
+### 接入（三步）
+
+以向导生成的、只勾选 iOS 的工程为例（模块叫 `shared`，包名 `org.example.kmphr`）。
+
+**第 1 步：`settings.gradle.kts`**，在已有的 `pluginManagement { repositories { … } }` 里**最前面**加上插件仓库：
+
+```kotlin
+pluginManagement {
+    repositories {
+        maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") }
+        // 下面是原来就有的 google { … }、mavenCentral()、gradlePluginPortal()，不动
+    }
+}
+```
+
+**第 2 步：`shared/build.gradle.kts`**（含 `MainViewController()` 的模块），在 `plugins { }` 里加一行：
+
+```kotlin
+plugins {
+    // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
+    id("com.solufee.cmp.hotreload") version "0.2.0"
+}
+```
+
+不需要写 `cmpHotReload { }`：源码集、入口、依赖都自动找到。
+
+**第 3 步：根目录的 `local.properties`**（没有就新建；不要提交到 git），指向第 2 节下载的工具链，写绝对路径：
+
+```properties
+cmp.hotreload.toolchainDir=<TOOLCHAIN>/kotlin-native
+# 可选，同第 3 节：cmp.hotreload.simulatorUdid=<UDID>、cmp.hotreload.port=5567
+```
+
+你的源码不用改。再把 `shared/.hr/` 和 `shared/launch.log` 加进 `.gitignore`（热重载的 socket 和 app 日志放在应用插件的模块目录下）。
+
+### 运行
+
+在工程根目录执行（Gradle 会找到 `shared` 里的同名任务；也可以写全 `:shared:hotReloadPackage`）：
+
+```bash
+./gradlew hotReloadPackage   # 第一次约 2 分钟（解析依赖、建 Kotlin 标准库和依赖库的缓存），之后约 15 秒
+./gradlew hotReloadRun       # 安装并启动，首帧出现后返回
+```
+
+改代码后：
+
+```bash
+./gradlew hotReload
+```
+
+- 改 `commonMain` 或 `iosMain` 里函数的**函数体**（包括 `actual` 函数的函数体）：热替换，输出 `compat: HOT`，进程不变；
+- 改 `expect`/`actual` 的**签名**，或者**增删一对** `expect`/`actual`：不能热替换，自动温重启（输出里有
+  `WARM signature …` 或 `WARM expect-actual …`，最后是 `WARM OK`），约 20 秒；
+- 其余规则同第 4、5 节。注意向导模板的 `App()` 把问候语放在 `remember { Greeting().greet() }` 里：`remember`
+  只算一次，改了 `greet()` 以后要让这块重新显示（点两下 “Click me!”）才能看到新文字。
+
+生成的 app 名是根项目名（只保留字母和数字，例如 `KmpHr`），bundle id 是 `MainViewController` 所在包名加
+`.hotreload`（例如 `org.example.kmphr.hotreload`），所以不会覆盖你用 Xcode 装的正式 app。停止：
+
+```bash
+./gradlew hotReloadDaemonStop
+xcrun simctl terminate <UDID 或 booted> org.example.kmphr.hotreload
+```
+
+### 已知限制：还在用旧工具链 2.5.255-hotreload.4 时
+
+旧工具链 2.5.255-hotreload.4 在把 Info.plist 里的布尔值交给 Kotlin 时有缺陷：Compose 启动时对 Info.plist 的严格检查
+（`CADisableMinimumFrameDurationOnPhone`）会误判，app 一启动就退出，`launch.log` 里能看到这项检查的报错。2.5.255-hotreload.5 已经修好，插件 0.2.0 也只认 .5，请按第 2 节换成 .5。
+用 0.1.x 插件和 .4 时，临时绕法是把 `MainViewController.kt` 改成下面这样，**只在试用时改，不要提交**（它会关掉正式 app 里的这项检查）：
+
+```kotlin
+fun MainViewController() = ComposeUIViewController(configure = { enforceStrictPlistSanityCheck = false }) { App() }
+```
+
+### 可选配置
+
+只在自动识别不对时才需要：
+
+```kotlin
+cmpHotReload {
+    app(":shared") {
+        bundleId = "com.example.hr"                      // 默认：入口所在包名 + .hotreload
+        iosEntry = "com.example.ui.MainViewController"   // 默认：自动找 fun MainViewController()
+        sourceSets {                                     // 默认：从 Kotlin Multiplatform 插件读
+            create("commonMain") { srcDir("src/commonMain/kotlin") }
+            create("iosMain") { srcDir("src/iosMain/kotlin"); dependsOn("commonMain") }
+        }
+    }
+    extraKlibs.from("libs/my-lib.klib")   // 另外要链进来的 klib（不在 Gradle 依赖里的）
+    resolveDependencyKlibs = false        // 不从 Gradle 解析依赖，只用工具链和 extraKlibs
+}
+```

@@ -217,10 +217,20 @@ hotreload.sh ui-klib | package | reload
 
 | 子命令 | 作用 | 关键环境变量 |
 |---|---|---|
-| `ui-klib` | 把 ui 源目录编成 `build/ui/ui.klib` | `KOTLIN_DIST`、`COMPOSE_PLUGIN_JAR`、`KLIBLIST`、`KLIB_AUTO_CACHE_FROM`、`UIKIT_UTILS`、`BUILD_DIR`、`UI_SRC_DIR`、`HRC_KLIB_SOCKET` |
-| `package` | split 编译 app（`hr-klib.sock` 在就走它，失败时改用 `kotlinc-native` 重跑；设了 `KONAN_SPLIT_MERGED_BOOTSTRAP` 时直接用 `kotlinc-native`）+ 合并 payload + 嵌入 guest + 组装 `.app` | 上面的 + `IC_DIR`、`AUTO_CACHE`、`APP_SRC`、`OUT`、`KALDO_HOT_PACKAGES`、`KALDO_MERGE_CACHE_DIR`（默认 `$BUILD/merge-cache`）；libKaldo 取 `KALDO_DYLIB`，未设时取 `$KOTLIN_DIST/toolchain.json` 的 `llvm.kaldoIossim`，都没有就退出 1；与清单 `kaldoIossimSha256` 不一致也退出 1 |
+| `ui-klib` | 把 ui 源目录编成 `build/ui/ui.klib`；守护进程失败或 socket 失效时改用 `kotlinc-native` 重跑 | `KOTLIN_DIST`、`COMPOSE_PLUGIN_JAR`、`KLIBLIST`、`KLIB_AUTO_CACHE_FROM`、`UIKIT_UTILS`、`BUILD_DIR`、`UI_SRC_DIR`、`HRC_KLIB_SOCKET`；多平台布局：`UI_FRAGMENTS`、`UI_FRAGMENT_REFINES`、`UI_FRAGMENT_ROOT` |
+| `package` | split 编译 app（多平台布局用 `APP_FRAGMENTS`、`APP_FRAGMENT_REFINES`、`APP_FRAGMENT_ROOT` 代替 `APP_SRC`；`hr-klib.sock` 在就走它，失败时改用 `kotlinc-native` 重跑；设了 `KONAN_SPLIT_MERGED_BOOTSTRAP` 时直接用 `kotlinc-native`）+ 合并 payload + 嵌入 guest + 组装 `.app` | 上面的 + `IC_DIR`、`AUTO_CACHE`、`APP_SRC`、`OUT`、`KALDO_HOT_PACKAGES`、`KALDO_MERGE_CACHE_DIR`（默认 `$BUILD/merge-cache`）；libKaldo 取 `KALDO_DYLIB`，未设时取 `$KOTLIN_DIST/toolchain.json` 的 `llvm.kaldoIossim`，都没有就退出 1；与清单 `kaldoIossimSha256` 不一致也退出 1 |
 | `reload` | 分类（v7；v8 起与编译**并行**）+ cache-only 编译 → 过滤本次重建的 archive → `nm` 分类 → `ld -r` → 符号检查 → **等分类结论** → 发送；需要温重启时默认自动 `warm`，`--no-warm` 时只拦截并退出 3 | 上面的 + `HRC_SOCKET`、`HRC_SOCKET_DIR`、`COMPAT_DIR`、`COMPAT_CLASSIFIER`、`KLIB_TOOL` |
 | `warm` | 读取 app 状态 → `package` → 用 `--hr-state` 重启 → 等 `EH OK` 与目标页/计数器，打印 `WARM OK ms=...` | `UDID`、`BUNDLE`、`WARM_LOG` |
+
+**Kotlin Multiplatform 布局（可选，首发后新增）**：设了 `UI_FRAGMENTS`（或 `APP_FRAGMENTS`）时，源码取自
+`<*_FRAGMENT_ROOT>/<fragment>/kotlin/**/*.kt`，编译参数为 `-Xmulti-platform -Xexpect-actual-classes -Xfragments=<逗号分隔>`、
+每条 refines 一个 `-Xfragment-refines=<from>:<on>`、每个文件一个 `-Xfragment-sources=<fragment>:<绝对路径>`，同样的文件再作为自由参数。
+`ui-klib`、`package`、`reload` 三处编译都把这些参数原样交给守护进程（或 `kotlinc-native`），守护进程和协议不变。例：
+`UI_FRAGMENTS="commonMain iosMain iosSimulatorArm64Main" UI_FRAGMENT_REFINES="iosMain:commonMain iosSimulatorArm64Main:iosMain"`。
+app 里不含 `main` 的文件所在的包要写进 `KALDO_HOT_PACKAGES`。原理和验证见 TECHNICAL-NOTES §11。
+`ui-klib` 把这次的源码参数写进 `$BUILD/ui/ui.inputs`；`package` 发现参数变了（例如在普通布局和多平台布局之间切换）就重编 `ui.klib`，不只看文件时间。
+`reload` 按缓存所在模块分 app / ui：`IC_DIR` 下 `ui-per-file-cache` 里的是 ui，其余 `*-per-file-cache` 是 app，`IC_DIR` 之外的缓存不发送
+（以前按 `_kfun:#main` / `_kfun:expui` 符号分，app 里不含 `main` 的文件会被拒）。
 
 `hotreload.sh` 会 source 同目录的 `hotreload.env` 并**导出**其中的变量（`set -a`），所以
 `KALDO_KEEP_COMPACT_UNWIND`、`KALDO_SYNTH_EH_FRAME` 不再依赖调用者手工 export；`package`
@@ -272,7 +282,7 @@ hotreload.sh ui-klib | package | reload
 | 5 | 2026-11-19 | 编译器直接从 `<KALDO_INSTALL>/lib` 链接 libKaldo：Kotlin 补丁里 `konan.properties` 的 `kaldoLinkerFlags.*` 改为 `-L<KALDO_INSTALL>/lib …`（macOS 另加 `-rpath <KALDO_INSTALL>/lib`），LLVM 安装目录里不再放 libKaldo（v4 的符号链接取消）。`KALDO_SYNTH_EH_FRAME` 改为按值判断（未设/空/`0` 为关）。`kotlin.patchSha256`、`llvm.patchSha256`、`llvm.kaldoIossimSha256` 随之变化，字段格式不变。不兼容点：沿用 v4 dist 的 `konan.properties`（`-lKaldo.iossim` 无 `-L`）且 LLVM 安装目录已无 libKaldo 时链接失败；依赖 `KALDO_SYNTH_EH_FRAME=0` 仍开启的行为会变成关闭 |
 | 6 | 2026-11-19 | 分发（B6）：`toolchain.json` 增加 `layout`（`local`/`bundle`）；bundle 清单带 `toolchainVersion`、`components`（文件、字节数、sha256、解包目录、`release` 或 `maven` 下载信息）、`tools`（`llvmTools`/`orcRuntime`/`uikitUtils`）和 `llvm.llvmHome`（`konan-dependency` + 依赖名）。新脚本 `gen-bundle-manifest.py`、`publish-toolchain.py`（只有 dry-run 和本地仓库两种模式）、`fetch-toolchain.py`，见 §9。`hotreload.sh` 的 `KLIBLIST` 规则通用化，新增 `KLIB_AUTO_CACHE_FROM`、`UIKIT_UTILS`；`run.sh` 新增 `ORC_RUNTIME`。兼容：local 清单只多一个 `layout` 字段；旧的 `KLIBLIST` 选出的 klib 不变 |
 | 7 | 2026-11-19 | B4：新增 `scripts/compat-classify.py`（`snapshot`/`classify`，退出码 0/3/2）；`hotreload.sh reload` 先分类，`reload --no-warm` 只拦截不发送，新增 `warm` 子命令；参考 app 支持 `--hr-state=page,count` 与 `Documents/hr-state.json`，见 §10。只新增工具、参数和退出码，已有命令与清单格式不变 |
-| 8 | 2026-11-19 | B10：分类器提速。守护进程新增 `@klib` 工具请求（§2.1）；`compat-classify.py` 新增 `baseline`/`check` 子命令和 `--daemon`、`--cache-dir`，快照增加 `klibSha256`（§10.1）；`reload` 的分类改为与 cache-only 编译并行、发送前等结论，app library klib 走 `hr-klib.sock`（§10.2）。**行为变化**：`hr-compile.sock` 有默认路径 `$HRC_SOCKET_DIR/hr-compile.sock`（`HRC_SOCKET_DIR` 默认 `<工程>/.hr`），存在就用，不再要求显式导出 `HRC_SOCKET`（§2.3）；`reload --no-warm` 在退出 3 前会先完成编译（仍不发送）。`merge-payloads.py` 在任何退出路径上删除工作目录，`KALDO_MERGE_KEEP=1` 保留（§3.1）。`fetch-toolchain.py` 接受 interfaceVersion 6–8 的 bundle 清单（v7 时它仍只认 6，下载 v7 清单会被拒，这是 v7 的遗漏）。清单字段不变。B11：libKaldo 只在 `KALDO_DEBUG_SELREFS=1` 时写 `/tmp/gap-selrefs.log`（§7；以前每次启动都写，首发前必修），`llvm.patchSha256` 变为 `3bb8a987…`、`llvm.kaldoIossimSha256` 变为 `8ed50386…`（macOS 版 libKaldo 同步重建），字段格式不变。公开 klib（v8，0.1.0）：bundle 清单新增 `externalKlibs`、`bundledKlibs`（§9.2），新增组件 `bundled-klibs`，新脚本 `gen-external-klibs.py`；`fetch-toolchain.py` 下载并校验公开 klib，不再读 Gradle 缓存，`--auto-cache-from` 默认为空；`compose-compiler-plugin` 改为 Release 附件；每个组件附 LICENSE 和 NOTICE；fetch 生成的 local 清单带 `tools`（绝对路径）。首发后（不升版本，只新增可选项）：`fetch-toolchain.py` 下载重试；温重启提速——`merge-payloads.py` 新增可选 `KALDO_MERGE_CACHE_DIR`（§3.1），`hotreload.sh package` 的编译走 `hr-klib.sock`、打印 `PACKAGE ms=…` 诊断行（§5、§10.2） |
+| 8 | 2026-11-19 | B10：分类器提速。守护进程新增 `@klib` 工具请求（§2.1）；`compat-classify.py` 新增 `baseline`/`check` 子命令和 `--daemon`、`--cache-dir`，快照增加 `klibSha256`（§10.1）；`reload` 的分类改为与 cache-only 编译并行、发送前等结论，app library klib 走 `hr-klib.sock`（§10.2）。**行为变化**：`hr-compile.sock` 有默认路径 `$HRC_SOCKET_DIR/hr-compile.sock`（`HRC_SOCKET_DIR` 默认 `<工程>/.hr`），存在就用，不再要求显式导出 `HRC_SOCKET`（§2.3）；`reload --no-warm` 在退出 3 前会先完成编译（仍不发送）。`merge-payloads.py` 在任何退出路径上删除工作目录，`KALDO_MERGE_KEEP=1` 保留（§3.1）。`fetch-toolchain.py` 接受 interfaceVersion 6–8 的 bundle 清单（v7 时它仍只认 6，下载 v7 清单会被拒，这是 v7 的遗漏）。清单字段不变。B11：libKaldo 只在 `KALDO_DEBUG_SELREFS=1` 时写 `/tmp/gap-selrefs.log`（§7；以前每次启动都写，首发前必修），`llvm.patchSha256` 变为 `3bb8a987…`、`llvm.kaldoIossimSha256` 变为 `8ed50386…`（macOS 版 libKaldo 同步重建），字段格式不变。公开 klib（v8，0.1.0）：bundle 清单新增 `externalKlibs`、`bundledKlibs`（§9.2），新增组件 `bundled-klibs`，新脚本 `gen-external-klibs.py`；`fetch-toolchain.py` 下载并校验公开 klib，不再读 Gradle 缓存，`--auto-cache-from` 默认为空；`compose-compiler-plugin` 改为 Release 附件；每个组件附 LICENSE 和 NOTICE；fetch 生成的 local 清单带 `tools`（绝对路径）。首发后（不升版本，只新增可选项）：`fetch-toolchain.py` 下载重试；温重启提速——`merge-payloads.py` 新增可选 `KALDO_MERGE_CACHE_DIR`（§3.1），`hotreload.sh package` 的编译走 `hr-klib.sock`、打印 `PACKAGE ms=…` 诊断行（§5、§10.2）；`ComposableSingletons`/`object` 的行为写进 TECHNICAL-NOTES §1.6 并加回归；Kotlin Multiplatform：`hotreload.sh` 的可选源码集参数 `UI_FRAGMENTS`/`APP_FRAGMENTS` 等，`reload` 按模块分 app/ui，`ui-klib` 守护进程失败时回退（§5，TECHNICAL-NOTES §11）。工具链 `2.5.255-hotreload.5`（不升接口）：编译器在 split 编译下于启动时绑定 ObjCExport 的 WritableTypeInfo 字段（TECHNICAL-NOTES §1.8），`kotlin.patchSha256` 变为 `40c81628…`，其余组件和身份字段与 .4 相同 |
 
 ## 9. 分发：打包 → 发布 → 下载（v6）
 
@@ -395,15 +405,17 @@ v8 新增（`snapshot`/`classify` 的行为和退出码不变）：
 | 类别 | 触发条件 |
 |---|---|
 | `field-layout` | 类字段新增/删除/类型变化/顺序变化，或构造函数签名变化 |
-| `signature` | 函数签名变化、已有类新增方法、超类型变化 |
+| `signature` | 函数签名变化；open/abstract/sealed 类、enum、interface、ObjC 子类（父类型是 `platform/*` 或带 `@ExportObjCClass`）新增方法，或任何类新增 override/open 方法；超类型变化；类的 modality（final/open/abstract/sealed）变化；涉及 `private` 的顶层函数可见性变化；typealias 改指向或删除 |
 | `inline` | 已有 inline 函数的正文变化（IR 哈希不同） |
 | `suspend` | 已有 suspend 函数的正文变化，或其签名变化 |
 | `top-level-property` | 顶层属性新增/删除/类型或 `val`/`var` 变化 |
 | `class-removed` | 类被删除（旧实例可能还活着） |
 | `class-shape` | 未识别的类/顶层成员发生变化（保守） |
 
-明确放行（不产生 WARM）：普通函数正文、包级函数新增/删除（composable 增删）、私有方法改动、
-新增类、`const val` 的值变化（初始化值不属于布局）。
+明确放行（不产生 WARM）：普通函数正文、包级函数新增/删除（composable 增删，包括 composable lambda 的增删）、私有方法改动、
+新增类和嵌套类、`const val` 的值变化（初始化值不属于布局）；首发后（0.1.2，不升版本）另外放行：final 类（非 enum、非 ObjC 子类）
+和 object/companion 新增 **final** 方法、新增 typealias、顶层函数在 `internal` 与 `public` 之间改可见性（两者符号名相同）。
+新加的字段只读新快照，旧版脚本写的基线照常可比，升级后不会多一次温重启。用例表：`gradle-plugin/test-projects/classifier-cases/cases.py`。
 
 ### 10.2 在 `hotreload.sh` 里
 

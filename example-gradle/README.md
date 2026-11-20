@@ -133,6 +133,35 @@ Back、+、Next、Back：计数器 3 → 4、两次翻页、PID 不变、日志�
 AXe 的元素坐标是 app 点（兼容模式窗口 320×480），脚本按屏幕尺寸换算成屏幕点再点；按 label 点会点空。
 需要 `axe`（`brew install cameroncooke/axe/axe`）。结果写到标准输出，截图在 `build/regression/shots/`。
 
+单例回归（`ComposableSingletons` 和 `object`）：
+
+```bash
+source <toolchain>/env.sh
+ROUNDS=5 bash accept-singletons.sh   # 会临时改写 ui.kt，结束时恢复；之后先 package
+```
+
+在已有文件里增、删、再加 composable lambda（它们是 `ComposableSingletons$UiKt` 的新字段，只在 IR 里可见，分类器判 HOT），
+再改已有 lambda 的正文。每步都要求：退出码 0、没有 WARM、同一 PID、日志里没有崩溃、新 lambda 执行，并且 `object` 恰好重建一次。
+已知行为只记录、不判失败：已有静态调用点的画面可能过期（LIMITATIONS 第 11 条）。结果见 `accept-singletons.txt`。
+
+## Kotlin Multiplatform 布局（commonMain / iosMain）
+
+`ui-kmp/src` 和 `app-kmp/src` 是同一个示例的多平台版本：每个模块都按 `commonMain → iosMain → iosSimulatorArm64Main`
+分源码集，commonMain 里各有一个 `expect fun` 和一个 `expect class`（ui）或 `expect fun`（app），iosMain 里是调 UIKit / Foundation 的 actual。
+用环境变量切换，其余命令不变：
+
+```bash
+source <toolchain>/env.sh
+export UI_FRAGMENTS="commonMain iosMain iosSimulatorArm64Main" UI_FRAGMENT_REFINES="iosMain:commonMain iosSimulatorArm64Main:iosMain" UI_FRAGMENT_ROOT=ui-kmp/src
+export APP_FRAGMENTS="$UI_FRAGMENTS" APP_FRAGMENT_REFINES="$UI_FRAGMENT_REFINES" APP_FRAGMENT_ROOT=app-kmp/src
+export KALDO_HOT_PACKAGES=expui,appkmp
+bash hotreload.sh ui-klib && bash hotreload.sh package && bash run.sh
+```
+
+回归：`bash accept-kmp.sh`（自己设置上面的变量，结束时恢复源码）：ui 和 app 的 commonMain 函数体、iosMain actual 函数体都要 HOT，
+改 `expect` 签名要 WARM。加第三方 klib：`EXTRA_KLIB=<…iossimulatorarm64….klib> EXTRA_KLIB_USE='<返回 String 的表达式>' bash accept-kmp.sh`。
+结果见 `accept-kmp.txt`、`accept-kmp-json.txt`；能读哪些版本的 klib 见 `accept-kmp-klib-versions.txt`；原理见 TECHNICAL-NOTES §11。
+
 ## 验收
 
 `accept-gradle.py` 是这一轮用的脚本：20 次 ui、20 次 app、3 次同时改，

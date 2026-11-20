@@ -14,20 +14,29 @@ import java.io.File
 class WarmRestart(private val s: HrSettings, private val logger: Logger) {
     data class State(val page: Int, val count: Int)
 
-    fun savedState(bundleId: String): State? {
+    /** Raw bytes of the app's Documents/hr-state.json, or null when the app wrote none. */
+    fun savedStateFile(bundleId: String): ByteArray? {
         val r = Proc.run(listOf("xcrun", "simctl", "get_app_container", s.udid, bundleId, "data"), echo = false)
         if (r.exit != 0) return null
-        val f = File(r.output.trim(), "Documents/hr-state.json")
-        return if (f.isFile) parseState(f.readText()) else null
+        val f = File(r.output.trim(), "Documents/$STATE_FILE")
+        return if (f.isFile) f.readBytes() else null
     }
+
+    fun savedState(bundleId: String): State? = savedStateFile(bundleId)?.let { parseState(it.toString(Charsets.UTF_8)) }
 
     fun run(pipeline: Pipeline, tools: Tools, daemons: Daemons?, compat: Compat) {
         val t0 = System.currentTimeMillis()
         val info = pipeline.appInfo()
-        val state = savedState(info.bundleId)
+        // The whole file travels across the reinstall (any fields the app keeps, INTERFACE §10.3 plus the
+        // app's own transient state); page/count, when present, are also passed as --hr-state.
+        val stateFile = savedStateFile(info.bundleId)
+        val state = stateFile?.let { parseState(it.toString(Charsets.UTF_8)) }
         logger.lifecycle(
-            if (state != null) "warm: restoring page=${state.page} count=${state.count}"
-            else "warm: the app saved no state (Documents/hr-state.json); restarting from its first page",
+            when {
+                stateFile == null -> "warm: the app saved no state (Documents/$STATE_FILE); restarting from its first page"
+                state != null -> "warm: restoring page=${state.page} count=${state.count} (Documents/$STATE_FILE, ${stateFile.size} bytes)"
+                else -> "warm: carrying the app's Documents/$STATE_FILE (${stateFile.size} bytes) into the new install"
+            },
         )
         Proc.run(listOf("xcrun", "simctl", "terminate", s.udid, info.bundleId), echo = false)
         pipeline.packageApp(tools, daemons)
@@ -36,7 +45,7 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
         val launcher = Launcher(s, logger)
         val args = state?.let { listOf("--hr-state=${it.page},${it.count}") } ?: emptyList()
         val tokens = state?.let { listOf("page=${it.page}", "count=${it.count}") } ?: emptyList()
-        launcher.launch(pipeline, args, tokens)
+        launcher.launch(pipeline, args, tokens, stateFile?.let { mapOf(STATE_FILE to it) } ?: emptyMap())
         val end = System.currentTimeMillis()
         val log = File(s.launchLog).readText()
         if (log.lines().any { it.startsWith("EH FAIL") }) {
@@ -49,15 +58,21 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
     }
 
     companion object {
+        const val STATE_FILE = "hr-state.json"
         private val PAGE = Regex(""""page"\s*:\s*(-?\d+)""")
         private val COUNT = Regex(""""count"\s*:\s*(-?\d+)""")
 
         /** `{"page":N,"count":M}`; a missing field counts as 0, an unreadable file as no state. */
+        /**
+         * page/count of `{"page":N,"count":M,...}` (a missing one counts as 0); null when the file is not a JSON
+         * object or has neither field, i.e. the app keeps only its own state there.
+         */
         fun parseState(json: String): State? {
             if (!json.trimStart().startsWith("{")) return null
-            val page = PAGE.find(json)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val count = COUNT.find(json)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            return State(page, count)
+            val page = PAGE.find(json)?.groupValues?.get(1)?.toIntOrNull()
+            val count = COUNT.find(json)?.groupValues?.get(1)?.toIntOrNull()
+            if (page == null && count == null) return null
+            return State(page ?: 0, count ?: 0)
         }
     }
 }

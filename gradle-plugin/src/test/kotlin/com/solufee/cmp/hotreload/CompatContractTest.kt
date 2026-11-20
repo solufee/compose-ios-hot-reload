@@ -43,6 +43,8 @@ class CompatContractTest {
         assertEquals(WarmRestart.State(2, 3), WarmRestart.parseState("""{"page":2,"count":3}"""))
         assertEquals(WarmRestart.State(1, 0), WarmRestart.parseState("""{ "page" : 1 }"""))
         assertNull(WarmRestart.parseState("garbage"))
+        assertNull(WarmRestart.parseState("""{"draft":"hello","liked":true}"""))   // app-only state: no --hr-state tokens
+        assertEquals(WarmRestart.State(2, 3), WarmRestart.parseState("""{"page":2,"count":3,"liked":true}"""))
     }
 
     @Test
@@ -60,6 +62,23 @@ class CompatContractTest {
             listOf("${tmp.path}/tc/public-klibs/kotlinx-coroutines-core.klib", "${dist.path}/extra/skiko.klib", "/elsewhere/compose-ui.klib"),
             Pipeline.externalKlibs(lines, dist),
         )
+    }
+
+    @Test
+    fun `expect declarations are found in Kotlin sources`() {
+        val d = File(tmp, "common").apply { mkdirs() }
+        File(d, "Platform.kt").writeText("""
+            package k
+            expect fun getPlatform(): Platform
+            internal expect val tag: String
+            expect class Box(v: Int) { fun get(): Int }
+            @OptIn(X::class) public expect object Clock
+            expect abstract class Base
+            expect fun <T> List<T>.second(): T
+            fun notExpect(): String = "expect fun fake()"
+            actual fun alreadyActual() = 1
+        """.trimIndent())
+        assertEquals(setOf("fun getPlatform", "val tag", "class Box", "object Clock", "class Base", "fun second"), expectDeclarations(d))
     }
 
     @Test

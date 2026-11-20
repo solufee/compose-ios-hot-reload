@@ -56,8 +56,10 @@ diff <(size -m "$R/baseline/ComposeHR-release.kexe" | grep -E 'Segment|Section')
   && echo "manual vs baseline: section sizes identical" || echo "manual vs baseline: section sizes DIFFER"
 cmp -s "$R/baseline/ComposeHR-release.symbols.txt" "$R/manual/symbols.txt" \
   && echo "manual vs baseline: symbol table identical" || echo "manual vs baseline: symbol table DIFFERS"
-# Criterion: __text must be one of the variants the baseline saw (baseline.text-hashes).
-MT=$(shasum -a 256 "$R/manual/text.bin" | cut -d' ' -f1)
-grep -q "$MT" "$R/baseline.text-hashes" \
-  && echo "manual vs baseline: __text ${MT:0:12} is in the baseline set ($(cut -c1-12 "$R/baseline.text-hashes" | tr '\n' ' '))" \
-  || echo "manual vs baseline: __text ${MT:0:12} NOT in the baseline set"
+# Criterion (0.2.0): the GOT-order-independent __text digest equals the baseline's (raw __text hash recorded only).
+MD=$(python3 -I ../scripts/release-text-digest.py "$K" | cut -d' ' -f1)
+BD=$(grep '^text.digest=' "$R/baseline.fingerprint" | cut -d= -f2)
+echo "manual raw __text $(shasum -a 256 "$R/manual/text.bin" | cut -c1-12), baseline raw __text $(grep '^text.sha256=' "$R/baseline.fingerprint" | cut -c13-24) (recorded only)"
+[ -n "$MD" ] && [ "$MD" = "$BD" ] \
+  && echo "manual vs baseline: __text digest ${MD:0:12} identical" \
+  || echo "manual vs baseline: __text digest ${MD:0:12} DIFFERS from ${BD:0:12}"

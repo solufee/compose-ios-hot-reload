@@ -1,0 +1,37 @@
+# ComposableSingletons stress (classifier still lets lambda changes through as HOT), 2026-11-19 21:35:40
+BUILD SUCCESSFUL in 19s
+CMP hot reload: app started (attempt 1, pid 70405, 10.1 s, port 5568, log <WORK>/accept-v7/example-gradle/launch.log)
+BUILD SUCCESSFUL in 11s
+# lambda stress: app/src/main/kotlin/main.kt, pid 70405, 20 reloads, a tap on '+' after each
+reload00 OK add      r0   8133ms hot=True loaded=True screen=True tap +:0->+1 pid 70405->70405 crash=none
+reload01 OK remove   -    5281ms hot=True loaded=True screen=True tap +:1->+1 pid 70405->70405 crash=none
+reload02 OK add-back r0   4866ms hot=True loaded=True screen=True tap +:2->+1 pid 70405->70405 crash=none
+reload03 FAIL add      r1   34447ms hot=True loaded=True screen=False tap +:3->+1 pid 70405->70405 crash=none
+reload04 OK remove   -    5668ms hot=True loaded=True screen=True tap +:4->+1 pid 70405->70405 crash=none
+reload05 OK add-back r1   5013ms hot=True loaded=True screen=True tap +:5->+1 pid 70405->70405 crash=none
+reload06 FAIL add      r2   34556ms hot=True loaded=True screen=False tap +:6->+1 pid 70405->70405 crash=none
+reload07 OK remove   -    5538ms hot=True loaded=True screen=True tap +:7->+1 pid 70405->70405 crash=none
+reload08 OK add-back r2   5098ms hot=True loaded=True screen=True tap +:8->+1 pid 70405->70405 crash=none
+reload09 FAIL add      r3   34283ms hot=True loaded=True screen=False tap +:9->+1 pid 70405->70405 crash=none
+reload10 OK remove   -    4697ms hot=True loaded=True screen=True tap +:10->+1 pid 70405->70405 crash=none
+reload11 OK add-back r3   4870ms hot=True loaded=True screen=True tap +:11->+1 pid 70405->70405 crash=none
+reload12 FAIL add      r4   34098ms hot=True loaded=True screen=False tap +:12->+1 pid 70405->70405 crash=none
+reload13 OK remove   -    4214ms hot=True loaded=True screen=True tap +:13->+1 pid 70405->70405 crash=none
+reload14 OK add-back r4   4884ms hot=True loaded=True screen=True tap +:14->+1 pid 70405->70405 crash=none
+reload15 FAIL add      e0   34048ms hot=True loaded=True screen=False tap +:15->+1 pid 70405->70405 crash=none
+reload16 OK remove   -    5186ms hot=True loaded=True screen=True tap +:16->+1 pid 70405->70405 crash=none
+reload17 OK add      e2   4943ms hot=True loaded=True screen=True tap +:17->+1 pid 70405->70405 crash=none
+reload18 OK remove   -    4841ms hot=True loaded=True screen=True tap +:18->+1 pid 70405->70405 crash=none
+reload19 OK add      e4   4129ms hot=True loaded=True screen=True tap +:19->+1 pid 70405->70405 crash=none
+# file restored
+summary: 15/20 reloads OK in one process
+## launch.log tail
+[kaldo] :: STUB-SEL check: 9 stubs, 0 mismatch
+[kaldo] :: selref section __DATA,__objc_selrefs blocks=9 range=0x11ccd7558-0x11ccd75a0
+[kaldo] :: ObjCSelectorFixupPlugin fixed 9 selector references
+[kaldo] :: MachOHostDataSymbolGenerator indexed 106182 symbols
+[kaldo] :: KotlinSymbolExternalizer has externalized '109' symbols.
+[kaldo] :: STUB-SEL check: 9 stubs, 0 mismatch
+[kaldo] :: selref section __DATA,__objc_selrefs blocks=9 range=0x11cd13998-0x11cd139e0
+[kaldo] :: ObjCSelectorFixupPlugin fixed 9 selector references
+# done 21:40:21

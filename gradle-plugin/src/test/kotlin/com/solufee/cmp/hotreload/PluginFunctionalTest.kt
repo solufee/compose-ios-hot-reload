@@ -112,6 +112,34 @@ include("app", "ui")
     }
 
     @Test
+    fun `applied to a module with declared source sets, the module gets the tasks`() {
+        File(project, "settings.gradle.kts").writeText("rootProject.name = \"t\"\ninclude(\"shared\")\n")
+        File(project, "build.gradle.kts").writeText("")
+        File(project, "shared/src/commonMain/kotlin").mkdirs()
+        File(project, "shared/src/iosMain/kotlin").mkdirs()
+        File(project, "shared/build.gradle.kts").writeText(
+            """
+            plugins { id("com.solufee.cmp.hotreload") }
+            cmpHotReload {
+                app(":shared") {
+                    iosEntry = "org.example.MainViewController"
+                    sourceSets {
+                        create("commonMain") { srcDir("src/commonMain/kotlin") }
+                        create("iosMain") { srcDir("src/iosMain/kotlin"); dependsOn("commonMain") }
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+        val r = runner(":shared:tasks", "--all").build()
+        val hot = r.output.substringAfter("Hot reload tasks").substringBefore("\n\n")
+        listOf("hotReload ", "hotReloadPackage", "hotReloadRun", "hotReloadClean").forEach { assertTrue(it in hot, "missing $it in:\n$hot") }
+        val check = runner(":shared:hotReloadCheckToolchain").buildAndFail()
+        assertTrue("no toolchain configured" in check.output, check.output)
+        assertTrue("exactly one app" !in check.output && "cannot discover" !in check.output, check.output)
+    }
+
+    @Test
     fun `plugin adds tasks only in its own group`() {
         setup(null)
         val r = runner("tasks", "--all").build()

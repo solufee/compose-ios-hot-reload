@@ -1,8 +1,8 @@
 {
   "interfaceVersion": 8,
   "layout": "bundle",
-  "toolchainVersion": "2.5.255-hotreload.4",
-  "generatedAt": "2026-11-19T19:34:24+08:00",
+  "toolchainVersion": "2.5.255-hotreload.5",
+  "generatedAt": "2026-11-19T22:36:06+08:00",
   "kotlin": {
     "version": "2.5.255-SNAPSHOT",
     "dist": "kotlin-native",
@@ -11,7 +11,7 @@
     "klibDir": "kotlin-native/klib",
     "baseCommit": "8e53ee99fbc08e264828ab082aee3e448194eca8",
     "patch": "kotlin-native-hot-reload.patch",
-    "patchSha256": "2d64f7af67499d9cea051dac421394012aa010108dd243cf27ea9e0d122d5ebf"
+    "patchSha256": "40c81628f673c78b5fd9a137c0032b30021695c419e70ca3a2d2fbd679547324"
   },
   "compose": {
     "version": "1.13.0-beta01",
@@ -48,137 +48,137 @@
   "components": [
     {
       "id": "kotlin-native",
-      "file": "kotlin-native-2.5.255-hotreload.4-macos-aarch64.tar.zst",
+      "file": "kotlin-native-2.5.255-hotreload.5-macos-aarch64.tar.zst",
       "extractDir": "kotlin-native",
-      "bytes": 70320276,
-      "rawBytes": 392568832,
-      "sha256": "4a82f1e7bf7bfeac93d31b1a6f2085ca1aedc067ef9a871370a1941c3469b274",
+      "bytes": 70327106,
+      "rawBytes": 392560640,
+      "sha256": "7f2034dcfafaaa5ff3b7ac5cf3a3775fe49b9fc226b6322123413b71d4b1b5ed",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "kotlin-native-2.5.255-hotreload.4-macos-aarch64.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/kotlin-native-2.5.255-hotreload.4-macos-aarch64.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "kotlin-native-2.5.255-hotreload.5-macos-aarch64.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/kotlin-native-2.5.255-hotreload.5-macos-aarch64.tar.zst"
       }
     },
     {
       "id": "compose-klibs",
-      "file": "compose-klibs-2.5.255-hotreload.4.tar.zst",
+      "file": "compose-klibs-2.5.255-hotreload.5.tar.zst",
       "extractDir": "compose-klibs",
-      "bytes": 11038334,
+      "bytes": 11039353,
       "rawBytes": 50315264,
-      "sha256": "30c72c0afd1593a0031a6680845bd48fa7eb1550bfef65b33f4425bfc00ce77d",
+      "sha256": "e3ca51cc865dc9f09529b4c30ff2cf0a842cab1cd9c8c8e9fcfa45326d24238d",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "compose-klibs-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/compose-klibs-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "compose-klibs-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/compose-klibs-2.5.255-hotreload.5.tar.zst"
       }
     },
     {
       "id": "compose-compiler-plugin",
-      "file": "compose-compiler-plugin-2.5.255-hotreload.4.tar.zst",
+      "file": "compose-compiler-plugin-2.5.255-hotreload.5.tar.zst",
       "extractDir": "compose-plugin",
-      "bytes": 502354,
+      "bytes": 502318,
       "rawBytes": 2338816,
-      "sha256": "41965e21850158d4f85c178518e9bd11c20eb4b319c6e0e252402bb95d28778c",
+      "sha256": "365c07802bcb8422d11949135b276b03db7b97cfe03f12e571286ad312c1e432",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "compose-compiler-plugin-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/compose-compiler-plugin-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "compose-compiler-plugin-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/compose-compiler-plugin-2.5.255-hotreload.5.tar.zst"
       }
     },
     {
       "id": "kaldo-iossim",
-      "file": "kaldo-iossim-2.5.255-hotreload.4.tar.zst",
+      "file": "kaldo-iossim-2.5.255-hotreload.5.tar.zst",
       "extractDir": "kaldo",
-      "bytes": 10591495,
+      "bytes": 10591487,
       "rawBytes": 40783872,
-      "sha256": "83d4d057d88d7059aefce7bcee6c0e19750c8f54103a59c0563a69adb6569b99",
+      "sha256": "c39e2947152a9d46db4d705d39cdc4a0b3271f8b1d4c655c50e9db66bb4da605",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "kaldo-iossim-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/kaldo-iossim-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "kaldo-iossim-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/kaldo-iossim-2.5.255-hotreload.5.tar.zst"
       }
     },
     {
       "id": "kaldo-macos",
-      "file": "kaldo-macos-2.5.255-hotreload.4.tar.zst",
+      "file": "kaldo-macos-2.5.255-hotreload.5.tar.zst",
       "extractDir": "kaldo",
       "bytes": 10438674,
       "rawBytes": 39288832,
-      "sha256": "4928f339c5ed952ecd71f3096e58dfb9def85fae903b16a904855abfdebfc66c",
+      "sha256": "eb52c2c23535472cdc8c1073cfa1eb48e5aa313c74f6a7b34735c2d5e836b009",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "kaldo-macos-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/kaldo-macos-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "kaldo-macos-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/kaldo-macos-2.5.255-hotreload.5.tar.zst"
       }
     },
     {
       "id": "orc-runtime",
-      "file": "orc-runtime-2.5.255-hotreload.4.tar.zst",
+      "file": "orc-runtime-2.5.255-hotreload.5.tar.zst",
       "extractDir": "orc-runtime",
-      "bytes": 538561,
+      "bytes": 538617,
       "rawBytes": 3178496,
-      "sha256": "8a0d27f8741ecf12d5a2d623ef68bb992755b9e0731a07c99339dbfc98588235",
+      "sha256": "7dbad1a3e0c8ac22e251301f27b4f1ff97f7df503a4a009bb1c38fbf61bc63f1",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "orc-runtime-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/orc-runtime-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "orc-runtime-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/orc-runtime-2.5.255-hotreload.5.tar.zst"
       }
     },
     {
       "id": "cmp-uikit-utils",
-      "file": "cmp-uikit-utils-2.5.255-hotreload.4.tar.zst",
+      "file": "cmp-uikit-utils-2.5.255-hotreload.5.tar.zst",
       "extractDir": "cmp-uikit-utils",
-      "bytes": 64031,
+      "bytes": 64033,
       "rawBytes": 376832,
-      "sha256": "95a16f10d4d9f492caf5299ee8afd3923c5da50c6043d518826952510df157fb",
+      "sha256": "47eff362bdae12f0ec94138099a60ced5dc24daeee1d2417051adb75f46e2ca2",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "cmp-uikit-utils-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/cmp-uikit-utils-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "cmp-uikit-utils-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/cmp-uikit-utils-2.5.255-hotreload.5.tar.zst"
       }
     },
     {
       "id": "llvm-tools",
-      "file": "llvm-tools-2.5.255-hotreload.4.tar.zst",
+      "file": "llvm-tools-2.5.255-hotreload.5.tar.zst",
       "extractDir": "llvm-tools",
-      "bytes": 7307078,
+      "bytes": 7307069,
       "rawBytes": 44220416,
-      "sha256": "c7f7bba27d9eb907bbd1c36da84500e78adfb99003ff86311f8138efa69a0a2b",
+      "sha256": "a8a4d7b67b9a485d8ea16823119735a98b4e3a40be045cd63a31cd5130d94066",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "llvm-tools-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/llvm-tools-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "llvm-tools-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/llvm-tools-2.5.255-hotreload.5.tar.zst"
       }
     },
     {
       "id": "bundled-klibs",
-      "file": "bundled-klibs-2.5.255-hotreload.4.tar.zst",
+      "file": "bundled-klibs-2.5.255-hotreload.5.tar.zst",
       "extractDir": "bundled-klibs",
-      "bytes": 45446159,
+      "bytes": 45446161,
       "rawBytes": 45768704,
-      "sha256": "19840745492b5c2741966f80d4fc266b363cf893ed69c46cfa973d4ad341b36d",
+      "sha256": "c63b239dc6a8f85b6edea8f349999484dfeba3bda5f1cd8aa18aeb935ad82b47",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.4",
-        "asset": "bundled-klibs-2.5.255-hotreload.4.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/bundled-klibs-2.5.255-hotreload.4.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.5",
+        "asset": "bundled-klibs-2.5.255-hotreload.5.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/bundled-klibs-2.5.255-hotreload.5.tar.zst"
       }
     }
   ],

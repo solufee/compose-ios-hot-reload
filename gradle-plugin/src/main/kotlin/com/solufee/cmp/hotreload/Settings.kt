@@ -3,6 +3,12 @@ package com.solufee.cmp.hotreload
 import java.io.File
 import java.io.Serializable
 
+/**
+ * One source set of a module in a multiplatform compilation (`commonMain`, `iosMain`, ...): its Kotlin source
+ * directories and the fragments it refines (dependsOn). A plain module has a single fragment.
+ */
+data class HrFragment(val name: String, val dirs: List<String>, val refines: List<String> = emptyList()) : Serializable
+
 /** One resolved module (configuration-cache safe: plain strings only). */
 data class HrModule(
     /** Gradle path, e.g. ":ui". */
@@ -12,7 +18,12 @@ data class HrModule(
     val srcDir: String,
     /** Library paths this module links against (in compile order). */
     val deps: List<String>,
+    /** Source sets; more than one means a multiplatform (-Xmulti-platform -Xfragments ...) compilation. */
+    val fragments: List<HrFragment> = listOf(HrFragment("main", listOf(srcDir))),
 ) : Serializable {
+    /** Every Kotlin source directory of the module. */
+    val sourceDirs: List<String> get() = fragments.flatMap { it.dirs }.distinct()
+
     /** Short label used in logs and symbol checks: ":feature:ui" -> "feature-ui". */
     val label: String get() = path.trim(':').replace(':', '-').ifEmpty { "root" }
 }
@@ -53,6 +64,15 @@ data class HrSettings(
     val reinstall: Boolean,
     // compatibility classifier / warm restart (INTERFACE §10)
     val warmRestart: Boolean,
+    // 0.2.0: Kotlin Multiplatform projects
+    /** Klibs from the modules' Gradle dependencies, after the toolchain's own copies were taken out. */
+    val extraKlibs: List<String> = emptyList(),
+    /** `pkg.Function` returning a UIViewController; set when the app has no Kotlin main (KMP template). */
+    val iosEntry: String? = null,
+    /** Compose resources assembled for iosSimulatorArm64 (copied into the .app as compose-resources/). */
+    val composeResources: String? = null,
+    /** Info.plist to write at [infoPlist] when the app module has none (KMP template). */
+    val infoPlistContent: String? = null,
 ) : Serializable {
     val app: HrModule get() = modules.single { it.kind == ModuleKind.APP }
     val libraries: List<HrModule> get() = modules.filter { it.kind == ModuleKind.LIBRARY }
@@ -62,6 +82,8 @@ data class HrSettings(
     val appDir: File get() = File(workDir, "app")
     val hotSymbols: File get() = File(appDir, "hot-symbols.txt")
     val compatDir: File get() = File(workDir, "compat")
+    /** Generated sources (the UIKit entry for iosEntry); added to the app's leaf fragment. */
+    val generatedDir: File get() = File(workDir, "generated/kotlin")
     /** Kotlin/Native `klib` tool, used by compat-classify.py snapshot. */
     val klibTool: String get() = File(dist, "bin/klib").path
 }

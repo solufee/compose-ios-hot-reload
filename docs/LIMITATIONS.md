@@ -16,6 +16,13 @@
 | 温重启恢复页面与计数器 | ✅ 回到原页面，状态从 `hr-state.json` 恢复（`--hr-state` 启动参数） |
 | iOS 模拟器（arm64），macOS arm64 主机 | ✅ |
 | Gradle 双模块示例（app + ui），一条命令出包 | ✅ |
+| 已有的 Kotlin Multiplatform 工程（向导模板，插件加在 `shared` 上） | ✅ 0.2.0：commonMain/iosMain 函数体热替换，`expect`/`actual` 签名改动和增删一对自动温重启 |
+| KMP 工程的第三方 iOS 依赖 | ✅ 从 Gradle 解析（含传递依赖）；工具链自带的库（stdlib、kotlinx、Compose、AndroidX）只链工具链那一份 |
+| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（Compose Multiplatform ≤ 1.13.0-beta01）；超出时打包前报错，写出库名和拉进它的依赖 |
+| KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
+| 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
+| 多个 KMP 模块互相依赖 | ⚠️ 直接依赖的模块会作为库模块一起处理，但 0.2.0 未做验收 |
+| 只编 `iosSimulatorArm64`；Android、iosArm64、桌面目标 | ➖ 不参与热重载，也不受影响 |
 | 多模块热替换（改 ui、改 app、同时改） | ✅ 20/20、20/20、3/3 |
 | 同一模块内多个文件同时改 | ✅ 3/3，同一 tick |
 | 异常穿过 JIT 代码（EH） | ✅ 每次启动由 `EH OK` 探针检查 |
@@ -24,8 +31,9 @@
 
 ## 已知问题
 
-1. **温重启只恢复“可序列化状态”**。分类器拦下不兼容改动后自动重新打包、重启，恢复页面和计数器
-   （`Documents/hr-state.json` + `--hr-state` 启动参数），其它 `remember` 瞬态（动画进度、滚动位置等）不恢复。
+1. **温重启只恢复“可序列化状态”**。分类器拦下不兼容改动后自动重新打包、重启。参考脚本恢复页面和计数器
+   （`Documents/hr-state.json` + `--hr-state` 启动参数）；插件 0.1.2 起把 app 写的整个 `Documents/hr-state.json` 原样带过重装，
+   app 可以在里面放任何自己的字段（TRYOUT 第 3 节模板）。没有写进这个文件的 `remember` 瞬态（动画进度、滚动位置等）不恢复。
    参考 app 实现了这个契约；自带壳的打包方要实现同样的参数和文件才能恢复状态（INTERFACE §10.3）。
    温重启的耗时见下一条；热替换路径不受影响。
 2. **温重启比热替换慢得多：参考脚本约 16 s（打包约 10.5 s），热替换是 4–5 s**。11-19 首发后提速前是约 46 s
@@ -34,10 +42,14 @@
    分类器基线 0.5）+ 重启到恢复页面 5.4–12.0 s（主要是 JIT 装载合并对象，与冷启动同一段，这次没动）。
    `warm` 仍然每次跑完整 `package`。【插件】插件随包带的 `merge-payloads.py` 要等插件重新构建发布后才有前一项提速，
    缓存目录和编译走守护进程由插件 0.1.1 接入（INTERFACE §3.1、§5），插件路径的温重启约 17 s（0.1.0 约 50 s）。
-3. **分类器对少数改动偏保守**。新增/删除类、包级函数增删、私有方法改动放行；但未识别的类成员变化
-   （`class-shape`）会被拦下，少数本可热替换的改动会多一次温重启。宁可多重启，不静默崩溃。
-4. **plist 布尔值桥接**。`NSNumber` 布尔值被桥接成 Kotlin `Boolean` 的检查暂时关闭
-   （`enforceStrictPlistSanityCheck=false`）。依赖 plist 布尔值的代码路径可能行为不同。
+3. **分类器对少数改动偏保守**。新增/删除类、包级函数增删、私有方法改动放行；0.1.2 起 final 类和 object 新增方法、新增 typealias、
+   `internal`↔`public` 也放行（用例表 `gradle-plugin/test-projects/classifier-cases/`）。enum entry、data class 主构造函数这类
+   未识别或改布局的成员变化仍会被拦下（`class-shape`/`field-layout`），少数本可热替换的改动会多一次温重启。宁可多重启，不静默崩溃。
+   另外：`object`（含 companion object）在它所在的文件每次热替换后都会用新代码重新构造，`init` 重跑，里面的可变状态回到初值；
+   要跨热替换保留的状态不要放在 object 里（放在 `remember`/`State` 或文件外的单例里）。
+4. **plist 布尔值桥接（工具链 .5 已修）**。原因是 split 编译下编译器没有绑定 ObjCExport 的转换器，Kotlin 装箱值交给 ObjC 时
+   不是 `NSNumber`，Compose 的严格 Info.plist 检查因此在启动时失败（TECHNICAL-NOTES §1.8；KMP 向导模板一启动就退出就是这个原因）。
+   .5 起不需要 `enforceStrictPlistSanityCheck=false`，模板源码不用改；仍用 .4 及以前的工具链时需要（TRYOUT 第 7 节“已知限制”）。
 5. **【参考脚本】EH 合成必须开**。`KALDO_KEEP_COMPACT_UNWIND=1`（打包）和 `KALDO_SYNTH_EH_FRAME=1`（启动）是
    正确性要求，`hotreload.env` 默认打开并导出。关掉后异常穿过 JIT 代码时进程会终止；`run.sh` 每次启动都要求
    `EH OK eh-probe`，缺了就以退出码 2 失败、不重试。启动时合成并整段注册约 12.6 万条 FDE，开 KEEP 的代价约
@@ -50,9 +62,11 @@
    原因（JIT 符号表、旧模块回收还是 Compose 侧）未定位。KEEP 打开后的长会话还没测。
 8. **release 构建的确定性**。`__text` 大小和符号表一致，但每次链接整文件 md5 都不同（`LC_UUID`、
    `__objc_methname`、`__LINKEDIT`），不能用整文件 md5 做验收口径，应比较 section 大小 + 符号表 + `__text` 内容。
-   另外，同一源码、同样参数两次 release 构建，`__text` 偶发 78 字节差异（`__DATA_CONST,__const` 里两个数据槽顺序对调）；
-   不应用插件、没有守护进程时同样出现，是工具链本身的不确定性。插件的 release 校验因此把基线构建出现过的
-   `__text` 哈希都算通过（见 `gradle-plugin/README.md`）。
+   另外，同一源码、同样参数两次 release 构建，`__text` 偶发 78 字节差异。根因已查清（REPORT §28）：Apple 链接器给
+   `libobjc/_objc_msgSend` 建了两个 `__DATA_CONST,__got` 条目（一个给它合成的 `__objc_stubs`，一个给普通代码），两者的先后
+   顺序每次链接可能不同，78 处 `ldr` 的页内偏移随之变成 `#0x458`/`#0x460`。两个槽绑定的是同一个地址，行为完全相同；
+   与 Kotlin/Native、热重载无关，我们这边修不了。精确比对用 `scripts/release-text-digest.py`：把每个 GOT 读取换成它绑定的符号名再
+   求哈希，两种变体得到同一个值，改一个字节的代码仍会变。插件 0.2.0 起的 release 校验就比这个摘要（各段大小和符号表照旧），原始 `__text` 哈希只记录。
 9. **【参考脚本】守护进程**。两个常驻进程：`hr-compile.sock`（cache-only，编辑器路径）和 `hr-klib.sock`（ui klib），
    socket 在项目内 `.hr/`（目录 0700、socket 0600）。崩溃后不会自动重启，需要重跑 `daemon-start.sh`；
    没起守护进程时脚本回退到直接起 `kotlinc-native`（v8 起打印一行提示），结果正确但每次慢 2–3 s；兼容性分类器也会
@@ -67,7 +81,9 @@
    `@Composable` 既没有参数、也不读任何 state，替换后旧代码会继续显示，看起来像热重载没生效。
    给它传一个会变化的参数（例如页面每秒递增的 tick）**并在函数体里读到它**，或者让它读一个 `State`；
    只传不读同样会被跳过（独立试用里实测：只传不读时画面不变，读了之后约 5 s 自动生效）。这是 Compose 的跳过逻辑，
-   不是热重载的 bug；真实项目里改「不接收参数的叶子组件」时一定会遇到。
+   不是热重载的 bug；真实项目里改「不接收参数的叶子组件」时一定会遇到。参数全是静态值（常量、单例 lambda）的已有调用点也会被跳过：
+   改已有 lambda 的正文、删掉并列 lambda 中的一个之后，屏幕可能保留旧内容，直到那一段被别的原因重组
+   （`example-gradle/accept-singletons.txt`）。修法方向是 reload 成功后强制完整重组，还没做。
 12. **libKaldo 位置与打包义务**。两个 dylib 只装在 `<KALDO_INSTALL>/lib/`，编译器按 `konan.properties` 的
     `kaldoLinkerFlags`（`-L<KALDO_INSTALL>/lib`）直接链接；不往 LLVM 安装目录、也不往 `~/.konan/dependencies` 放。
     打包只认 `KALDO_DYLIB` 或 `toolchain.json` 的 `llvm.kaldoIossim`，并校验 sha256。打包时必须删掉可执行文件里的
@@ -78,6 +94,19 @@
     在同一台机器上，用全新的缓存、空的 `GRADLE_USER_HOME`、禁止读 `~/.gradle` 的条件跑通过；还没在第二台机器上从零验证。
     下载需要 PATH 里有 `zstd` 和 `curl`。
 14. **并发保存**。runtime 一次处理一个请求；上一次热重载没完成时再保存，行为没验证。
+15. **`object` 和文件级 `var` 在所在文件每次热替换后都会重新创建**。补丁带一份新的实例槽和新的全局变量槽，reload 后第一次访问
+   会用新构造函数重建 `object`（`init` 里的副作用再执行一次，可变状态归零；实测计数每次 reload 后回到 1），文件级 `var` 也回到初始值
+   （画面过期原型里，存在文件级 `var` 里的句柄每次 reload 后都变回 null）。不会读到旧内存，原因见 TECHNICAL-NOTES §1.6。
+   需要跨热替换保留的状态，放进 Compose state 或 `remember`，不要放在 `object` 或文件级 `var` 里。沿用旧槽需要同时改编译器和
+   Kaldo，代价大，暂不做。
+16. **工具链自带的库比工程里用的旧时，热重载按旧版本编译**（0.2.0）。例如向导模板用 lifecycle 2.11.0，工具链里是 2.9.x：
+   打包时打印 `hot reload compiles against the toolchain's older copies of …`，用到新版本才有的 API 的代码在热重载里编译不过。
+17. **`remember { }` 里算出的值热替换后不会自己变**。向导模板的问候语在 `remember { Greeting().greet() }` 里，
+   改 `greet()` 后补丁已经生效，要让这块重新进入组合（模板里点两下 “Click me!”）才显示新文字。
+18. **热重载运行时打开 Compose 的 `Dialog` 会退出**（工具链 2.5.255-hotreload.5）。工具链自带的 klib 集合缺少
+   `navigationevent-compose`、`lifecycle-viewmodel-compose`、`graphics-shapes` 等几个 Compose 依赖，编译和链接都能通过，
+   运行到 `Dialog` 时报 `IrLinkageError: … LocalNavigationEventDispatcherOwner`。`Popup` 不受影响；release 构建用官方
+   Compose，也不受影响。下一版工具链会补齐这些 klib，并在打包时检查依赖是否完整。
 
 ## 已解决（旧文档里可能还会看到）
 

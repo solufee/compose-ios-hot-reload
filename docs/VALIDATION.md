@@ -212,8 +212,9 @@ compact unwind、没有可用的 `__eh_frame`，所以 libKaldo 在启动时由 
 | 对照：应用插件、热重载会话进行中 | 5 | 同样的两种哈希，没有超出上面的集合 | release 编译进程里没有任何热重载环境变量或参数，没有向守护进程发请求 |
 | 对照：会话结束后 | 5 | 同样的两种哈希 | |
 
-**已知的不确定性**：当前钉死的工具链，release 产物本身不可逐位复现。`__DATA_CONST,__const` 里两个数据槽的顺序会在两次构建之间
-对调，`__text` 随之有 78 字节不同；不应用插件、不起守护进程时也会出现，原因还在查。另外 release 比对必须固定 `-module-name`：
+**已知的不确定性**：release 产物本身不可逐位复现。原因（REPORT §28）：Apple 链接器给 `_objc_msgSend` 建了两个 GOT 条目，
+先后顺序每次链接可能不同，`__text` 里 78 处读取的偏移随之变化；两个条目绑定同一个地址。`scripts/release-text-digest.py` 按绑定的符号
+归一化 GOT 读取后，5 次构建的两种变体得到同一个摘要（`example-gradle/accept-2b.txt`）。另外 release 比对必须固定 `-module-name`：
 不固定时模块名每次构建都变，它会进入 cinterop 桥接符号名，改变符号顺序和 `__text`，同样与热重载无关。
 
 ---
@@ -242,4 +243,4 @@ compact unwind、没有可用的 `__eh_frame`，所以 libKaldo 在启动时由 
 - **其他机器**：所有测试都在同一台机器、同一版本的 Xcode 和模拟器 runtime 上跑。没在第二台机器上从零验证；Xcode / 模拟器 runtime
   与清单不一致时的报错路径没验证；从源码构建 LLVM、Kotlin/Native、Compose 这三步没有从零复现过。
 - **Gradle 插件 + 兼容性分类器**：插件还没接入分类器，第 5 节只在参考脚本上测过。
-- **Info.plist 布尔值**：`NSNumber` 布尔值桥接成 Kotlin `Boolean` 的检查暂时关闭，依赖 plist 布尔值的代码路径没有验证。
+- **Info.plist 布尔值**：工具链 .5 修复，示例 app 打开 Compose 默认的严格检查启动（TECHNICAL-NOTES §1.8）；.4 及以前要关闭这个检查。

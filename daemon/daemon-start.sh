@@ -30,10 +30,12 @@ chmod 700 "$SOCKDIR"
 
 stop_own() {
   local sock=$1
-  # Only this compiler jar + this socket path: never the other line's daemon.
+  # Any compile daemon serving exactly this socket path (whatever compiler jar
+  # it runs, so a toolchain switch replaces it). Socket paths are per project,
+  # so another project's or line's daemon never matches.
   ps -axo pid=,args= | while read -r pid args; do
     case "$args" in
-      *"HrCompileDaemon $JAR $sock") kill "$pid" 2>/dev/null || true ;;
+      *"HrCompileDaemon "*" $sock") kill "$pid" 2>/dev/null || true ;;
     esac
   done
 }

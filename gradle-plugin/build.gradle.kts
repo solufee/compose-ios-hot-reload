@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.solufee.cmp"
-version = "0.1.1"
+version = "0.2.0"
 
 gradlePlugin {
     plugins {
@@ -83,6 +83,7 @@ val bundledTools = mapOf(
     "embed-merged.py" to "../example-gradle/tools/embed-merged.py",
     "HrCompileDaemon.java" to "../daemon/HrCompileDaemon.java",
     "compat-classify.py" to "../scripts/compat-classify.py",   // INTERFACE §10.1 (v7)
+    "release-text-digest.py" to "../scripts/release-text-digest.py",   // release check: __text digest independent of GOT slot order
 )
 val toolsResDir = layout.buildDirectory.dir("generated/hotreload-tools")
 val bundleTools = tasks.register("bundleTools") {

@@ -3,6 +3,7 @@ package com.solufee.cmp.hotreload
 import org.gradle.api.Action
 import org.gradle.api.Named
 import org.gradle.api.NamedDomainObjectContainer
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
@@ -12,9 +13,38 @@ import javax.inject.Inject
 
 enum class ModuleKind { APP, LIBRARY }
 
-/** One Gradle module that takes part in hot reload. The name is the project path, e.g. ":ui". */
-abstract class HotReloadModule @Inject constructor(private val name: String) : Named {
+/**
+ * One source set of a module when the sources are declared by hand (projects without the Kotlin Multiplatform
+ * plugin): directories relative to the module, and the source sets it depends on. Declare parents first.
+ */
+abstract class HotReloadSourceSet @Inject constructor(private val name: String) : Named {
     override fun getName(): String = name
+    abstract val srcDirs: ListProperty<String>
+    abstract val dependsOn: ListProperty<String>
+    fun srcDir(path: String) = srcDirs.add(path)
+    fun dependsOn(vararg sourceSets: String) = dependsOn.addAll(*sourceSets)
+}
+
+/** One Gradle module that takes part in hot reload. The name is the project path, e.g. ":ui". */
+abstract class HotReloadModule @Inject constructor(private val name: String, objects: ObjectFactory) : Named {
+    override fun getName(): String = name
+
+    /**
+     * Source sets. Empty (default): read from `kotlin { sourceSets }` when the module applies Kotlin
+     * Multiplatform (commonMain -> ... -> iosSimulatorArm64Main), otherwise the single [sourceDir].
+     */
+    val sourceSets: NamedDomainObjectContainer<HotReloadSourceSet> = objects.domainObjectContainer(HotReloadSourceSet::class.java)
+    fun sourceSets(action: Action<in NamedDomainObjectContainer<HotReloadSourceSet>>) = action.execute(sourceSets)
+
+    /**
+     * App only: `package.Function` returning the root UIViewController, for apps without a Kotlin `main`
+     * (the KMP template's `MainViewController()`); the plugin generates the UIKit entry around it.
+     * Default: found automatically (a `fun MainViewController(` in the app's sources) when there is no main.
+     */
+    abstract val iosEntry: Property<String>
+
+    /** App only: CFBundleIdentifier of the Info.plist the plugin generates when the module has none. */
+    abstract val bundleId: Property<String>
 
     abstract val kind: Property<ModuleKind>
 
@@ -96,6 +126,16 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
      * false: print the reasons and fail without sending anything (same as `hotReload --no-warm`).
      */
     abstract val warmRestart: Property<Boolean>
+
+    /** Klibs to link in addition to the toolchain's and the modules' Gradle dependencies. */
+    abstract val extraKlibs: ConfigurableFileCollection
+
+    /**
+     * Link the klibs of the modules' Gradle dependencies (configuration `iosSimulatorArm64CompileKlibraries`,
+     * transitive). Kotlin stdlib, Compose and the AndroidX libraries the toolchain ships are replaced by the
+     * toolchain's copies. Default true.
+     */
+    abstract val resolveDependencyKlibs: Property<Boolean>
 
     val simulator: SimulatorSpec = objects.newInstance(SimulatorSpec::class.java)
     fun simulator(action: Action<in SimulatorSpec>) = action.execute(simulator)

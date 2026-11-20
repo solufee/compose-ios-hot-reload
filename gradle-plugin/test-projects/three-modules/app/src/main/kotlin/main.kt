@@ -65,7 +65,7 @@ class AppDelegate : UIResponder, UIApplicationDelegateProtocol {
     ): Boolean {
         println("APP DID FINISH")
         val w = UIWindow(frame = UIScreen.mainScreen.bounds)
-        w.rootViewController = ComposeUIViewController(configure = { enforceStrictPlistSanityCheck = false }) { App() }
+        w.rootViewController = ComposeUIViewController { App() }
         w.makeKeyAndVisible()
         _window = w
         return true

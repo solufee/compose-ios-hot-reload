@@ -1,0 +1,65 @@
+# toolchain 2.5.255-hotreload.5 (downloaded with scripts/fetch-toolchain.py; components identical to the reviewed toolchain-dist-5, toolchain.json sha256 dee5d238...), plugin 0.2.0 at commit 8e08d92 (release check by __text digest), wizard template sources unchanged (strict plist check on)
+# KMP template acceptance, 2026-11-20 08:41:34, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB, port 5568
+# wizard zip sha256 cdf81001083be535f372e78a9fdf639e185689ddc57d190de3f4430fa23d65ab
+# plugin repository file://<REPO>/gradle-plugin/build/pages/maven
+## 1. fixture: one expect/actual pair and kotlinx-datetime 0.7.1 (Maven Central) in the wizard template
+## 2. TRYOUT section 7: plugin repository, plugin line, local.properties, .gitignore
+   MainViewController.kt unchanged
+## 2b. release baseline: hotReloadVerifyRelease -Pcmp.hotreload.releaseBaseline=true, sources snapshot
+  release: compiling shared
+  CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=550bef6e1d68, embed-merged.py=a02264ad3495, merge-payloads.py=9ee1f5aa4b45, release-text-digest.py=c2fa4df02310)
+  release baseline build 1/1: __text digest 03116039c2e8 (raw __text 8e572805eba8)
+  release baseline recorded: <WORK>/KmpHr/shared/build/hotreload/release/baseline.fingerprint (72044 symbols, 42 sections, __text digest 03116039c2e8)
+  BUILD SUCCESSFUL in 1m 48s
+PASS release baseline recorded | 109s
+## 3. ./gradlew hotReloadPackage, ./gradlew hotReloadRun
+  CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+  dependency klibs: 11 linked, 40 replaced by the toolchain's copies
+  dependency klibs: hot reload compiles against the toolchain's older copies of androidx.lifecycle:lifecycle-viewmodel-iossimulatorarm64 2.11.0 -> 2.9.4, androidx.savedstate:savedstate-compose-iossimulatorarm64 1.4.0 -> 1.3.3, androidx.savedstate:savedstate-iossimulatorarm64 1.4.0 -> 1.3.3, androidx.lifecycle:lifecycle-common-iossimulatorarm64 2.11.0 -> 2.9.4, androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.4, androidx.lifecycle:lifecycle-runtime-iossimulatorarm64 2.11.0 -> 2.9.4, androidx.lifecycle:lifecycle-viewmodel-savedstate-iossimulatorarm64 2.11.0 -> 2.9.4, androidx.navigationevent:navigationevent-iossimulatorarm64 1.1.1 -> 1.0.1, org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.28.0 -> 0.27.0; code that uses API added after those versions does not compile here
+  hot packages: kmphr.shared.generated.resources,org.example.kmphr; keep compact unwind: true
+  bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 326, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+  package timing ms=114427 compile=104925 merge=7536 embed+bundle=1966
+  BUILD SUCCESSFUL in 1m 56s
+PASS package | 117s
+PASS package again (no change) | 10.8s; package timing ms=9531 compile=5246 merge=2217 embed+bundle=2068
+  CMP hot reload: app started (attempt 1, pid 57851, 6.9 s, port 5568, log <WORK>/KmpHr/shared/launch.log)
+  BUILD SUCCESSFUL in 8s
+PASS run | 8.1s pid 57851
+PASS run: EH check FDE > 0, 0 pc-out-of-range | [('128784', '0')]
+PASS run: SELREF stub check 0 mismatch | [('678', '0')]
+PASS run: no crash in launch.log
+PASS tap 'Click me!' shows the greeting (commonMain + iosMain actual + kotlinx-datetime) | 'Compose: Hello, iOS 27.2! | tag-ios-1 | 2026-11-20'
+## 4. changes
+PASS commonMain body (Greeting.greet) -> HOT | 7.6s exit=0 compat=HOT pid 57851->57851 screen='Compose: Hello again, iOS 27.2! | tag-ios-1 | 2026-11-20'
+PASS commonMain body using kotlinx-datetime (dateLine) -> HOT | 4.3s exit=0 compat=HOT pid 57851->57851 screen='Compose: Hello again, iOS 27.2! | tag-ios-1 | 2026-11-21'
+PASS iosMain actual body (platformTag) -> HOT | 3.8s exit=0 compat=HOT pid 57851->57851 screen='Compose: Hello again, iOS 27.2! | tag-ios-2 | 2026-11-21'
+PASS expect/actual signature (platformTag(n: Int = 0)) -> WARM | 23.3s exit=0 compat=WARM pid 57851->58721 ['WARM signature platformTag: signature changed:  -> n: kotlin/Int /* = ... */', 'WARM OK ms=19802 ms_package=12631 ms_relaunch=7171 page=- count=-'] screen='Compose: Hello again, iOS 27.2! | tag-ios-3 | 2026-11-21'
+PASS expect/actual signature (platformTag(n: Int = 0)) (after warm restart): EH check FDE > 0, 0 pc-out-of-range | [('128785', '0')]
+PASS expect/actual signature (platformTag(n: Int = 0)) (after warm restart): SELREF stub check 0 mismatch | [('678', '0')]
+PASS expect/actual signature (platformTag(n: Int = 0)) (after warm restart): no crash in launch.log
+PASS after the warm restart: iosMain actual body -> HOT | 3.4s exit=0 compat=HOT pid 58721->58721 screen='Compose: Hello again, iOS 27.2! | tag-ios-4 | 2026-11-21'
+PASS add an expect/actual pair (flavor) -> WARM | 21.9s exit=0 compat=WARM pid 58721->59138 ['WARM expect-actual flavor: expect fun added', 'WARM OK ms=18514 ms_package=11365 ms_relaunch=7149 page=- count=-'] screen='Compose: Hello again, iOS 27.2! | tag-ios-4 | 2026-11-21'
+PASS add an expect/actual pair (flavor) (after warm restart): EH check FDE > 0, 0 pc-out-of-range | [('128786', '0')]
+PASS add an expect/actual pair (flavor) (after warm restart): SELREF stub check 0 mismatch | [('678', '0')]
+PASS add an expect/actual pair (flavor) (after warm restart): no crash in launch.log
+PASS remove the expect/actual pair (flavor) -> WARM | 23.0s exit=0 compat=WARM pid 59138->59491 ['WARM expect-actual flavor: expect fun removed', 'WARM OK ms=19492 ms_package=12223 ms_relaunch=7269 page=- count=-'] screen='Compose: Hello again, iOS 27.2! | tag-ios-4 | 2026-11-21'
+PASS remove the expect/actual pair (flavor) (after warm restart): EH check FDE > 0, 0 pc-out-of-range | [('128785', '0')]
+PASS remove the expect/actual pair (flavor) (after warm restart): SELREF stub check 0 mismatch | [('678', '0')]
+PASS remove the expect/actual pair (flavor) (after warm restart): no crash in launch.log
+PASS commonMain body after both warm restarts -> HOT | 3.8s exit=0 compat=HOT pid 59491->59491 screen='Compose: Hello once more, iOS 27.2! | tag-ios-4 | 2026-11-21'
+## 5. klibs with edited manifests (extraKlibs) stop the build before compiling
+PASS edited manifest future-abi: build stops with the library named | - future-abi.klib: built for klib ABI 2.7.0, the toolchain's compiler reads up to 2.5.0. Use a release of this library built with Kotlin 2.5 or older.
+PASS edited manifest future-metadata: build stops with the library named | - future-metadata.klib: klib metadata 2.7.0 is newer than the toolchain's compiler can read (up to 2.6.0). Use an older release of this library.
+PASS edited manifest ancient-abi: build stops with the library named | - ancient-abi.klib: built for klib ABI 1.4.1, older than the oldest the compiler reads (1.6.0, Kotlin 1.6.10). Use a newer release of this library.
+PASS package again without the edited klibs | 12.5s
+## 6. release: sources back to the baseline state, then hotReloadVerifyRelease (daemons still running)
+  release: compiling shared
+  CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=550bef6e1d68, embed-merged.py=a02264ad3495, merge-payloads.py=9ee1f5aa4b45, release-text-digest.py=c2fa4df02310)
+  release unchanged: 72044 symbols, 42 section sizes and the __text digest 03116039c2e8 identical to the baseline (raw __text 8e572805eba8 -> 6ddc0e292a01, recorded only)
+  BUILD SUCCESSFUL in 1m 48s
+PASS hotReloadVerifyRelease (ReleaseCheck) | 109s
+PASS Xcode/KMP framework task graphs identical with and without the plugin (dry run) | 38 tasks with, 38 without
+## 7. stop
+terminated org.example.kmphr.hotreload (pid 59491); compile daemons stopped; app running now: False
+PASS libKaldo wrote no SELREF debug log (/tmp/gap-selrefs.log unchanged) | 1795081282.8690758 -> 1795081282.8690758
+summary: 32/32 PASS

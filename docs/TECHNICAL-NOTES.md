@@ -178,10 +178,24 @@ ORC 里的根因没有修，这是规避。代价是只有热符号集里的模�
 没有被拆掉重建，所以页面和计数器保留。
 
 这带来一个限制：如果一个被替换的 `@Composable` 既没有参数、也不读任何 state，Compose 会跳过它，旧画面不变，
-看起来像热重载没生效。给它传一个会变的参数，或者让它读一个 `State`。
+看起来像热重载没生效。给它传一个会变的参数，或者让它读一个 `State`。参数全是静态值（常量字符串、Compose 生成的单例 lambda）
+的**已有**调用点也一样会被跳过：改已有 lambda 的正文、或删掉几个并列 lambda 中的一个之后，屏幕可能保留旧内容
+（`example-gradle/accept-singletons.txt`：最终源码是 A2、C、B2，屏幕是 A、B、B2）；新加的调用点会正常执行和显示。
 
-上游 runtime 还带有按 `TypeInfo` 迁移对象的状态迁移逻辑。本项目没有依赖它处理结构性改动：
-类字段布局等改动由兼容性分类器拦下，走温重启（第 7、8 节）。
+**对象与单例在热替换时怎么处理**（2026-11-19 核实，代码加实测）：
+
+- 每次 reload，Kaldo 把补丁装进一个新的 JITDylib（`reload<N>`，`llvm/tools/kaldo/Kaldo.cpp` 的 `reloadObjects`）。
+  补丁里的定义（函数、`TypeInfo`、`object` 的实例槽）都是新的一份；函数经 stub 重定向，所有调用方都走新代码。
+- runtime 停住所有线程后执行 `ReloadClassesAndInstances`（Kotlin 补丁里的 `runtime/src/hot_reload/impl/cpp/HotReload.cpp`、
+  `StateTransfer.cpp`）：对补丁里的每个类取旧、新 `TypeInfo`（Kaldo `collectTypeInfoPatchesFromLatestUnit`），从全局变量、TLS、
+  shadow stack 遍历堆找出旧实例，按新 `TypeInfo` 分配新对象（新的实例大小），同名同类型的字段复制过去，新字段为零（null），
+  再把堆、全局、TLS、栈里的引用全部改到新对象。所以不会出现“用新布局读旧对象”。
+- `object`（包括 Compose 生成的 `ComposableSingletons$<File>Kt`）：实例槽 `_kvar:<Obj>.$instance#internal` 是文件私有的
+  （non-external、`__bss`），补丁带一份新的、值为零的槽和新的 `<get-$instance>#static`，所以 reload 之后第一次访问会用**新构造函数**
+  重新建实例：`init` 再执行一次，可变状态归零（LIMITATIONS 第 15 条）。对 `ComposableSingletons` 来说，这正好让新增的 lambda 字段由
+  新代码初始化，所以在已有文件里增删 composable lambda 是安全的；这个字段只在 IR 里可见，分类器判 HOT 是对的
+  （回归 `example-gradle/accept-singletons.sh`：增、删、再加 lambda 和 5 轮增删，13/13 都是同一进程，没有崩溃）。
+- 类字段布局等结构性改动仍由兼容性分类器拦下，走温重启（第 7、8 节）：迁移只按字段名复制，构造逻辑和不变量不会重跑。
 
 ### 1.7 编译耗时是怎么降下来的
 
@@ -199,6 +213,28 @@ per-file 缓存对单文件模块没有收益（模块里只有一个文件，�
 只改一个文件比两个都改快约 0.45 s，只占约 8%；剩下的时间是前端分析、IR linking 和缓存收尾，跟脏文件数无关。
 真正的大头在别处：每次走 `kotlinc-native` 启动器有约 2.5 s 的固定成本（JVM 启动、类加载）；而在同一个 JVM 里，
 内容不变的再次编译只要约 0.73 s，说明依赖 klib 的元数据在进程内能缓存住。常驻进程省下的就是这两块。
+
+### 1.8 ObjC 桥接：split 编译下的 WritableTypeInfo（工具链 .5 修复）
+
+**现象（.4 及以前）**：Kotlin 的装箱值（`Boolean`、`Int` 等）作为 `id` 交给 ObjC 时，变成普通的 Kotlin 包装对象，而不是 `NSNumber`。
+`bundle.objectForInfoDictionaryKey("CADisableMinimumFrameDurationOnPhone") as? NSNumber` 得到 null，Compose 默认打开的严格 Info.plist 检查
+因此在启动时抛 `IllegalStateException`。同样的代码编成普通（非 split）可执行文件是正常的。
+
+**原因**：ObjC 桥接靠每个类的 WritableTypeInfo（`convertToRetained`、`typeAdapter` 等字段）。普通构建里，程序模块的 ObjCExport
+代码生成器生成 `BooleanToNSNumber` 这类转换函数，链接时用带初值的定义覆盖 stdlib 缓存里那份 common 定义（`_ktypew:kotlin.Boolean`）。
+split 编译下，那份 WritableTypeInfo 在 host 映像里，程序模块进 JIT 加载的 bootstrap，链接期的覆盖做不了，编译器就直接跳过
+（`WritableTypeInfo.kt` 里的 `if (isUsingSplitCompilationScheme) return`，来自上游 hot reload 提交 `064fc19ab02`）。
+结果是转换函数生成了却没有绑定，host 里的 `_ktypew:*` 全是零。
+
+**修法**（Kotlin 补丁，只改 split 分支）：引用外部的 `_ktypew:<类>`，由程序模块的静态初始化器在启动时写入非空字段
+（`convertToRetained`、`typeAdapter`）。它在 `Konan_constructors` 里运行，早于任何 Kotlin 代码；空字段不写，所以加载器先前绑定的
+type adapter 不受影响。普通构建不走这条分支。
+
+**验证**：
+- 同一个 app，打开 Compose 默认的严格检查：用 .4 编译器，启动时 Uncaught `IllegalStateException`，探针显示 `isNSNumber=false`；
+  用 .5 编译器，正常启动，`Boolean`/`Int`/plist 值都是 `isNSNumber=true`，`String` 是 `isNSString=true`。
+- release 不变：同一个 dist 只换编译器 jar，release 产物的 `__text` 逐字节相同，符号名和各段大小相同，整个文件差 48 字节；
+  同一个编译器编两次也差 47–48 字节（`LC_UUID` 等）。
 
 ---
 
@@ -597,9 +633,73 @@ EH 合成、热符号集分别由 `KALDO_KEEP_COMPACT_UNWIND`、`KALDO_SYNTH_EH_
 
 ---
 
-## 11. 已知限制
+## 11. Kotlin Multiplatform 工程（commonMain / iosMain、expect / actual）
+
+2026-11-19 摸底。结论：**编译器、两个守护进程、libKaldo 都不用改**。参考脚本加了可选的源码集参数；插件按同样的方式拼参数即可。
+
+### 11.1 参数怎么拼
+
+一个模块（ui 库或 app 程序）仍然是一次编译，各个源码集作为 fragment：
+
+```
+-Xmulti-platform -Xexpect-actual-classes
+-Xfragments=commonMain,iosMain,iosSimulatorArm64Main
+-Xfragment-refines=iosMain:commonMain -Xfragment-refines=iosSimulatorArm64Main:iosMain
+-Xfragment-sources=commonMain:/abs/…/commonMain/kotlin/a.kt     # 每个文件一条
+-Xfragment-sources=iosMain:/abs/…/iosMain/kotlin/b.kt
+/abs/…/commonMain/kotlin/a.kt /abs/…/iosMain/kotlin/b.kt         # 同样的文件也作为自由参数
+```
+
+- 不用 `-Xseparate-kmp-compilation`，所以不需要 `-Xfragment-dependency`：所有 fragment 都看得到 `-l` 给的平台 klib（Compose 等）。
+- 没有文件的 fragment（例如空的 `iosSimulatorArm64Main`）照样写进 `-Xfragments` 和 `-Xfragment-refines`。
+- 路径必须是绝对路径：`hrc.py` 只转发参数，不转发调用方的工作目录。参数原样转发，守护进程和协议都不用改。
+- `-Xexpect-actual-classes` 只是关掉 “expect/actual classes are in Beta” 的警告。
+- 参考脚本：`UI_FRAGMENTS`、`UI_FRAGMENT_REFINES`、`UI_FRAGMENT_ROOT`，app 模块对应 `APP_*`（INTERFACE §5）。app 模块里不含 `main`
+  的文件，它们的包要写进 `KALDO_HOT_PACKAGES`（插件已经按源码里的包自动生成）。
+
+### 11.2 产物和缓存
+
+- ui 的产物是普通的 `ios_simulator_arm64` klib，manifest 带 `language_features=+MultiPlatformProjects`。metadata 里只有实化后的声明：
+  expect 不出现，actual 就是普通的 public 声明。
+- 增量缓存按源文件建：ui 的在 `IC_DIR/…/ui-per-file-cache/<包>.<hash>/`，app 的在 `IC_DIR/…/<hash>-per-file-cache/`。
+  多个源码目录没有影响；merge cache 按 archive 内容缓存，也不受影响。
+- `reload` 改为按缓存所在的模块分 app / ui。以前按 `_kfun:#main`、`_kfun:expui` 符号分，app 里不含 `main` 的文件会被当成
+  unclassified 拒掉；现在 `IC_DIR` 之外的缓存（库的缓存）仍然拒绝发送。
+
+### 11.3 热重载（`example-gradle/accept-kmp.sh`）
+
+ui 和 app 两个模块都是 `commonMain → iosMain → iosSimulatorArm64Main`。启动时 EH check 126,610 FDE、`EH OK`；
+画面上 common、iOS actual（调 UIKit / Foundation）、`expect class` 都生效。
+
+| 改动 | 结果 |
+|---|---|
+| ui 的 commonMain 函数体 | HOT，同一 PID |
+| ui 的 iosMain `actual fun` 和 `actual class` 的方法体 | HOT |
+| app 的 commonMain 函数体（经 `hr-compile.sock` 的 cache-only 编译） | HOT |
+| app 的 iosMain `actual` 函数体 | HOT |
+| `expect` 签名（连同 actual） | WARM（分类器报 `signature platformLabel: signature changed`），温重启后显示新值 |
+
+分类器**不需要** expect/actual 配对或 fragment 归属：它比较的是实化后的 klib。改 expect 签名必然要同时改 actual，actual 的签名变化照常被检出；
+只改 actual 的函数体就是普通的函数体变化。新增一对 expect/actual 等于新增函数（HOT）；`expect class`/`actual class`
+的形状变化按类的规则处理；`actual typealias` 按 typealias 规则（改指向判 signature）。
+
+### 11.4 第三方 klib
+
+用 `-l` 加入 klib，并把它所在的目录加进 `KLIB_AUTO_CACHE_FROM`（split 编译要给每个库建缓存）。
+`kotlinx-serialization-json` 1.7.3（用 Kotlin 2.0.20 编译，ABI 1.8.0，不在工具链的 `klibs.txt` 里）：编译、启动、运行时实际调用
+（解析 JSON）、温重启、以及修改调用它的代码后再热替换，都通过（`example-gradle/accept-kmp-json.txt`）。
+能读的版本：Kotlin 1.6.10（ABI 1.6.0）到 2.5.x（ABI ≤ 2.5.0），metadata 最高 2.6.0。ABI 更新的 klib 只给一条
+`KLIB loader: Incompatible ABI version` 警告就被跳过，用户随后看到的是 “unresolved reference”（`example-gradle/accept-kmp-klib-versions.txt`）。
+
+### 11.5 没做的部分，以及交给插件的部分
+
+- Gradle 侧：从 `kotlin { sourceSets }` 读出 fragment 和 dependsOn 关系，按依赖解析第三方 klib，并把它们加进 auto-cache 根目录（由 Gradle 插件负责）。
+- 只验证了 `iosSimulatorArm64` 这一个 leaf；没有测 `-Xseparate-kmp-compilation` 方案；没有测 commonMain 带 Compose resources 的情况。
+
+---
+
+## 12. 已知限制
 
 现状和已知问题统一维护在 [docs/LIMITATIONS.md](LIMITATIONS.md)。要点：只支持 iOS 模拟器（arm64）和 debug / split 构建，
 真机未做；温重启只恢复可序列化的状态，而且比热替换慢（参考脚本约 16 s）；分类器对少数改动偏保守；启动稳定性依赖收窄的热符号集，
-ORC 里的根因没修；长时间运行（约 3.5 小时）后发送到首帧会从约 0.9 s 涨到约 1.86 s，原因未定位；plist 布尔值的桥接问题
-让 Compose 的 plist 严格检查暂时关闭；runtime 一次只处理一个请求，上一次热重载没完成时再保存的行为没有验证。
+ORC 里的根因没修；长时间运行（约 3.5 小时）后发送到首帧会从约 0.9 s 涨到约 1.86 s，原因未定位；plist 布尔值桥接已在工具链 .5 修复（§1.8）；runtime 一次只处理一个请求，上一次热重载没完成时再保存的行为没有验证。

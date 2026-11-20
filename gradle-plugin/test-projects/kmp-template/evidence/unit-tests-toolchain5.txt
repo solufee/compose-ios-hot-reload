@@ -1,0 +1,74 @@
+# plugin unit tests (gradlew test -Pcmp.hotreload.toolchainDir=<TOOLCHAIN 2.5.255-hotreload.5>/kotlin-native), commit 8e08d92
+
+CompatContractTest: 8 tests, 0 failed, 0 skipped
+  ok   real snapshots - body change is hot (0), new field is warm (3)()
+  ok   app pid is found with and without launch arguments()
+  ok   hr-state json is parsed per INTERFACE 10_3()
+  ok   classifier is bundled with its recorded sha256()
+  ok   klibs next to the dist are linked, only the dist's own klib dir is implicit()
+  ok   booted simulators are listed()
+  ok   a file that is not a snapshot is a tool error, never hot()
+  ok   expect declarations are found in Kotlin sources()
+
+ExpectActualCasesTest: 3 tests, 0 failed, 0 skipped
+  ok   regression - archives compiled by a failed attempt are still sent by the next one()
+  ok   adding or removing an expect-actual pair is warm, other edits are left to the classifier()
+  ok   regression - an object with only a file initializer belongs to the one module of a single-module app()
+
+KmpTest: 10 tests, 0 failed, 0 skipped
+  ok   several fragments give a multiplatform compilation, one fragment the 0_1 arguments()
+  ok   a dependency newer than the toolchain's copy that replaces it is reported()
+  ok   the KMP template entry is found, an app with its own main has none()
+  ok   klib metadata newer than the compiler reads, and too old ABIs, are reported()
+  ok   a klib built for a newer ABI than the compiler stops the build with the library named()
+  ok   cinterop klibs among the dependencies are reported()
+  ok   versions compare numerically, a pre-release before its release()
+  ok   each Compose module is compared with the toolchain's copy of that module, in its own version scheme()
+  ok   objects are assigned to modules by any Kotlin symbol, file initializers included()
+  ok   toolchain components replace the dependency's, all klibs of a component, and duplicates are dropped()
+
+PackagerDutiesTest: 4 tests, 0 failed, 0 skipped
+  ok   5 absolute rpaths are found in otool output()
+  ok   2 and 3 the app is launched with SYNTH_EH_FRAME and the narrowed hot symbols()
+  ok   1 merge-payloads gets KALDO_KEEP_COMPACT_UNWIND=1 by default()
+  ok   4 the host-link compile never runs cache-only, even if the caller's shell sets it()
+
+PipelineTest: 5 tests, 0 failed, 0 skipped
+  ok   source packages are read from package directives()
+  ok   bundled tools match their recorded sha256()
+  ok   binaries come from the fetched toolchain layout unless set explicitly(File)
+  ok   objects are classified by the longest matching package()
+  ok   module labels and task names()
+
+PluginFunctionalTest: 9 tests, 0 failed, 0 skipped
+  ok   mismatched interfaceVersion fails with a fix hint()
+  ok   plugin adds tasks only in its own group()
+  ok   no toolchain configured explains every way to set one()
+  ok   wrong module set is reported by the check, the rest of the build still works()
+  ok   applied to a module with declared source sets, the module gets the tasks()
+  ok   warmRestart is a DSL setting and hotReload offers --no-warm()
+  ok   disabled switch skips hot reload tasks()
+  ok   applying the plugin leaves every other task unchanged()
+  ok   an old downloaded toolchain is told which release to fetch()
+
+ProtocolContractTest: 4 tests, 0 failed, 0 skipped
+  ok   interface version is pinned()
+  ok   real daemon compiles OK, reports ERR on a syntax error, and stays alive()
+  ok   reload request is byte-exact for two objects()
+  ok   daemon replies are parsed()
+
+ReleaseDigestTest: 1 tests, 0 failed, 0 skipped
+  ok   identical binaries have one digest, one changed code byte fails the release check()
+
+ToolchainValidatorTest: 9 tests, 0 failed, 0 skipped
+  ok   manifest must match the installed libKaldo()
+  ok   wrong compose version and host xcode are both reported()
+  ok   missing files and klibs are reported()
+  ok   wrong kotlin commit names the baseline and the patch()
+  ok   newer interfaceVersion asks for a newer plugin()
+  ok   report lists expected, found and fix()
+  ok   same base commit with a different patch is rejected()
+  ok   bundle layout is rejected with a fetch hint()
+  ok   matching toolchain has no problems()
+
+summary: 53/53 passed

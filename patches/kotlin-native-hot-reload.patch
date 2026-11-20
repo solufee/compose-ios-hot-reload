@@ -2053,7 +2053,7 @@ index 00000000000..7fed0af0145
 +}
 \ No newline at end of file
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/objcexport/WritableTypeInfo.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/objcexport/WritableTypeInfo.kt
-index 6b157239507..2c626032773 100644
+index 6b157239507..43c59488912 100644
 --- a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/objcexport/WritableTypeInfo.kt
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/objcexport/WritableTypeInfo.kt
 @@ -1,11 +1,12 @@
@@ -2070,16 +2070,55 @@ index 6b157239507..2c626032773 100644
  import org.jetbrains.kotlin.backend.konan.llvm.CodeGenerator
  import org.jetbrains.kotlin.backend.konan.llvm.ConstPointer
  import org.jetbrains.kotlin.backend.konan.llvm.ConstValue
-@@ -110,6 +111,8 @@ private fun CodeGenerator.setWritableTypeInfo(
+@@ -17,6 +18,11 @@
+ import org.jetbrains.kotlin.backend.konan.llvm.replaceExternalWeakOrCommonGlobal
+ import org.jetbrains.kotlin.backend.konan.llvm.toTypeString
+ import org.jetbrains.kotlin.backend.konan.llvm.writableTypeInfoSymbolName
++import org.jetbrains.kotlin.backend.konan.llvm.LlvmFunctionSignature
++import org.jetbrains.kotlin.backend.konan.llvm.LlvmRetType
++import org.jetbrains.kotlin.backend.konan.llvm.generateFunctionNoRuntime
++import org.jetbrains.kotlin.backend.konan.llvm.importGlobal
++import org.jetbrains.kotlin.backend.konan.llvm.toProto
+ import org.jetbrains.kotlin.ir.declarations.IrClass
+ import org.jetbrains.kotlin.ir.util.isInterface
+ import org.jetbrains.kotlin.ir.util.kotlinFqName
+@@ -87,7 +93,9 @@
+                 convertToRetained = convertToRetained,
+                 objCClass = null,
+                 typeAdapter = null,
+-        )
++        ),
++        convertToRetained = convertToRetained,
++        typeAdapter = null,
+ )
+ 
+ /**
+@@ -102,14 +110,23 @@
+                 convertToRetained = null,
+                 objCClass = null,
+                 typeAdapter = typeAdapter,
+-        )
++        ),
++        convertToRetained = null,
++        typeAdapter = typeAdapter,
+ )
+ 
+ private fun CodeGenerator.setWritableTypeInfo(
+         irClass: IrClass,
          writableTypeInfoValue: Struct,
++        convertToRetained: ConstPointer?,
++        typeAdapter: ConstPointer?,
  ) {
      if (isExternal(irClass)) {
-+        if (context.config.isUsingSplitCompilationScheme) return
++        if (context.config.isUsingSplitCompilationScheme) {
++            storeWritableTypeInfoFieldsAtStartup(irClass, convertToRetained, typeAdapter)
++            return
++        }
 +
          // Note: this global replaces the external one with common linkage.
          replaceExternalWeakOrCommonGlobal(
                  irClass.writableTypeInfoSymbolName,
-@@ -127,28 +130,43 @@ private fun CodeGenerator.setWritableTypeInfo(
+@@ -127,28 +144,78 @@
      }
  }
  
@@ -2134,7 +2173,41 @@ index 6b157239507..2c626032773 100644
 +        typeAdapter = typeAdapter,
 +        llvmPointerType = llvm.pointerType
 +)
-\ No newline at end of file
++
++/**
++ * Split compilation (hot reload): an external class's WritableTypeInfo is defined in the host image, while this code
++ * goes into the JIT-loaded bootstrap, so the link-time replacement used for ordinary binaries cannot happen. Without it,
++ * Kotlin boxes, strings and functions passed to Objective-C as `id` convert to generic Kotlin wrappers instead of
++ * NSNumber / NSString / blocks; for example `bundle.objectForInfoDictionaryKey(key) as? NSNumber` is null for a plist
++ * boolean (Compose's strict Info.plist check then fails at startup).
++ *
++ * Store the non-null fields from the program module's static initializer instead (it runs from Konan_constructors
++ * before any Kotlin code). Null fields are left alone, so type adapters bound earlier by the loader are kept.
++ * Only reached with the split compilation scheme; other binaries are unchanged.
++ */
++private fun CodeGenerator.storeWritableTypeInfoFieldsAtStartup(
++        irClass: IrClass,
++        convertToRetained: ConstPointer?,
++        typeAdapter: ConstPointer?,
++) {
++    if (convertToRetained == null && typeAdapter == null) return
++    val writableTypeInfoType = runtime.writableTypeInfoType ?: return
++    val additionType = runtime.typeInfoObjCExportAddition
++    val global = importGlobal(irClass.writableTypeInfoSymbolName, writableTypeInfoType, irClass)
++    val proto = LlvmFunctionSignature(LlvmRetType(llvm.voidType, isObjectType = false)).toProto(
++            name = "",
++            origin = null,
++            LLVMLinkage.LLVMPrivateLinkage
++    )
++    val initializer = generateFunctionNoRuntime(this, proto) {
++        val addition = structGep(writableTypeInfoType, global, 0)
++        // TypeInfoObjCExportAddition: convertToRetained, objCClass, swiftClass, typeAdapter.
++        convertToRetained?.let { store(it.llvm, structGep(additionType, addition, 0)) }
++        typeAdapter?.let { store(it.llvm, structGep(additionType, addition, 3)) }
++        ret(null)
++    }
++    llvm.otherStaticInitializers += initializer
++}
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/objcexport/split/SplitObjCSupport.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/objcexport/split/SplitObjCSupport.kt
 new file mode 100644
 index 00000000000..902e2ca4c8e

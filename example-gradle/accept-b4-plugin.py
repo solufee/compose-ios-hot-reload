@@ -74,4 +74,10 @@ b4.reload_once = reload_once
 b4.check_warm = check_warm
 
 if __name__ == "__main__":
-    sys.exit(b4.main())
+    try:
+        code = b4.main()
+    finally:
+        # B4 edits ui/ and app/ sources case after case; put them back so later runs start from git.
+        subprocess.run(["git", "checkout", "--", "app/src", "ui/src"], cwd=HERE)
+        print("# sources restored from git", flush=True)
+    sys.exit(code)

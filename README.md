@@ -4,10 +4,16 @@
 不重启、不丢状态（页面、`remember` 计数器都在），UI 直接更新。底层是 Kotlin/Native 的
 split 编译 + libKaldo（LLVM ORC/JITLink）+ 合成 `__eh_frame`，不是 dlopen，也不是解释器。
 
-> **实验性质，0.1.1。**
+> **实验性质，0.2.0。**
 > - 只支持 **Apple Silicon Mac + iOS 模拟器**（arm64），不支持真机。
 > - 工具链版本固定：打过补丁的 Kotlin/Native、Compose Multiplatform 和 LLVM/libKaldo，插件只认这一套
 >   （Xcode 27.2、iOS 27.2 模拟器 runtime）。只用于 debug，不要用于发布构建。
+> - 适用工程：已有的 Kotlin Multiplatform 工程（例如 KMP 向导生成的 Compose Multiplatform 工程，插件加在含
+>   `MainViewController()` 的模块上，`commonMain`/`iosMain`、`expect`/`actual`、第三方 iOS 依赖都自动识别），
+>   或不用 KMP 插件的 app + ui 多模块工程。只编 `iosSimulatorArm64` 目标，Swift/Xcode 那层（`iosApp/`）不参与热重载；
+>   工程里的 Compose 不能比工具链的 Compose fork（1.13.0-beta01）新，依赖库要是 Kotlin 2.5 及更早版本编出来的
+>   （klib ABI 1.6.0–2.5.0），带原生代码的库（cinterop）0.2.0 不支持。
+>   详见 [docs/TRYOUT.md](docs/TRYOUT.md) 第 7 节。
 > - 已知限制见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。
 > - 问题和建议请提到 [Issues](https://github.com/solufee/compose-ios-hot-reload/issues)。
 
@@ -267,7 +273,7 @@ KOTLIN_DIST=... COMPOSE_PLUGIN_JAR=... KLIBLIST=... scripts/gen-toolchain.sh
 scripts/gen-external-klibs.py --klibs <本机 klibs 清单> --out <WORKSPACE>/external-klibs.json
 
 # 1) 打包：9 个 tar.zst 组件（含 bundled-klibs）+ packaging-manifest.json，每个组件附 LICENSE 和 NOTICE
-OUT_DIR=<WORKSPACE>/toolchain-dist TOOLCHAIN_VERSION=2.5.255-hotreload.4 \
+OUT_DIR=<WORKSPACE>/toolchain-dist TOOLCHAIN_VERSION=2.5.255-hotreload.5 \
 EXTERNAL_KLIBS=<WORKSPACE>/external-klibs.json \
 KOTLIN_DIST=<KOTLIN_NATIVE_DIST> COMPOSE_KLIB_CACHE=<GRADLE_CACHE>/compose-source-jbmain \
 COMPOSE_PLUGIN_JAR=<COMPOSE_PLUGIN_JAR> \
@@ -288,9 +294,9 @@ scripts/publish-toolchain.py --dist-dir <WORKSPACE>/toolchain-dist --manifest <W
   --local-repo <WORKSPACE>/toolchain-repo
 
 # 4) 消费端：下载、校验 sha256、解包、下载公开 klib、本地化，然后 source env.sh 就能用 example-gradle
-scripts/fetch-toolchain.py https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.4/toolchain.json \
+scripts/fetch-toolchain.py https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.5/toolchain.json \
   --cache <WORKSPACE>/toolchain-cache
-. <WORKSPACE>/toolchain-cache/2.5.255-hotreload.4/env.sh
+. <WORKSPACE>/toolchain-cache/2.5.255-hotreload.5/env.sh
 ```
 
 - 需要 `zstd`（`brew install zstd`）。`llvmHome` 默认使用 Kotlin/Native 官方依赖 `llvm-21-aarch64-macos-essentials-97`。
@@ -356,9 +362,9 @@ ui 4,953 ms、app 3,919 ms、两个 5,290 ms，与关分类器交替对照 ui +2
 - 只支持 debug / split 构建；release 不经过这些分支。
 - 多模块（app + ui）和同一模块多文件同时改动都支持，一次原子发送、同一 tick 生效。
 - 类字段布局、函数签名、inline、suspend、新增顶层属性的改动会被兼容性分类器拦下并自动温重启；
-  温重启恢复页面和计数器（`--hr-state`），其它 `remember` 瞬态不恢复；参考脚本一次温重启约 16 s，
+  温重启恢复页面和计数器（`--hr-state`）；插件 0.1.2 起还把 app 自己的 `Documents/hr-state.json` 原样带过重装，其它没写进文件的 `remember` 瞬态不恢复；参考脚本一次温重启约 16 s，
   其中约 10.5 s 是完整重新打包；插件 0.1.1 接入了同样的提速，温重启约 17 s（0.1.0 约 50 s）。见 docs/LIMITATIONS.md。
-- plist 里的 `NSNumber` 布尔值桥接：启动时的严格检查暂时关闭。
+- plist 里的 `NSNumber` 布尔值桥接：工具链 .5 已修，Compose 的严格 Info.plist 检查可以保持打开（.4 及以前要关闭）。
 - 长会话（3.5 小时 / 上万次重组）后发送段会慢约 1 s，原因未定位。
 - 启动稳定性靠收窄的 `KALDO_HOT_SYMBOLS`（`run.sh` 默认传）：30/30；不收窄时约 20% 在 `Konan_constructors` 前崩溃。
 - 预构建工具链从公开仓库的 Release 下载，不需要 token（见 docs/TRYOUT.md）；Release 的 https 下载在首次公开发布时第一次实测，之前用同样的文件在本地镜像上验证过。

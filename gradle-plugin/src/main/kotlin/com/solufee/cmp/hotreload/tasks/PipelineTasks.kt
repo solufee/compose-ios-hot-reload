@@ -12,6 +12,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -29,6 +30,36 @@ abstract class HotReloadTask : DefaultTask() {
     @get:Internal
     abstract val settings: Property<HrSettings>
 
+    /** Klibs of the modules' Gradle dependencies and cmpHotReload.extraKlibs (0.2.0). */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val externalKlibFiles: ConfigurableFileCollection
+
+    /** "coordinates|path" of each dependency klib, for replacement and error messages. */
+    @get:Internal
+    abstract val externalKlibIds: ListProperty<String>
+
+    /** `component|direct dependency` of the resolved graphs, for "pulled in by" in messages. */
+    @get:Internal
+    abstract val externalKlibVia: ListProperty<String>
+
+    /** Compose version of the toolchain's fork (for messages). */
+    @get:Internal
+    abstract val composeVersion: Property<String>
+
+    /** Settings with the dependency klibs that are linked (the toolchain's own copies taken out). */
+    protected fun effectiveSettings(): HrSettings {
+        val s = settings.get()
+        val ids = externalKlibIds.getOrElse(emptyList())
+        if (ids.isEmpty()) return s
+        val via = externalKlibVia.getOrElse(emptyList()).associate { it.substringBefore('|') to it.substringAfter('|') }
+        val deps = ids.map { val parts = it.split("|", limit = 2); com.solufee.cmp.hotreload.Kmp.Dependency(parts[0], File(parts[1]), via[parts[0]]) }
+            .filter { it.file.name.endsWith(".klib") || it.file.isDirectory }
+        val toolchain = Pipeline.externalKlibs(File(s.klibList).readLines(), File(s.dist))
+        val sel = com.solufee.cmp.hotreload.Kmp.selectKlibs(toolchain, File(s.dist, "klib/common/stdlib"), deps, composeVersion.get(), logger)
+        return s.copy(extraKlibs = sel.klibs)
+    }
+
     protected fun tools(s: HrSettings) = Tools.extract(File(s.workDir), logger)
     protected fun daemons(s: HrSettings, tools: Tools): Daemons? =
         if (s.useDaemon) Daemons(s, logger).also { it.ensure(tools) } else null
@@ -39,9 +70,10 @@ abstract class CompileKlibTask : HotReloadTask() {
     @get:Input
     abstract val modulePath: Property<String>
 
-    @get:InputDirectory
+    /** Every source directory of the module (all its fragments). */
+    @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val sourceDir: DirectoryProperty
+    abstract val sources: ConfigurableFileCollection
 
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NONE)
@@ -56,7 +88,7 @@ abstract class CompileKlibTask : HotReloadTask() {
 
     @TaskAction
     fun compile() {
-        val s = settings.get()
+        val s = effectiveSettings()
         val m = s.modules.single { it.path == modulePath.get() }
         val tools = tools(s)
         Pipeline(s, logger).compileLibrary(m, daemons(s, tools))
@@ -70,7 +102,7 @@ abstract class PackageTask : HotReloadTask() {
 
     @TaskAction
     fun pkg() {
-        val s = settings.get()
+        val s = effectiveSettings()
         val tools = tools(s)
         val daemons = daemons(s, tools)
         val pipeline = Pipeline(s, logger)
@@ -97,7 +129,7 @@ abstract class ReloadTask : HotReloadTask() {
 
     @TaskAction
     fun reload() {
-        val s = settings.get()
+        val s = effectiveSettings()
         val tools = tools(s)
         val daemons = daemons(s, tools)
         val pipeline = Pipeline(s, logger)
@@ -210,7 +242,7 @@ abstract class VerifyReleaseTask : HotReloadTask() {
     @get:Input
     abstract val recordBaseline: Property<Boolean>
 
-    /** Baseline mode: at most this many builds while looking for both known __text variants. */
+    /** Baseline mode: number of builds (default 1); more than one also checks that they agree. */
     @get:Input
     abstract val maxBaselineRuns: Property<Int>
 
@@ -220,6 +252,6 @@ abstract class VerifyReleaseTask : HotReloadTask() {
 
     @TaskAction
     fun verify() {
-        com.solufee.cmp.hotreload.ReleaseCheck(settings.get(), logger).run(recordBaseline.get(), maxBaselineRuns.get())
+        com.solufee.cmp.hotreload.ReleaseCheck(effectiveSettings(), logger).run(recordBaseline.get(), maxBaselineRuns.get())
     }
 }

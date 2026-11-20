@@ -19,24 +19,24 @@ import java.security.MessageDigest
 import java.util.Properties
 
 /**
- * com.solufee.cmp.hotreload — apply to the root project.
+ * com.solufee.cmp.hotreload - apply to the root project (it then covers the subprojects), or, since 0.2.0, to
+ * the app module itself (a Kotlin Multiplatform module such as the KMP template's `shared`/`composeApp`).
  *
  * Adds tasks in group "hot reload" and nothing else: no existing task, configuration or variant is touched,
- * so release builds are unaffected.
+ * so release builds are unaffected. The Kotlin Multiplatform source sets and dependencies are only read.
  */
 class HotReloadPlugin : Plugin<Project> {
     override fun apply(project: Project) {
-        if (project != project.rootProject) {
-            throw GradleException("Apply com.solufee.cmp.hotreload to the root project and declare modules with app(\":x\") / library(\":y\").")
-        }
+        val singleModule = project != project.rootProject
         val ext = project.extensions.create("cmpHotReload", HotReloadExtension::class.java)
         val providers = project.providers
-        val rootDir = project.rootDir
+        val rootDir = project.projectDir
         val workDir = File(rootDir, "build/hotreload")
 
-        // Every cmp.hotreload.* setting: -P / gradle.properties first, then the git-ignored local.properties.
+        // Every cmp.hotreload.* setting: -P / gradle.properties first, then the git-ignored local.properties
+        // of the root project (where the KMP template keeps it).
         val localPropsText: Provider<String> =
-            providers.fileContents(project.layout.projectDirectory.file("local.properties")).asText
+            providers.fileContents(project.rootProject.layout.projectDirectory.file("local.properties")).asText
         fun prop(name: String): Provider<String> = providers.gradleProperty(name).orElse(
             localPropsText.map { text -> Properties().apply { load(text.reader()) }.getProperty(name) ?: "" }.filter { it.isNotBlank() },
         )
@@ -57,6 +57,7 @@ class HotReloadPlugin : Plugin<Project> {
         ext.simulator.launchRetries.convention(prop("cmp.hotreload.launchRetries").map { it.toInt() }.orElse(3))
         ext.simulator.readyMarker.convention(prop("cmp.hotreload.readyMarker"))
         ext.simulator.reinstall.convention(prop("cmp.hotreload.reinstall").map { it.toBoolean() }.orElse(true))
+        ext.resolveDependencyKlibs.convention(prop("cmp.hotreload.resolveDependencyKlibs").map { it.toBoolean() }.orElse(true))
         ext.modules.configureEach {
             sourceDir.convention("src/main/kotlin")
             infoPlist.convention("Info.plist")
@@ -96,14 +97,35 @@ class HotReloadPlugin : Plugin<Project> {
             onlyIf("cmpHotReload.enabled is true") { enabled.get() }
         }
 
-        project.afterEvaluate {
+        // After every project is configured, so the Kotlin Multiplatform source sets and dependencies of the
+        // subprojects are complete (without forcing an evaluation order on the user's build).
+        project.gradle.projectsEvaluated {
             val errors = mutableListOf<String>()
-            val modules = resolveModules(project, ext, errors)
+            val kmp = KmpModules()
+            val modules = resolveModules(project, ext, errors, singleModule, kmp)
             val libraries = modules.filter { it.kind == ModuleKind.LIBRARY }
             val app = modules.firstOrNull { it.kind == ModuleKind.APP }
             val appSpec = app?.let { a -> ext.modules.findByName(a.path) }
             val appDir = app?.let { project.findProject(it.path)?.projectDir }
-            val infoPlist = appDir?.let { File(it, appSpec?.infoPlist?.get() ?: "Info.plist").path } ?: ""
+            val declaredPlist = appDir?.let { File(it, appSpec?.infoPlist?.get() ?: "Info.plist") }
+            val iosEntry = appSpec?.iosEntry?.orNull ?: app?.let { a -> Kmp.detectIosEntry(a.sourceDirs.map(::File)) }
+            // No Info.plist in the app module (the KMP template keeps it in the Xcode project): generate one.
+            val generatedPlist = File(workDir, "generated/Info.plist")
+            val appProject = app?.let { project.findProject(it.path) }
+            val infoPlist = when {
+                declaredPlist == null -> ""
+                declaredPlist.isFile -> declaredPlist.path
+                else -> generatedPlist.path
+            }
+            val plistContent = if (declaredPlist != null && !declaredPlist.isFile) {
+                val exe = (appProject?.rootProject?.name ?: "App").filter { it.isLetterOrDigit() }.ifEmpty { "App" }
+                val bundleId = appSpec?.bundleId?.orNull ?: iosEntry?.substringBeforeLast('.', "")?.takeIf { it.isNotEmpty() }?.let { "$it.hotreload" }
+                    ?: "com.example.${exe.lowercase()}.hotreload"
+                Kmp.infoPlist(exe, bundleId)
+            } else null
+            // Compose Multiplatform resources assembled for iosSimulatorArm64 (when the app uses them).
+            val composeResTask = appProject?.tasks?.findByName("assembleIosSimulatorArm64MainResources")
+            val composeResources = composeResTask?.let { File(appProject.layout.buildDirectory.get().asFile, "generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path }
             val linkerOptions = appSpec?.linkerOptions?.get() ?: DEFAULT_LINKER_OPTIONS
             val socketDir = socketDir(rootDir)
             val tc = manifest.getOrElse(emptyMap())
@@ -119,8 +141,9 @@ class HotReloadPlugin : Plugin<Project> {
                 "cmpHotReload.orcRuntime (liborc_rt_iossim_arm64.a)" to bins.orcRuntime,
                 "cmpHotReload.objcUtilsLib (libCMPUIKitObjcUtils.a)" to bins.objcUtilsLib,
             )
-            if (app != null) requiredFiles["app Info.plist"] = infoPlist
-            modules.forEach { requiredFiles["${it.path} sources"] = it.srcDir }
+            if (app != null && plistContent == null) requiredFiles["app Info.plist"] = infoPlist
+            // Sources: the module directory; generated KMP source dirs only exist once their tasks ran.
+            modules.forEach { requiredFiles["${it.path} sources"] = if (it.path in kmp.dirSets) project.findProject(it.path)!!.projectDir.path else it.srcDir }
 
             check.configure {
                 configErrors.set(errors.toList())
@@ -157,7 +180,37 @@ class HotReloadPlugin : Plugin<Project> {
                     launchRetries = ext.simulator.launchRetries.get(),
                     reinstall = ext.simulator.reinstall.get(),
                     warmRestart = ext.warmRestart.get(),
+                    iosEntry = iosEntry,
+                    composeResources = composeResources,
+                    infoPlistContent = plistContent,
                 )
+            }
+            // Dependency klibs of every module (lazy: resolved only when a hot-reload task runs).
+            val depKlibs = project.files()
+            val depIds = mutableListOf<Provider<List<String>>>()
+            val depVia = mutableListOf<Provider<List<String>>>()
+            if (ext.resolveDependencyKlibs.get()) {
+                for (m in modules) {
+                    val cfg = project.findProject(m.path)?.configurations?.findByName(Kmp.DEPENDENCY_CONFIGURATION) ?: continue
+                    val view = cfg.incoming.artifactView { componentFilter { it !is org.gradle.api.artifacts.component.ProjectComponentIdentifier } }
+                    depKlibs.from(view.files)
+                    depIds += view.artifacts.resolvedArtifacts.map { set -> set.map { "${it.id.componentIdentifier.displayName}|${it.file.path}" } }
+                    depVia += cfg.incoming.resolutionResult.rootComponent.map { Kmp.requesters(it) }
+                }
+            }
+            depKlibs.from(ext.extraKlibs)
+            val extraIds: Provider<List<String>> = project.provider { ext.extraKlibs.files.map { "${it.name}|${it.path}" } }
+            val allIds: Provider<List<String>> = depIds.fold(extraIds) { acc, p -> acc.zip(p) { a, b -> a + b } }
+            project.tasks.withType(HotReloadTask::class.java).configureEach {
+                if (this !is DaemonStopTask && this !is CleanTask) {
+                    externalKlibFiles.from(depKlibs)
+                    externalKlibIds.set(allIds)
+                    externalKlibVia.set(depVia.fold(project.provider { emptyList<String>() }) { acc, p -> acc.zip(p) { a, b -> a + b } })
+                    composeVersion.set(PinnedToolchain.current.composeVersion)
+                    // Generated KMP sources (Compose resource accessors, ...) are built before any compile.
+                    kmp.dirSets.values.flatten().forEach { dependsOn(it) }
+                    composeResTask?.let { dependsOn(it) }
+                }
             }
             val toolchainKey: Provider<String> = manifest.map { "${it["compilerJar"]}|${it["pluginJar"]}|${it["klibList"]}" }
 
@@ -167,7 +220,7 @@ class HotReloadPlugin : Plugin<Project> {
                     description = "Compile ${m.path} to a klib"
                     this.settings.set(settings)
                     modulePath.set(m.path)
-                    sourceDir.set(File(m.srcDir))
+                    sources.from(m.sourceDirs)
                     this.toolchainKey.set(toolchainKey)
                     klib.set(File(workDir, "klib/${m.label}/${m.label}.klib"))
                 }
@@ -206,7 +259,7 @@ class HotReloadPlugin : Plugin<Project> {
                 description = "Build a release binary (no hot reload) and compare section sizes, symbols and __text with the baseline"
                 this.settings.set(settings)
                 recordBaseline.set(prop("cmp.hotreload.releaseBaseline").map { it.toBoolean() }.orElse(false))
-                maxBaselineRuns.set(prop("cmp.hotreload.releaseBaselineRuns").map { it.toInt() }.orElse(6))
+                maxBaselineRuns.set(prop("cmp.hotreload.releaseBaselineRuns").map { it.toInt() }.orElse(1))
             }
             project.tasks.register("hotReloadDaemonStart", DaemonStartTask::class.java) {
                 group = GROUP
@@ -233,28 +286,55 @@ class HotReloadPlugin : Plugin<Project> {
         /** ":feature:ui" -> "FeatureUi". */
         fun taskSuffix(m: HrModule) = m.label.split('-', '_', '.').joinToString("") { it.replaceFirstChar(Char::uppercase) }
 
+        /** Kotlin source directory sets of KMP modules (by project path): task inputs that carry generated sources. */
+        class KmpModules {
+            val dirSets = mutableMapOf<String, List<Any>>()
+        }
+
+        /** Project dependencies of [p]'s iosSimulatorArm64 compilation (KMP), in declaration order. */
+        private fun projectDependencies(p: Project): List<Project> =
+            p.configurations.findByName(Kmp.DEPENDENCY_CONFIGURATION)?.allDependencies
+                ?.withType(org.gradle.api.artifacts.ProjectDependency::class.java)
+                ?.mapNotNull { p.findProject(it.path) }?.distinct() ?: emptyList()
+
         /**
-         * Declared modules, or — when none are declared — every subproject with src/main/kotlin: the one with
-         * src/main/kotlin/main.kt is the app, the others are libraries in path order. When only the app is
-         * declared, the other source modules become its libraries.
+         * Declared modules, or - when none are declared - discovered ones:
+         * - applied to the root: every subproject with src/main/kotlin or a Kotlin Multiplatform iosSimulatorArm64
+         *   target; the app is the one with a Kotlin `main` (src/main/kotlin/main.kt) or a `MainViewController()`;
+         * - applied to a module: that module is the app, its project dependencies are the libraries.
+         * When only the app is declared, the other source modules become its libraries.
+         * Sources of a module: its `sourceSets { }` in the DSL, else the Kotlin Multiplatform source sets that make
+         * up its iosSimulatorArm64 compilation (commonMain -> ... -> iosSimulatorArm64Main), else [sourceDir].
          */
-        fun resolveModules(project: Project, ext: HotReloadExtension, errors: MutableList<String>): List<HrModule> {
-            data class Decl(val path: String, val kind: ModuleKind, val sourceDir: String, val dependsOn: List<String>?)
+        fun resolveModules(
+            project: Project, ext: HotReloadExtension, errors: MutableList<String>,
+            singleModule: Boolean = false, kmp: KmpModules = KmpModules(),
+        ): List<HrModule> {
+            data class Decl(val path: String, val kind: ModuleKind, val sourceDir: String, val dependsOn: List<String>?, val sets: List<HrFragment>)
             val declared = ext.modules.map { m ->
-                Decl(m.name, m.kind.orNull ?: ModuleKind.LIBRARY, m.sourceDir.get(), m.dependsOn.orNull?.takeIf { it.isNotEmpty() })
+                Decl(m.name, m.kind.orNull ?: ModuleKind.LIBRARY, m.sourceDir.get(), m.dependsOn.orNull?.takeIf { it.isNotEmpty() },
+                    m.sourceSets.map { HrFragment(it.name, it.srcDirs.get(), it.dependsOn.get()) })
             }
-            val discovered = project.subprojects.filter { File(it.projectDir, "src/main/kotlin").isDirectory }.sortedBy { it.path }
+            fun isKmp(p: Project) = Kmp.sourceSets(p) != null
+            fun isApp(p: Project) = File(p.projectDir, "src/main/kotlin/main.kt").isFile ||
+                (Kmp.sourceSets(p)?.let { ss -> Kmp.detectIosEntry(ss.flatMap { it.dirs }) != null } ?: false)
+            val candidates = if (singleModule) listOf(project) + projectDependencies(project) else project.subprojects.toList()
+            val discovered = candidates.filter { File(it.projectDir, "src/main/kotlin").isDirectory || isKmp(it) }
+                .let { if (singleModule) it else it.sortedBy { p -> p.path } }
             val decls = when {
+                declared.isEmpty() && singleModule ->
+                    listOf(Decl(project.path, ModuleKind.APP, "src/main/kotlin", null, emptyList())) +
+                        discovered.filter { it != project }.map { Decl(it.path, ModuleKind.LIBRARY, "src/main/kotlin", null, emptyList()) }
                 declared.isEmpty() -> {
-                    val app = discovered.filter { File(it.projectDir, "src/main/kotlin/main.kt").isFile }
+                    val app = discovered.filter(::isApp)
                     if (app.size != 1) {
-                        errors += "cannot discover the app module: expected exactly one subproject with src/main/kotlin/main.kt, " +
-                            "found ${app.map { it.path }}; declare app(\":x\")"
+                        errors += "cannot discover the app module: expected exactly one subproject with src/main/kotlin/main.kt " +
+                            "or a Kotlin Multiplatform MainViewController(), found ${app.map { it.path }}; declare app(\":x\")"
                     }
-                    discovered.map { p -> Decl(p.path, if (p == app.firstOrNull()) ModuleKind.APP else ModuleKind.LIBRARY, "src/main/kotlin", null) }
+                    discovered.map { p -> Decl(p.path, if (p == app.firstOrNull()) ModuleKind.APP else ModuleKind.LIBRARY, "src/main/kotlin", null, emptyList()) }
                 }
                 declared.none { it.kind == ModuleKind.LIBRARY } -> declared + discovered.filter { p -> declared.none { it.path == p.path } }
-                    .map { Decl(it.path, ModuleKind.LIBRARY, "src/main/kotlin", null) }
+                    .map { Decl(it.path, ModuleKind.LIBRARY, "src/main/kotlin", null, emptyList()) }
                 else -> declared
             }
             val apps = decls.filter { it.kind == ModuleKind.APP }
@@ -262,11 +342,12 @@ class HotReloadPlugin : Plugin<Project> {
             val libs = decls.filter { it.kind == ModuleKind.LIBRARY }
             val result = mutableListOf<HrModule>()
             for (d in decls) {
-                val dir = project.findProject(d.path)?.projectDir
-                if (dir == null) {
+                val p = project.findProject(d.path)
+                if (p == null) {
                     errors += "module ${d.path} is declared in cmpHotReload but is not included in settings.gradle(.kts)"
                     continue
                 }
+                val dir = p.projectDir
                 val before = libs.takeWhile { it.path != d.path }.map { it.path }
                 val deps = d.dependsOn ?: (if (d.kind == ModuleKind.APP) libs.map { it.path } else before)
                 deps.filter { dep -> libs.none { it.path == dep } }.forEach { errors += "${d.path} depends on $it, which is not a declared library" }
@@ -275,7 +356,17 @@ class HotReloadPlugin : Plugin<Project> {
                         errors += "${d.path} depends on $it, which is declared after it; declare libraries in dependency order"
                     }
                 }
-                result += HrModule(d.path, d.kind, File(dir, d.sourceDir).path, deps.filter { dep -> libs.any { it.path == dep } })
+                val kgp = if (d.sets.isEmpty()) Kmp.sourceSets(p) else null
+                val fragments = when {
+                    d.sets.isNotEmpty() -> d.sets.map { f -> f.copy(dirs = f.dirs.map { File(dir, it).path }) }
+                    kgp != null -> {
+                        kmp.dirSets[d.path] = kgp.mapNotNull { it.directorySet }
+                        kgp.map { HrFragment(it.name, it.dirs.map { f -> f.path }, it.dependsOn) }
+                    }
+                    else -> listOf(HrFragment("main", listOf(File(dir, d.sourceDir).path)))
+                }
+                val srcDir = fragments.firstNotNullOfOrNull { f -> f.dirs.firstOrNull { File(it).isDirectory } } ?: File(dir, d.sourceDir).path
+                result += HrModule(d.path, d.kind, srcDir, deps.filter { dep -> libs.any { it.path == dep } }, fragments)
             }
             // App first, then libraries in declaration order.
             return result.sortedBy { if (it.kind == ModuleKind.APP) 0 else 1 }

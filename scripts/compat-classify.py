@@ -175,6 +175,7 @@ def parse_metadata(text):
     package = ""
     # Stack entries: (indent, fq_name, container dict)
     stack = []
+    pending_annotations = []
     for raw in text.splitlines():
         if not raw.strip():
             continue
@@ -190,7 +191,10 @@ def parse_metadata(text):
         if line.startswith("@"):
             # Annotation lines (Compose adds several synthetic ones) carry no
             # layout information; adding an annotated declaration is allowed.
+            # They are remembered for the next class (@ExportObjCClass).
+            pending_annotations.append(line)
             continue
+        annotations, pending_annotations = pending_annotations, []
         if line == "}":
             while stack and stack[-1][0] >= indent:
                 stack.pop()
@@ -207,6 +211,8 @@ def parse_metadata(text):
                 "kind": m.group("kind"),
                 "visibility": visibility_of(m.group("mods")),
                 "modality": modality_of(m.group("mods")),
+                "isEnum": "enum" in mods_of(m.group("mods")),
+                "objcExported": any("ExportObjCClass" in a for a in annotations),
                 "superTypes": [s.strip() for s in (m.group("supers") or "").split(",") if s.strip()],
                 "constructors": [],
                 "properties": [],
@@ -235,6 +241,7 @@ def parse_metadata(text):
                 "params": m.group("params").strip(),
                 "return": (m.group("ret") or "kotlin/Unit").strip(),
                 "visibility": visibility_of(m.group("mods")),
+                "modality": modality_of(m.group("mods")),
                 "suspend": "suspend" in mods_of(m.group("mods")),
                 "inline": "inline" in mods_of(m.group("mods")),
             }
@@ -402,6 +409,35 @@ def load(path):
     return data
 
 
+TYPEALIAS_RE = re.compile(r"^(?:\w+\s+)*typealias\s+(\S+)\s*=\s*(.+)$")
+
+
+def split_typealiases(lines):
+    """(aliases {name: target}, other lines). Typealiases are compile-time only: adding one is safe; a
+    retargeted or removed alias is reported (functions using it also show the expanded type change)."""
+    aliases, rest = {}, []
+    for line in lines:
+        m = TYPEALIAS_RE.match(line)
+        if m:
+            aliases[m.group(1)] = m.group(2)
+        else:
+            rest.append(line)
+    return aliases, rest
+
+
+def adds_methods_safely(info):
+    """A final (non-enum) class or an object has no virtual dispatch for new final members: existing instances
+    keep their type info, new code calls the new method directly. Open/abstract/sealed classes, enums and
+    interfaces keep forcing a warm restart (vtable/itable layout)."""
+    if info.get("isEnum") or info.get("objcExported"):
+        return False
+    # Subclasses of ObjC classes (platform.* : NSObject, UIViewController, ...) may need their methods
+    # registered with the ObjC runtime; a hot patch does not register new selectors.
+    if any(t.startswith("platform/") for t in info.get("superTypes", [])):
+        return False
+    return info.get("kind") == "object" or (info.get("kind") == "class" and info.get("modality") == "final")
+
+
 def reasons_for(old, new):
     reasons = []
 
@@ -417,6 +453,8 @@ def reasons_for(old, new):
         a, b = old_classes[fq], new_classes[fq]
         if a["superTypes"] != b["superTypes"]:
             add("signature", fq, f"supertypes changed: {a['superTypes']} -> {b['superTypes']}")
+        if a.get("modality") != b.get("modality"):
+            add("signature", fq, f"modality changed: {a.get('modality')} -> {b.get('modality')}")
         if a["constructors"] != b["constructors"]:
             add("field-layout", fq, "constructor signature changed")
         if a["properties"] != b["properties"]:
@@ -432,6 +470,10 @@ def reasons_for(old, new):
         for key in sorted(set(new_fns) - set(old_fns)):
             f = new_fns[key]
             if f["visibility"] == "private":
+                continue
+            # A final member added to a final class or an object: no vtable/itable change. Overrides show
+            # up as "open" in the metadata and stay below.
+            if adds_methods_safely(b) and f.get("modality") == "final" and not f["inline"] and not f["suspend"]:
                 continue
             cat = "inline" if f["inline"] else ("suspend" if f["suspend"] else "signature")
             add(cat, f"{fq}.{key[0]}", "method added to existing class")
@@ -466,9 +508,19 @@ def reasons_for(old, new):
                 "suspend" if (a["suspend"] or b["suspend"]) else "signature")
             add(cat, name, f"signature changed: {a['params']} -> {b['params']}")
         elif a["visibility"] != b["visibility"]:
+            # internal <-> public keeps the symbol; anything involving private changes its linkage.
+            if {a["visibility"], b["visibility"]} <= {"internal", "public"}:
+                continue
             add("signature", name, "visibility changed")
 
-    if old.get("topOther", []) != new.get("topOther", []):
+    old_aliases, old_other = split_typealiases(old.get("topOther", []))
+    new_aliases, new_other = split_typealiases(new.get("topOther", []))
+    for name in sorted(set(old_aliases) - set(new_aliases)):
+        add("signature", name, "typealias removed")
+    for name in sorted(set(old_aliases) & set(new_aliases)):
+        if old_aliases[name] != new_aliases[name]:
+            add("signature", name, f"typealias retargeted: {old_aliases[name]} -> {new_aliases[name]}")
+    if old_other != new_other:
         add("class-shape", "<root>", "unclassified top-level declaration changed")
 
     for sig in sorted(set(old["bodies"]) & set(new["bodies"])):
