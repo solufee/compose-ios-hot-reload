@@ -11,7 +11,7 @@ split 编译 + libKaldo（LLVM ORC/JITLink）+ 合成 `__eh_frame`，不是 dlop
 > - 适用工程：已有的 Kotlin Multiplatform 工程（例如 KMP 向导生成的 Compose Multiplatform 工程，插件加在含
 >   `MainViewController()` 的模块上，`commonMain`/`iosMain`、`expect`/`actual`、第三方 iOS 依赖都自动识别），
 >   或不用 KMP 插件的 app + ui 多模块工程。只编 `iosSimulatorArm64` 目标，Swift/Xcode 那层（`iosApp/`）不参与热重载；
->   工程里的 Compose 不能比工具链的 Compose fork（1.13.0-beta01）新，依赖库要是 Kotlin 2.5 及更早版本编出来的
+>   工程里的 Compose 不能比工具链的 Compose fork 新（.6：1.13.0-beta01；.7：1.13.0-rc01），依赖库要是 Kotlin 2.5 及更早版本编出来的
 >   （klib ABI 1.6.0–2.5.0），带原生代码的库（cinterop）0.2.0 不支持。
 >   详见 [docs/TRYOUT.md](docs/TRYOUT.md) 第 7 节。
 > - 已知限制见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)。
@@ -48,7 +48,7 @@ docs/            TRYOUT（试用）、INTERFACE（底层接口）、LIMITATIONS�
 | Xcode | 27.2（27B52），含 iOS 27.2 模拟器 runtime |
 | JDK | 17 或 21（构建 Gradle 与运行 kotlinc-native；两个都实测过） |
 | Kotlin | 2.5.255-SNAPSHOT，从 PR #7234 / #7418 / #7606 的分支构建 |
-| Compose | jb-main `ee243c321`（runtime 1.13.0-beta01 一系） |
+| Compose | 官方标签 `v1.13.0-rc01`（`f39822e6a77e`，工具链 .7）；.6 是 jb-main `ee243c321`（runtime 1.13.0-beta01 一系） |
 | Python | 3.9+（脚本只用标准库；macOS 自带的 python3 即可） |
 | AXe | 可选，用于真实点击（`brew install cameroncooke/axe/axe`） |
 
@@ -153,7 +153,7 @@ export KOTLIN_DIST=$PWD/kotlin-native/dist
 ```bash
 git clone https://github.com/JetBrains/compose-multiplatform-core.git compose
 cd compose
-git checkout ee243c321
+git checkout v1.13.0-rc01          # 工具链 .7（.6 是 jb-main ee243c321；补丁两处都能打上）
 git apply /path/to/patches/compose-multiplatform-core-build.patch
 # 改 gradle/libs-fork.versions.toml 与 gradle/libs.versions.toml 里的 kotlin 版本为 2.5.255-SNAPSHOT
 # 改 kotlin.native.home 指向第 2 步的 dist（补丁里是 <KOTLIN_NATIVE_DIST> 占位符）
@@ -272,7 +272,7 @@ KOTLIN_DIST=... COMPOSE_PLUGIN_JAR=... KLIBLIST=... scripts/gen-toolchain.sh
 # 0) 公开 klib：从 Maven Central / Google Maven 核对并固定（坐标、URL、sha256、许可证）；两个仓库都没有的标为随包分发
 scripts/gen-external-klibs.py --klibs <本机 klibs 清单> --out <WORKSPACE>/external-klibs.json
 
-# 1) 打包：9 个 tar.zst 组件（含 bundled-klibs）+ packaging-manifest.json，每个组件附 LICENSE 和 NOTICE
+# 1) 打包：8 个 tar.zst 组件（公开仓库里找不到的 klib 另成 bundled-klibs 组件，.4–.6 有，.7 没有）+ packaging-manifest.json，每个组件附 LICENSE 和 NOTICE
 OUT_DIR=<WORKSPACE>/toolchain-dist TOOLCHAIN_VERSION=2.5.255-hotreload.6 \
 EXTERNAL_KLIBS=<WORKSPACE>/external-klibs.json \
 KOTLIN_DIST=<KOTLIN_NATIVE_DIST> COMPOSE_KLIB_CACHE=<GRADLE_CACHE>/compose-source-jbmain \

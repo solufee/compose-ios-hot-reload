@@ -32,7 +32,7 @@
 | Xcode / 模拟器 | Xcode 27.2（27B52），iOS 27.2 模拟器 runtime，iPhone 18 Pro |
 | Kotlin | 2.5.255-SNAPSHOT：`JetBrains/kotlin` 公开基线 `8e53ee99fbc08e264828ab082aee3e448194eca8` + 本项目补丁（已包含 PR #7234 / #7418 / #7606） |
 | LLVM / libKaldo | LLVM 公开 fork `llvm-project-kotlin`（地址见 [patches/README.md](../patches/README.md)），基线 `2f8844c2b35557baced9106c50b9b8758fa6a0de`（LLVM 21.1.6）+ 本项目补丁 |
-| Compose | `JetBrains/compose-multiplatform-core` `jb-main` `ee243c321ddff6b18fcf18916be1b96ef70e2363`（runtime 1.13.0-beta01 一系），只改构建接线，不改 Compose 源码 |
+| Compose | `JetBrains/compose-multiplatform-core`：工具链 .7 是官方标签 `v1.13.0-rc01` `f39822e6a77eea5d194e4f9bb56cb6961321b849`（skiko 0.156.1）；.6 及以前是 `jb-main` `ee243c321ddff6b18fcf18916be1b96ef70e2363`（runtime 1.13.0-beta01 一系）。补丁改构建接线，外加 `ui` 模块 iOS 源码的一处强制重组（§1.6）；runtime 用 Google 发布的 klib |
 
 只支持 iOS 模拟器（arm64）、macOS arm64 主机、debug / split 构建。
 

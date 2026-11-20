@@ -36,6 +36,10 @@ abstract class CheckToolchainTask : DefaultTask() {
     @get:Input
     abstract val configErrors: ListProperty<String>
 
+    /** Warnings found at configuration time (e.g. uncollected source sets, #10); printed first. */
+    @get:Input
+    abstract val configWarnings: ListProperty<String>
+
     /** Files outside toolchain.json the pipeline needs (label -> path). */
     @get:Input
     abstract val requiredFiles: MapProperty<String, String>
@@ -45,6 +49,7 @@ abstract class CheckToolchainTask : DefaultTask() {
 
     init {
         configErrors.convention(emptyList())
+        configWarnings.convention(emptyList())
         requiredFiles.convention(emptyMap())
         outputs.upToDateWhen { false }
     }
@@ -52,6 +57,7 @@ abstract class CheckToolchainTask : DefaultTask() {
     @TaskAction
     fun check() {
         val pinned = PinnedToolchain.current
+        configWarnings.get().forEach { logger.warn(it) }
         val errors = configErrors.get()
         if (errors.isNotEmpty()) {
             throw GradleException("CMP hot reload: cmpHotReload { } is misconfigured:\n" + errors.joinToString("\n") { "  - $it" })

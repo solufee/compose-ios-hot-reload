@@ -1,8 +1,8 @@
 {
   "interfaceVersion": 8,
   "layout": "bundle",
-  "toolchainVersion": "2.5.255-hotreload.6",
-  "generatedAt": "2026-11-20T09:50:59+08:00",
+  "toolchainVersion": "2.5.255-hotreload.7",
+  "generatedAt": "2026-11-20T14:49:11+08:00",
   "kotlin": {
     "version": "2.5.255-SNAPSHOT",
     "dist": "kotlin-native",
@@ -14,10 +14,10 @@
     "patchSha256": "40c81628f673c78b5fd9a137c0032b30021695c419e70ca3a2d2fbd679547324"
   },
   "compose": {
-    "version": "1.13.0-beta01",
+    "version": "1.13.0-rc01",
     "pluginJar": "compose-plugin/compiler-2.5.255-SNAPSHOT-shadow.jar",
     "klibDir": "compose-klibs",
-    "baseCommit": "ee243c321ddff6b18fcf18916be1b96ef70e2363",
+    "baseCommit": "f39822e6a77eea5d194e4f9bb56cb6961321b849",
     "patch": "compose-multiplatform-core-build.patch",
     "patchSha256": "335d7a32356b92b1ba395b63235f4b20e804a610411db693bb2858a389eb7a50"
   },
@@ -48,137 +48,122 @@
   "components": [
     {
       "id": "kotlin-native",
-      "file": "kotlin-native-2.5.255-hotreload.6-macos-aarch64.tar.zst",
+      "file": "kotlin-native-2.5.255-hotreload.7-macos-aarch64.tar.zst",
       "extractDir": "kotlin-native",
-      "bytes": 70327363,
+      "bytes": 70328382,
       "rawBytes": 392560640,
-      "sha256": "fdcf21cabebc091dd19a7cfc93268dcb1fcf7487f34e13e6ede4211490529ef8",
+      "sha256": "7938ca191379b49773f0af18945a56f48d515f1f19db428d08d9773dd6b64189",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "kotlin-native-2.5.255-hotreload.6-macos-aarch64.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/kotlin-native-2.5.255-hotreload.6-macos-aarch64.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "kotlin-native-2.5.255-hotreload.7-macos-aarch64.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/kotlin-native-2.5.255-hotreload.7-macos-aarch64.tar.zst"
       }
     },
     {
       "id": "compose-klibs",
-      "file": "compose-klibs-2.5.255-hotreload.6.tar.zst",
+      "file": "compose-klibs-2.5.255-hotreload.7.tar.zst",
       "extractDir": "compose-klibs",
-      "bytes": 11048200,
-      "rawBytes": 50343936,
-      "sha256": "e7076b5f7848913a0d63e5048a3e5d0a25ce9be59896477eccf3ac5d9951185f",
+      "bytes": 11039454,
+      "rawBytes": 50307072,
+      "sha256": "9a315e483857a5b9547edc594c77ffd158da43e35dc0872ea006e4217976bdb3",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "compose-klibs-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/compose-klibs-2.5.255-hotreload.6.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "compose-klibs-2.5.255-hotreload.7.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/compose-klibs-2.5.255-hotreload.7.tar.zst"
       }
     },
     {
       "id": "compose-compiler-plugin",
-      "file": "compose-compiler-plugin-2.5.255-hotreload.6.tar.zst",
+      "file": "compose-compiler-plugin-2.5.255-hotreload.7.tar.zst",
       "extractDir": "compose-plugin",
-      "bytes": 502329,
+      "bytes": 502494,
       "rawBytes": 2338816,
-      "sha256": "61e57d244c5c2a35bb3a99c1393a9e674fb7cb0efe8b1f2f02fee09a8fa7dc16",
+      "sha256": "027e080b69339777c1192c7759edfacbf1cbba4f9416665a40cded6a53981682",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "compose-compiler-plugin-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/compose-compiler-plugin-2.5.255-hotreload.6.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "compose-compiler-plugin-2.5.255-hotreload.7.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/compose-compiler-plugin-2.5.255-hotreload.7.tar.zst"
       }
     },
     {
       "id": "kaldo-iossim",
-      "file": "kaldo-iossim-2.5.255-hotreload.6.tar.zst",
+      "file": "kaldo-iossim-2.5.255-hotreload.7.tar.zst",
       "extractDir": "kaldo",
-      "bytes": 10592521,
+      "bytes": 10592682,
       "rawBytes": 40783872,
-      "sha256": "716b0f9fa5958e1238bf05669717443ad1d1c6855aaa904dc738b89cb8610a22",
+      "sha256": "76805622a603e405615afb41f9f2a020a122465fc843dbd087158b3cf70f3a9c",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "kaldo-iossim-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/kaldo-iossim-2.5.255-hotreload.6.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "kaldo-iossim-2.5.255-hotreload.7.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/kaldo-iossim-2.5.255-hotreload.7.tar.zst"
       }
     },
     {
       "id": "kaldo-macos",
-      "file": "kaldo-macos-2.5.255-hotreload.6.tar.zst",
+      "file": "kaldo-macos-2.5.255-hotreload.7.tar.zst",
       "extractDir": "kaldo",
-      "bytes": 10439885,
+      "bytes": 10440055,
       "rawBytes": 39288832,
-      "sha256": "9fbe8c6b67998b385b0589e959c915a93b6076a193e1e814435fba925e1d46ea",
+      "sha256": "c0cc0980212c2961d755a1631aff0ba69fcd662528474a56959f12136d511934",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "kaldo-macos-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/kaldo-macos-2.5.255-hotreload.6.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "kaldo-macos-2.5.255-hotreload.7.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/kaldo-macos-2.5.255-hotreload.7.tar.zst"
       }
     },
     {
       "id": "orc-runtime",
-      "file": "orc-runtime-2.5.255-hotreload.6.tar.zst",
+      "file": "orc-runtime-2.5.255-hotreload.7.tar.zst",
       "extractDir": "orc-runtime",
-      "bytes": 538696,
+      "bytes": 538767,
       "rawBytes": 3178496,
-      "sha256": "3aa109af73aca986c23acff4d97c620a2cef02bfa227c2281c12f118daf6528c",
+      "sha256": "f8fc06a281868a4931af6e124b11cec67e73575a5f9638aff02a993f884b79b4",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "orc-runtime-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/orc-runtime-2.5.255-hotreload.6.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "orc-runtime-2.5.255-hotreload.7.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/orc-runtime-2.5.255-hotreload.7.tar.zst"
       }
     },
     {
       "id": "cmp-uikit-utils",
-      "file": "cmp-uikit-utils-2.5.255-hotreload.6.tar.zst",
+      "file": "cmp-uikit-utils-2.5.255-hotreload.7.tar.zst",
       "extractDir": "cmp-uikit-utils",
-      "bytes": 64034,
-      "rawBytes": 376832,
-      "sha256": "2a8dc32c99219aaf2a26753b361d442a2f618d9a5e69edab0b16aa9570f1260f",
+      "bytes": 62183,
+      "rawBytes": 360448,
+      "sha256": "a65dac77af5ed41b238c8b5cb2e1f09923729c9984a60bf2e6230abb9eff1780",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "cmp-uikit-utils-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/cmp-uikit-utils-2.5.255-hotreload.6.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "cmp-uikit-utils-2.5.255-hotreload.7.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/cmp-uikit-utils-2.5.255-hotreload.7.tar.zst"
       }
     },
     {
       "id": "llvm-tools",
-      "file": "llvm-tools-2.5.255-hotreload.6.tar.zst",
+      "file": "llvm-tools-2.5.255-hotreload.7.tar.zst",
       "extractDir": "llvm-tools",
-      "bytes": 7307073,
+      "bytes": 7307264,
       "rawBytes": 44220416,
-      "sha256": "86f8aef474ad5dfdbf5f3417dfdfc11acfbf7c1ae2ba0a8dca296a0de0a2bee4",
+      "sha256": "3382fa2013d4de3e6382620517d16907e7f9354616d383b113ab68a30afa14b0",
       "download": {
         "type": "release",
         "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "llvm-tools-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/llvm-tools-2.5.255-hotreload.6.tar.zst"
-      }
-    },
-    {
-      "id": "bundled-klibs",
-      "file": "bundled-klibs-2.5.255-hotreload.6.tar.zst",
-      "extractDir": "bundled-klibs",
-      "bytes": 45446162,
-      "rawBytes": 45768704,
-      "sha256": "3c549c1345608acdb465a2a1d7b6f043eba1311b898c725a143c6bfb6ad7899f",
-      "download": {
-        "type": "release",
-        "repo": "solufee/compose-ios-hot-reload",
-        "tag": "toolchain-2.5.255-hotreload.6",
-        "asset": "bundled-klibs-2.5.255-hotreload.6.tar.zst",
-        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/bundled-klibs-2.5.255-hotreload.6.tar.zst"
+        "tag": "toolchain-2.5.255-hotreload.7",
+        "asset": "llvm-tools-2.5.255-hotreload.7.tar.zst",
+        "url": "https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/llvm-tools-2.5.255-hotreload.7.tar.zst"
       }
     }
   ],
@@ -217,10 +202,10 @@
       ]
     },
     {
-      "coordinate": "androidx.compose.runtime:runtime-annotation-iossimulatorarm64:1.13.0-beta01",
+      "coordinate": "androidx.compose.runtime:runtime-annotation-iossimulatorarm64:1.13.0-rc01",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-annotation-iossimulatorarm64/1.13.0-beta01/runtime-annotation-iossimulatorarm64-1.13.0-beta01.klib",
-      "file": "runtime-annotation-iossimulatorarm64-1.13.0-beta01.klib",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-annotation-iossimulatorarm64/1.13.0-rc01/runtime-annotation-iossimulatorarm64-1.13.0-rc01.klib",
+      "file": "runtime-annotation-iossimulatorarm64-1.13.0-rc01.klib",
       "sha256": "ade01ac8c86605de382b314eed99a5a8c742ea87fe715723cf55b2c407dc030b",
       "bytes": 16303,
       "license": [
@@ -231,12 +216,12 @@
       ]
     },
     {
-      "coordinate": "androidx.compose.runtime:runtime-iossimulatorarm64:1.13.0-beta01",
+      "coordinate": "androidx.compose.runtime:runtime-iossimulatorarm64:1.13.0-rc01",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-iossimulatorarm64/1.13.0-beta01/runtime-iossimulatorarm64-1.13.0-beta01.klib",
-      "file": "runtime-iossimulatorarm64-1.13.0-beta01.klib",
-      "sha256": "a72ec07c1b62ddb3ce08a44133172092a605ec49a9333e15bf495baa09b59753",
-      "bytes": 1950153,
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-iossimulatorarm64/1.13.0-rc01/runtime-iossimulatorarm64-1.13.0-rc01.klib",
+      "file": "runtime-iossimulatorarm64-1.13.0-rc01.klib",
+      "sha256": "1efd390d89ec0eb8e7c04f3016d18c6a5dd641d5893f284f7a7fa0b94ea6dc4f",
+      "bytes": 1949851,
       "license": [
         {
           "name": "The Apache Software License, Version 2.0",
@@ -245,10 +230,10 @@
       ]
     },
     {
-      "coordinate": "androidx.compose.runtime:runtime-retain-iossimulatorarm64:1.13.0-beta01",
+      "coordinate": "androidx.compose.runtime:runtime-retain-iossimulatorarm64:1.13.0-rc01",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-retain-iossimulatorarm64/1.13.0-beta01/runtime-retain-iossimulatorarm64-1.13.0-beta01.klib",
-      "file": "runtime-retain-iossimulatorarm64-1.13.0-beta01.klib",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-retain-iossimulatorarm64/1.13.0-rc01/runtime-retain-iossimulatorarm64-1.13.0-rc01.klib",
+      "file": "runtime-retain-iossimulatorarm64-1.13.0-rc01.klib",
       "sha256": "756549df33f35eb6d86a41ddbef87735966fd04cdac63bd3beef12beefd5529e",
       "bytes": 65393,
       "license": [
@@ -259,10 +244,10 @@
       ]
     },
     {
-      "coordinate": "androidx.compose.runtime:runtime-saveable-iossimulatorarm64:1.13.0-beta01",
+      "coordinate": "androidx.compose.runtime:runtime-saveable-iossimulatorarm64:1.13.0-rc01",
       "repository": "google",
-      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-saveable-iossimulatorarm64/1.13.0-beta01/runtime-saveable-iossimulatorarm64-1.13.0-beta01.klib",
-      "file": "runtime-saveable-iossimulatorarm64-1.13.0-beta01.klib",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-saveable-iossimulatorarm64/1.13.0-rc01/runtime-saveable-iossimulatorarm64-1.13.0-rc01.klib",
+      "file": "runtime-saveable-iossimulatorarm64-1.13.0-rc01.klib",
       "sha256": "1dc8d6cfa8509805525278027e0c98c7b48023fc16450eddc5521cb55f834231",
       "bytes": 61638,
       "license": [
@@ -469,12 +454,12 @@
       ]
     },
     {
-      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.33.0",
+      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.28.0",
       "repository": "maven-central",
-      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.33.0/atomicfu-iossimulatorarm64-0.33.0.klib",
-      "file": "atomicfu-iossimulatorarm64-0.33.0.klib",
-      "sha256": "cbb7b7f068b56ed1d539035b022cb9ebe5d18de27ba5f00b19f8f899bf55ee96",
-      "bytes": 86847,
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.28.0/atomicfu-iossimulatorarm64-0.28.0.klib",
+      "file": "atomicfu-iossimulatorarm64-0.28.0.klib",
+      "sha256": "f9fddb87a270dd08e8c3262244244ec4e7d2415abaaa104128d6e6b29a44127a",
+      "bytes": 72419,
       "license": [
         {
           "name": "Apache-2.0",
@@ -483,12 +468,12 @@
       ]
     },
     {
-      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.33.0:cinterop-interop",
+      "coordinate": "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.28.0:cinterop-interop",
       "repository": "maven-central",
-      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.33.0/atomicfu-iossimulatorarm64-0.33.0-cinterop-interop.klib",
-      "file": "atomicfu-iossimulatorarm64-0.33.0-cinterop-interop.klib",
-      "sha256": "e7de2d80b2d7254147750056e317e844bafe0f698c7b983f9bc118d21b74be4f",
-      "bytes": 3590,
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/atomicfu-iossimulatorarm64/0.28.0/atomicfu-iossimulatorarm64-0.28.0-cinterop-interop.klib",
+      "file": "atomicfu-iossimulatorarm64-0.28.0-cinterop-interop.klib",
+      "sha256": "aea0c2599f9945105570d96cc83aaf37a1f60389a1e563ba72a40182b12a40db",
+      "bytes": 3669,
       "license": [
         {
           "name": "Apache-2.0",
@@ -537,15 +522,14 @@
           "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
         }
       ]
-    }
-  ],
-  "bundledKlibs": [
+    },
     {
-      "coordinate": "org.jetbrains.skiko:skiko-iossimulatorarm64:0.157.0-alpha01",
-      "file": "skiko-iosSimulatorArm64Cinterop-uikitMain-0.157.0-alpha01.klib",
-      "path": "bundled-klibs/org.jetbrains.skiko/skiko-iossimulatorarm64/0.157.0-alpha01/skiko-iosSimulatorArm64Cinterop-uikitMain-0.157.0-alpha01.klib",
-      "sha256": "66a91a5fe992ae4ea7b68ce9fd675a0830e45991b3208df602a2beaf84aec7e2",
-      "bytes": 3704,
+      "coordinate": "org.jetbrains.skiko:skiko-iossimulatorarm64:0.156.1",
+      "repository": "maven-central",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/skiko/skiko-iossimulatorarm64/0.156.1/skiko-iossimulatorarm64-0.156.1.klib",
+      "file": "skiko-iossimulatorarm64-0.156.1.klib",
+      "sha256": "dae33b2e06414c3c52ccf582dcb85cfd60a52467d37179cd884f4e7de32d5a42",
+      "bytes": 45611933,
       "license": [
         {
           "name": "The Apache License, Version 2.0",
@@ -554,11 +538,12 @@
       ]
     },
     {
-      "coordinate": "org.jetbrains.skiko:skiko-iossimulatorarm64:0.157.0-alpha01",
-      "file": "skiko-iosSimulatorArm64Main-0.157.0-alpha01.klib",
-      "path": "bundled-klibs/org.jetbrains.skiko/skiko-iossimulatorarm64/0.157.0-alpha01/skiko-iosSimulatorArm64Main-0.157.0-alpha01.klib",
-      "sha256": "c9bfa193a182f7ad57bb99e821aad240d1e1e8c20d351bba770be13011ac0f67",
-      "bytes": 45633638,
+      "coordinate": "org.jetbrains.skiko:skiko-iossimulatorarm64:0.156.1:cinterop-uikit",
+      "repository": "maven-central",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/skiko/skiko-iossimulatorarm64/0.156.1/skiko-iossimulatorarm64-0.156.1-cinterop-uikit.klib",
+      "file": "skiko-iossimulatorarm64-0.156.1-cinterop-uikit.klib",
+      "sha256": "66a91a5fe992ae4ea7b68ce9fd675a0830e45991b3208df602a2beaf84aec7e2",
+      "bytes": 3704,
       "license": [
         {
           "name": "The Apache License, Version 2.0",
@@ -566,5 +551,6 @@
         }
       ]
     }
-  ]
+  ],
+  "bundledKlibs": []
 }

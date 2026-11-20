@@ -147,4 +147,61 @@ include("app", "ui")
         listOf("hotReload ", "hotReloadPackage", "hotReloadRun", "hotReloadCheckToolchain", "hotReloadDaemonStart", "hotReloadDaemonStop", "hotReloadClean", "hotReloadCompileKlibUi", "hotReloadCompileKlibs")
             .forEach { assertTrue(it in hot, "missing $it in:\n$hot") }
     }
+
+    @Test
+    fun `hotReload declares the hot modules' sources and resources as inputs, hotReloadWatch reuses the configuration cache`() {
+        setup(null)
+        File(project, "app/src/main/kotlin").mkdirs()
+        File(project, "app/src/main/kotlin/main.kt").writeText("fun main() {}\n")
+        File(project, "ui/src/main/kotlin").mkdirs()
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\n")
+        File(project, "ui/src/commonMain/composeResources/values").mkdirs()
+        File(project, "ui/src/commonMain/composeResources/values/strings.xml").writeText("<resources/>\n")
+        File(project, "ui/build/generated/x").mkdirs()
+        File(project, "build.gradle.kts").appendText(
+            "\ngradle.projectsEvaluated { tasks.register(\"showInputs\") { val files = tasks.named(\"hotReload\").get().inputs.files.files" +
+                ".map { it.relativeTo(rootDir).path }.sorted(); doLast { println(\"INPUTS \" + files) } } }\n",
+        )
+        val r = GradleRunner.create().withProjectDir(project).withPluginClasspath()
+            .withArguments("showInputs", "-Pcmp.hotreload.probeHost=false").build()
+        val line = r.output.lines().first { it.startsWith("INPUTS ") }
+        assertTrue("app/src/main/kotlin," in line && "ui/src/main/kotlin" in line, line)
+        assertTrue("ui/src/commonMain/composeResources" in line, line)
+        assertTrue("build/generated" !in line, line)
+        val first = runner("hotReloadWatch", "--dry-run").build()
+        assertTrue(":hotReloadWatch SKIPPED" in first.output, first.output)
+        val second = runner("hotReloadWatch", "--dry-run").build()
+        assertTrue("Reusing configuration cache" in second.output, second.output)
+    }
+
+    @Test
+    fun `editing a source file keeps the configuration cache (the entry detection is a ValueSource)`() {
+        setup(null)
+        File(project, "app/src/main/kotlin").mkdirs()
+        val main = File(project, "app/src/main/kotlin/main.kt").apply { writeText("fun main() { println(1) }\n") }
+        File(project, "ui/src/main/kotlin").mkdirs()
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\nfun a() = 1\n")
+        runner("plainBuild").build()
+        main.writeText("fun main() { println(2) }\n")
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\nfun a() = 2\n")
+        val again = runner("plainBuild").build()
+        assertTrue("Reusing configuration cache" in again.output, again.output)
+    }
+
+    @Test
+    fun `deviceFamily - invalid values are reported, an app module with its own Info plist keeps it and is warned`() {
+        setup(null, modules = """app(":app")
+            library(":ui")
+            deviceFamily = listOf(1, 3)""")
+        val bad = runner("hotReloadCheckToolchain").buildAndFail()
+        assertTrue("deviceFamily = [1, 3]: only 1 (iPhone) and 2 (iPad) are allowed" in bad.output, bad.output)
+        File(project, "app/Info.plist").writeText("<plist/>\n")
+        setup(null, modules = """app(":app")
+            library(":ui")
+            deviceFamily = listOf(1, 2)""")
+        File(project, "app/Info.plist").writeText("<plist/>\n")
+        val own = runner("hotReloadCheckToolchain").buildAndFail()
+        assertTrue("deviceFamily is ignored: the app module has its own" in own.output, own.output)
+        assertTrue("only 1 (iPhone) and 2 (iPad)" !in own.output, own.output)
+    }
 }

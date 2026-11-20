@@ -7,7 +7,7 @@
 - 主机：Apple Silicon Mac，macOS 26。
 - Xcode 27.2（27B52），iOS 27.2 模拟器 runtime，模拟器机型 iPhone 18 Pro（arm64）。
 - 工具链：README 里钉死的那一套。Kotlin/Native 2.5.255-SNAPSHOT（带本仓库的热重载补丁）、自建的 LLVM + libKaldo、
-  Compose Multiplatform jb-main `ee243c321` 一系（runtime 1.13.0-beta01）。测试期间补丁和 libKaldo 有过几次小改，
+  Compose Multiplatform jb-main `ee243c321` 一系（runtime 1.13.0-beta01；工具链 .7 起改为官方 `v1.13.0-rc01`，验收见 REPORT §31）。测试期间补丁和 libKaldo 有过几次小改，
   各节注明了日期或对应的接口版本（`interfaceVersion`）。
 
 **口径**

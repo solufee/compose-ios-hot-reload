@@ -43,6 +43,9 @@ ap.add_argument("--multi", action="store_true", help="add the core and base KMP 
 ap.add_argument("--force-recompose", action="store_true",
                 help="toolchain .6+: static call sites and an existing lambda update without taps; control run with forceRecompose=false")
 ap.add_argument("--dialog", action="store_true", help="toolchain .6+: a Dialog opens before and after reloads, an open Dialog updates")
+ap.add_argument("--compose", default=None, help="set the template's Compose Multiplatform (and material3) version, e.g. 1.13.0-beta02")
+ap.add_argument("--back-handler", action="store_true", help="a BackHandler panel: back events reach the handler, a HOT edit changes it")
+ap.add_argument("--adaptive", action="store_true", help="at the end: MainViewController hosting a content-sized ComposeUIView (Compose 1.13)")
 ap.add_argument("--prop", action="append", default=[], help="extra key=value for local.properties (e.g. tools of a local toolchain)")
 ap.add_argument("--plist-workaround", action="store_true",
                 help="toolchain 2.5.255-hotreload.4 only: add the enforceStrictPlistSanityCheck line (TRYOUT section 7, known limitations)")
@@ -53,6 +56,8 @@ P = os.path.join(WORK, "KmpHr")
 SH = os.path.join(P, "shared")
 PKG = "src/{}/kotlin/org/example/kmphr"
 EXE, BUNDLE = "KmpHr", "org.example.kmphr.hotreload"
+BACK = os.path.join(P, "shared/src/commonMain/kotlin/org/example/kmphr/BackPanel.kt")
+MVC_FILE = os.path.join(P, "shared/src/iosMain/kotlin/org/example/kmphr/MainViewController.kt")
 BASE = os.path.join(P, "base/src/commonMain/kotlin/org/example/base/Base.kt")
 CORE = os.path.join(P, "core/src/commonMain/kotlin/org/example/core/Core.kt")
 CORE_IOS = os.path.join(P, "core/src/iosMain/kotlin/org/example/core/Core.ios.kt")
@@ -235,6 +240,48 @@ def main():
                   "expect fun platformTag(): String\n\nfun dateLine(): String = LocalDate(2026, 11, 19).plus(DatePeriod(days = 1)).toString()\n")
     write(EXTRAS_IOS, 'package org.example.kmphr\n\nactual fun platformTag(): String = "tag-ios-1"\n')
     APP = path("commonMain", "App.kt")
+    if a.compose:
+        toml_text = open(toml).read()
+        toml_text = re.sub(r'(?m)^composeMultiplatform = ".*"$', f'composeMultiplatform = "{a.compose}"', toml_text)
+        toml_text = re.sub(r'(?m)^material3 = ".*"$', f'material3 = "{a.compose}"', toml_text)
+        open(toml, "w").write(toml_text)
+        say(f"   Compose Multiplatform (and material3) {a.compose}")
+    if a.back_handler:
+        write(BACK, """package org.example.kmphr
+
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.backhandler.BackHandler
+import androidx.navigationevent.DirectNavigationEventInput
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+
+fun backTag(): String = "bk-1"
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun BackPanel() {
+    var backs by remember { mutableStateOf(0) }
+    BackHandler(enabled = true) { backs += 1 }
+    // A back event the way the iOS edge swipe sends it: an input -> the window's dispatcher -> the handler.
+    val dispatcher = LocalNavigationEventDispatcherOwner.current?.navigationEventDispatcher
+    val input = remember { DirectNavigationEventInput() }
+    DisposableEffect(dispatcher) {
+        dispatcher?.addInput(input)
+        onDispose { dispatcher?.removeInput(input) }
+    }
+    Text("Backs: $backs | ${backTag()}")
+    Button(onClick = { input.backCompleted() }) { Text("SimBack") }
+}
+""")
+        edit(APP, '                Text("Click me!")\n            }\n', '                Text("Click me!")\n            }\n            BackPanel()\n')
+        say("   fixture: a BackHandler panel (Backs counter, SimBack button)")
     edit(APP, 'Text("Compose: $greeting")', 'Text("Compose: $greeting | ${platformTag()} | ${dateLine()}")')
     if a.force_recompose or a.dialog:
         edit(APP, "var showContent by remember { mutableStateOf(false) }",
@@ -394,6 +441,24 @@ fun CoreBadge() {
         crash = re.search(r"Uncaught|IrLinkageError|EXC_|SIGSEGV", log)
         check("no crash or IrLinkageError with Dialog", not crash, crash.group(0) if crash else "")
 
+    if a.back_handler:
+        say("## 3b. BackHandler (Compose 1.13 / toolchain .7)")
+        tap("SimBack")
+        ok1 = wait(lambda ls: "Backs: 1 | bk-1" in ls, timeout=15)
+        check("a back event reaches the BackHandler", ok1, str([l for l in labels() if l.startswith("Backs")]))
+        edit(BACK, '"bk-1"', '"bk-2"')
+        ok, out, p0, p1 = reload_only()
+        ok2 = wait(lambda ls: "Backs: 1 | bk-2" in ls, timeout=15)
+        check("HOT edit next to the handler: shown without taps, the counter kept", ok and ok2 and p0 == p1, str([l for l in labels() if l.startswith("Backs")]))
+        edit(BACK, "BackHandler(enabled = true) { backs += 1 }", "BackHandler(enabled = true) { backs += 10 }")
+        ok, out, p0, p1 = reload_only()
+        tap("SimBack")
+        ok3 = wait(lambda ls: "Backs: 11 | bk-2" in ls, timeout=15)
+        check("HOT edit of the handler itself: the next back event runs the new code", ok and ok3 and p0 == p1, str([l for l in labels() if l.startswith("Backs")]))
+        log = open(LOG, errors="replace").read()
+        crash = re.search(r"Uncaught|IrLinkageError|EXC_|SIGSEGV", log)
+        check("no crash or IrLinkageError with BackHandler", not crash, crash.group(0) if crash else "")
+
     # ---------------------------------------------------------------- 4. hot and warm changes
     say("## 4. changes")
     GREET = path("commonMain", "GreetingUtil.kt")
@@ -463,6 +528,60 @@ fun CoreBadge() {
         check("back to the default (forceRecompose on): the next change shows without taps",
               rc1 == 0 and rc2 == 0 and ok and seen and p0 == p1 and "HR forceRecompose: on" in startup,
               f"labels={[l for l in labels() if l.startswith('Static')]}")
+
+    if a.adaptive:
+        say("## 4a. content-adaptive ComposeUIView (Compose 1.13) inside the app's MainViewController")
+        write(MVC_FILE, """@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
+package org.example.kmphr
+
+import androidx.compose.material3.Text
+import androidx.compose.ui.window.ComposeUIView
+import platform.UIKit.NSLayoutConstraint
+import platform.UIKit.UIColor
+import platform.UIKit.UIViewController
+
+fun adaptiveTag(): String = "ad-1"
+
+// The app's own view controller hosts a ComposeUIView (Compose 1.13) instead of being a ComposeUIViewController.
+// Content inside a ComposeUIView is not exposed to accessibility, so the text is also printed to the log.
+fun MainViewController(): UIViewController = UIViewController().apply {
+    view.backgroundColor = UIColor.whiteColor
+    val compose = ComposeUIView {
+        val text = "Adaptive: ${adaptiveTag()}"
+        println("ADAPTIVE " + text)
+        Text(text)
+    }
+    compose.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(compose)
+    NSLayoutConstraint.activateConstraints(listOf(
+        compose.centerXAnchor.constraintEqualToAnchor(view.centerXAnchor),
+        compose.centerYAnchor.constraintEqualToAnchor(view.centerYAnchor),
+        compose.widthAnchor.constraintEqualToConstant(240.0),
+        compose.heightAnchor.constraintEqualToConstant(60.0),
+    ))
+}
+""")
+        rc, out, dt = gradle("hotReloadPackage")
+        check("package with a ComposeUIView entry (generated entry + Info.plist unchanged)", rc == 0, f"{dt:.0f}s " + "; ".join(l for l in out.splitlines() if "rror" in l)[:200])
+        rc, out, dt = gradle("hotReloadRun")
+        t0 = time.time()
+        while time.time() - t0 < 20 and "ADAPTIVE Adaptive: ad-1" not in open(LOG, errors="replace").read():
+            time.sleep(0.5)
+        view = next((n.get("frame") for n in walk(tree()) if (n.get("frame") or {}).get("width") == 240 and (n.get("frame") or {}).get("height") == 60), None)
+        shot = os.path.join(WORK, "adaptive-ad-1.png")
+        subprocess.run(["xcrun", "simctl", "io", a.udid, "screenshot", shot], capture_output=True)
+        check("run: the ComposeUIView renders its content at its own size inside the app's view controller",
+              rc == 0 and view is not None and "ADAPTIVE Adaptive: ad-1" in open(LOG, errors="replace").read(), f"view frame {view}; screenshot {os.path.basename(shot)}")
+        launch_checks("ComposeUIView entry")
+        edit(MVC_FILE, '"ad-1"', '"ad-2"')
+        ok, out, p0, p1 = reload_only()
+        t0 = time.time()
+        while time.time() - t0 < 15 and "ADAPTIVE Adaptive: ad-2" not in open(LOG, errors="replace").read():
+            time.sleep(0.5)
+        subprocess.run(["xcrun", "simctl", "io", a.udid, "screenshot", os.path.join(WORK, "adaptive-ad-2.png")], capture_output=True)
+        check("HOT edit inside the ComposeUIView: recomposed with the new code without taps",
+              ok and p0 == p1 and "ADAPTIVE Adaptive: ad-2" in open(LOG, errors="replace").read())
 
     # ---------------------------------------------------------------- 5. counter-examples: klibs with edited manifests
     say("## 5. klibs with edited manifests (extraKlibs) stop the build before compiling")

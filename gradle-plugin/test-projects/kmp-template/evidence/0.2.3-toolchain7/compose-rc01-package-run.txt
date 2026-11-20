@@ -1,0 +1,12 @@
+# Compose Multiplatform 1.13.0-rc01 on the same project (toolchain .7, plugin 0.2.3)
+composeMultiplatform = "1.13.0-rc01"
+material3 = "1.13.0-rc01"
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+dependency klibs: 7 linked, 92 replaced by the toolchain's copies, 1 duplicates skipped
+dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.11.0 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.32.1 -> 0.28.0; code that uses API added after those versions does not compile here
+package timing ms=17199 compile=11390 merge=3464 embed+bundle=2345
+BUILD SUCCESSFUL in 38s
+CMP hot reload: app started (attempt 1, pid 13755, 7.2 s, port 5568, log <SCRATCH>/kmp/accept-023-tc7/KmpHr/shared/launch.log)
+BUILD SUCCESSFUL in 8s
+screen: ['KmpHr', 'Click me!', 'Click me!', 'Static: st-1', 'Open dialog', 'Open dialog']
+[kaldo] :: EH check: 129781 FDE, 3799 lsda, 0 lsda-out-of-range, 0 pc-out-of-range, 0 unresolved-personality

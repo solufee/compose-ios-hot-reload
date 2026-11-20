@@ -1,0 +1,12 @@
+# accept-ipad.py, plugin 0.2.3 (branch feat/device-family, published locally as 0.2.3-ipad), toolchain 2.5.255-hotreload.6, simulator HR-Plugin-iPad = iPad Pro 11-inch (M5), iOS 27.2
+# #9 acceptance on iPad Pro 11-inch (M5) (A0E5B482-7C8F-414F-A5E2-BDE3F8CE9C4C), plugin 0.2.3-ipad, 2026-11-20 14:45:48
+## control: default deviceFamily
+PASS package (default) | UIDeviceFamily [1]
+PASS default generated Info.plist: UIDeviceFamily [1]
+  app frame {'x': 0, 'y': 0, 'height': 667, 'width': 375}; screenshot ipad-default-family1.png
+## deviceFamily = listOf(1, 2)
+PASS package with deviceFamily [1, 2] | UIDeviceFamily [1, 2]
+PASS run on the iPad
+PASS the app window is iPad size (larger than in iPhone compatibility mode) | default (375, 667) -> [1,2] (834, 1210); screenshot ipad-family12-fullscreen.png
+PASS hot reload on the iPad: HOT, shows without taps
+summary: 6/6 PASS

@@ -2,6 +2,7 @@ package com.solufee.cmp.hotreload
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -71,5 +72,36 @@ class PipelineTest {
         val local = HotReloadPlugin.resolveBinaries(File(tmp, "built/dist").path, null, null, null, project)
         org.junit.jupiter.api.Assertions.assertEquals(File(project, "tools/liborc_rt_iossim_arm64.a").path, local.orcRuntime)
         org.junit.jupiter.api.Assertions.assertEquals(null, local.llvmHome)
+    }
+
+    @Test
+    fun `no rebuilt object is "nothing changed", a GradleException the reload task turns into success`() {
+        val e = NothingChanged(3)
+        assertTrue(e is org.gradle.api.GradleException)
+        assertEquals("CMP hot reload: nothing changed (3 hot modules checked); nothing sent", e.message)
+        assertEquals("CMP hot reload: nothing changed (1 hot module checked); nothing sent", NothingChanged(1).message)
+    }
+
+    @Test
+    fun `unchanged sources are "nothing changed" before compiling, touching a file is no change, an edit goes on`(@TempDir dir: File) {
+        val src = File(dir, "app/src").apply { mkdirs() }
+        val kt = File(src, "App.kt").apply { writeText("package app\nfun a() = 1\n") }
+        val app = HrModule(":app", ModuleKind.APP, src.path, emptyList())
+        val st = HrSettings(
+            rootDir = dir.path, workDir = File(dir, "w").path, dist = "/nonexistent", kotlinc = "/nonexistent/kotlinc-native", compilerJar = "/c.jar",
+            composePlugin = "/p.jar", klibList = "/k.txt", kaldoDylib = "/l.dylib", kaldoSha256 = null, target = "ios_simulator_arm64",
+            orcRuntime = "/o.a", objcUtilsLib = "/u.a", llvmHome = null, useDaemon = false, socketDir = "/s", javaHome = "/j",
+            modules = listOf(app), infoPlist = "/p", linkerOptions = emptyList(), keepCompactUnwind = true, port = 5567, udid = "booted",
+            launchLog = "/l", readyMarker = null, launchTimeoutSec = 1, launchRetries = 1, reinstall = true, warmRestart = true,
+        )
+        val p = Pipeline(st, org.gradle.api.logging.Logging.getLogger("t"))
+        st.hotSymbols.apply { parentFile.mkdirs(); writeText("") }
+        p.appliedSources.apply { parentFile.mkdirs(); writeText(p.sourcesDigest()) }   // what package/send record
+        org.junit.jupiter.api.assertThrows<NothingChanged> { p.preparePatch(null) }
+        kt.setLastModified(kt.lastModified() + 5000)                                       // touched, same content
+        org.junit.jupiter.api.assertThrows<NothingChanged> { p.preparePatch(null) }
+        kt.writeText("package app\nfun a() = 2\n")                                       // an edit: compiling starts (and fails here: no compiler)
+        val e = runCatching { p.preparePatch(null) }.exceptionOrNull()
+        assertTrue(e != null && e !is NothingChanged, e.toString())
     }
 }

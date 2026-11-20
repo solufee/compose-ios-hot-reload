@@ -76,6 +76,8 @@ data class HrSettings(
      * libraries); all are copied into the .app's compose-resources/ (each module's files sit in its own package dir).
      */
     val composeResources: List<String> = emptyList(),
+    /** #10: hot modules with src/<set>Main/kotlin directories that are not compiled (printed by package). */
+    val sourceSetWarnings: List<String> = emptyList(),
     /** Info.plist to write at [infoPlist] when the app module has none (KMP template). */
     val infoPlistContent: String? = null,
 ) : Serializable {

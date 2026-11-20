@@ -8,6 +8,13 @@ import java.io.File
  * The hot-reload pipeline, implemented in the plugin (P1). It calls only the tools and conventions of
  * docs/INTERFACE.md: kotlinc-native / HrCompileDaemon, merge-payloads.py, embed-merged.py, the reload protocol.
  */
+/**
+ * No module object was rebuilt since the running app last got new code (#7): there is nothing to send. Not an
+ * error: `hotReload` reports it and succeeds, so an edit-free run (or the first run of `-t`) does not fail.
+ */
+class NothingChanged(val modules: Int) :
+    GradleException("CMP hot reload: nothing changed ($modules hot module${if (modules == 1) "" else "s"} checked); nothing sent")
+
 class Pipeline(private val s: HrSettings, private val logger: Logger) {
     private val work = File(s.workDir)
 
@@ -75,7 +82,22 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
 
     private val pendingCaches get() = File(work, "pending-caches.txt")
 
+    /** Digest of the hot sources the running app was given (package or a sent patch), for "nothing changed" (#7). */
+    val appliedSources get() = File(work, "applied-sources.sha256")
+
+    /**
+     * sha256 over every Kotlin source of the hot modules (all fragments, generated code and the plugin's entry
+     * included), by relative path and content: an edit changes it, touching a file or saving it unchanged does not.
+     */
+    fun sourcesDigest(): String = Tools.sha256(
+        (s.modules.flatMap { it.sourceDirs } + s.generatedDir.path).distinct().map(::File).filter { it.isDirectory }.flatMap { d ->
+            d.walkTopDown().filter { it.isFile && it.extension == "kt" }.map { f -> "${f.path}\u0000${Tools.sha256(f.readBytes())}" }.toList()
+        }.sorted().joinToString("\n").toByteArray(),
+    )
+
     private fun markApplied(at: Long) {
+        appliedSources.parentFile.mkdirs()
+        appliedSources.writeText(sourcesDigest())
         pendingCaches.delete()
         appliedStamp.parentFile.mkdirs()
         appliedStamp.writeText("")
@@ -267,6 +289,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * kotlinc-native when it is unreachable or fails.
      */
     fun packageApp(tools: Tools, daemons: Daemons? = null) {
+        s.sourceSetWarnings.forEach { logger.warn(it) }
         val t0 = System.currentTimeMillis()
         writeGeneratedMain()
         val info = appInfo()
@@ -328,7 +351,16 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
 
     // ---------------------------------------------------------------- reload
 
-    fun reload(daemons: Daemons?) = sendPatch(preparePatch(daemons))
+    /** Without a classifier baseline: compile and send; no rebuilt object is "nothing changed", not an error. */
+    fun reload(daemons: Daemons?) {
+        val patch = try {
+            preparePatch(daemons)
+        } catch (e: NothingChanged) {
+            logger.lifecycle(e.message!!.removePrefix("CMP hot reload: "))
+            return
+        }
+        sendPatch(patch)
+    }
 
     fun sendPatch(merged: File) {
         val log = File(s.launchLog)
@@ -365,6 +397,10 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     fun preparePatch(daemons: Daemons?): File {
         writeGeneratedMain()
         if (!s.hotSymbols.isFile) throw GradleException("CMP hot reload: no packaged app in ${s.appDir}; run ./gradlew hotReloadPackage first")
+        // #7: the sources are byte for byte what the running app was given - nothing to compile or send. (A failed
+        // attempt does not update the digest, so the next run still compiles; resource-only changes are judged by
+        // the classifier, which then asks for a warm restart.)
+        if (appliedSources.isFile && appliedSources.readText() == sourcesDigest()) throw NothingChanged(s.modules.size)
         // Archives are filtered by mtime (second granularity, like the reference driver) against the moment the
         // running app last got new code (package or a sent patch): what a failed attempt already compiled is
         // still sent by the next one.
@@ -396,7 +432,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
                 objects.getOrPut(m) { mutableListOf() } += o
             }
         }
-        if (objects.isEmpty()) throw GradleException("CMP hot reload: no module object was rebuilt; nothing to send")
+        if (objects.isEmpty()) throw NothingChanged(s.modules.size)
 
         val ordered = s.modules.filter { it in objects }
         logger.lifecycle("changed objects: " + (listOf(s.app) + s.libraries).joinToString(" ") { "${it.label}=${objects[it]?.size ?: 0}" })

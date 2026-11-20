@@ -14,6 +14,7 @@ import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.tasks.IgnoreEmptyDirectories
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
@@ -138,11 +139,32 @@ abstract class PackageTask : HotReloadTask() {
  * Classify, then hot-replace or warm-restart (INTERFACE §10.2). The classifier runs before anything is
  * compiled for the patch or sent; a tool error (exit 2) fails the task without sending.
  */
+/**
+ * `hotReload`. Never up to date: it compares against what the running app has (the classifier baseline and the
+ * applied stamp) and decides itself, so "no change" is always the same answer - `nothing changed`, exit 0 (#7) -
+ * never an UP-TO-DATE skip. Its inputs are declared (#8) so that Gradle's continuous mode (`-t`) re-runs it on
+ * every saved change.
+ */
 abstract class ReloadTask : HotReloadTask() {
     init {
         outputs.upToDateWhen { false }
         noWarm.convention(false)
+        continuous.convention(false)
     }
+
+    /**
+     * Kotlin sources (every fragment of every hot module, included-build modules too) and Compose resources
+     * (src/<set>/composeResources) of the hot modules. Generated code is not listed: it follows the tasks this one
+     * depends on.
+     */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    @get:IgnoreEmptyDirectories
+    abstract val watchedSources: ConfigurableFileCollection
+
+    /** Whether Gradle runs in continuous mode (`-t`), for the messages of hotReloadWatch. */
+    @get:Internal
+    abstract val continuous: Property<Boolean>
 
     /** `./gradlew hotReload --no-warm`: like `warmRestart = false` for this run. */
     @get:Internal
@@ -180,6 +202,10 @@ abstract class ReloadTask : HotReloadTask() {
         }
         val waited = System.currentTimeMillis() - tReady
         if (r.verdict == Compat.Verdict.HOT) {
+            if (patchError is com.solufee.cmp.hotreload.NothingChanged) {
+                logger.lifecycle(patchError.message!!.removePrefix("CMP hot reload: "))
+                return
+            }
             if (patchError != null) throw patchError
             logger.lifecycle("compat: HOT (classifier ${r.ms} ms, waited ${waited} ms after the patch was ready)")
             pipeline.sendPatch(patch!!)
@@ -195,6 +221,24 @@ abstract class ReloadTask : HotReloadTask() {
         }
         logger.lifecycle("compat: warm restart required; rebuilding and relaunching")
         WarmRestart(s, logger).run(pipeline, tools, daemons, compat)
+    }
+}
+
+/**
+ * `hotReloadWatch -t`: a hot reload on every saved change (#8). It is a `hotReload` task; the watching is Gradle's
+ * continuous mode, which watches its inputs and those of the tasks it depends on (Compose resource generators
+ * included), waits for a quiet period, re-runs with the configuration cache and stops on Ctrl-C; the compile daemons
+ * stay up between runs, and a failed run (compile error) does not end the watch. This action only says what is watched.
+ */
+class WatchAnnounce : org.gradle.api.Action<org.gradle.api.Task> {
+    override fun execute(task: org.gradle.api.Task) {
+        val t = task as ReloadTask
+        val files = t.watchedSources.files.sumOf { f -> if (f.isDirectory) f.walkTopDown().count { it.isFile } else 1 }
+        if (t.continuous.get()) {
+            t.logger.lifecycle("hotReloadWatch: watching $files source and resource files of the hot modules; save a change to reload, Ctrl-C to stop")
+        } else {
+            t.logger.lifecycle("hotReloadWatch: one run. To keep watching: ./gradlew hotReloadWatch -t (Gradle continuous build)")
+        }
     }
 }
 

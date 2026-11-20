@@ -13,10 +13,10 @@
     "patchSha256": "<SHA256_OF_KOTLIN_PATCH>"
   },
   "compose": {
-    "version": "1.13.0-beta01",
+    "version": "1.13.0-rc01",
     "pluginJar": "<COMPOSE_PLUGIN_JAR>",
     "klibList": "<KLIBLIST>",
-    "baseCommit": "ee243c321ddff6b18fcf18916be1b96ef70e2363",
+    "baseCommit": "f39822e6a77eea5d194e4f9bb56cb6961321b849",
     "patch": "compose-multiplatform-core-build.patch",
     "patchSha256": "<SHA256_OF_COMPOSE_PATCH>"
   },

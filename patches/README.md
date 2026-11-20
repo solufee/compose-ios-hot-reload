@@ -7,7 +7,7 @@
 |---|---|---|---|
 | `kotlin-native-hot-reload.patch` | https://github.com/JetBrains/kotlin | `8e53ee99fbc08e264828ab082aee3e448194eca8` | 三个未合并 PR 的完整改动 + 本项目的改动 |
 | `llvm-kaldo.patch` | https://github.com/gabryon99/llvm-project-kotlin | `2f8844c2b35557baced9106c50b9b8758fa6a0de` | libKaldo 插件（selector 修复、compact-unwind→eh_frame、EH 注册、模块初始化器、符号外部化） |
-| `compose-multiplatform-core-build.patch` | https://github.com/JetBrains/compose-multiplatform-core | `ee243c321ddff6b18fcf18916be1b96ef70e2363` | 构建接线，让 Compose 用 2.5.255-SNAPSHOT 出 klib；工具链 .6 起另含 `ui` 模块 iOS 源码的一处改动：热重载成功后强制完整重组（新文件 `compose/ui/ui/src/iosMain/.../scene/HotReloadRecompose.ios.kt`，`ComposeSceneMediator.ios.kt` 包一层，TECHNICAL-NOTES §1.6）。不改 Compose runtime（runtime 用 Google 发布的 klib） |
+| `compose-multiplatform-core-build.patch` | https://github.com/JetBrains/compose-multiplatform-core | 工具链 .7：官方标签 `v1.13.0-rc01` = `f39822e6a77eea5d194e4f9bb56cb6961321b849`（.6 及以前：`ee243c321ddff6b18fcf18916be1b96ef70e2363`，补丁内容相同，两处都能打上） | 构建接线，让 Compose 用 2.5.255-SNAPSHOT 出 klib；工具链 .6 起另含 `ui` 模块 iOS 源码的一处改动：热重载成功后强制完整重组（新文件 `compose/ui/ui/src/iosMain/.../scene/HotReloadRecompose.ios.kt`，`ComposeSceneMediator.ios.kt` 包一层，TECHNICAL-NOTES §1.6）。不改 Compose runtime（runtime 用 Google 发布的 klib） |
 
 ## Kotlin 补丁包含的 PR
 
@@ -57,7 +57,7 @@ git apply /path/to/patches/llvm-kaldo.patch
 # Compose Multiplatform core
 git clone https://github.com/JetBrains/compose-multiplatform-core.git compose
 cd compose
-git checkout ee243c321ddff6b18fcf18916be1b96ef70e2363
+git checkout v1.13.0-rc01      # f39822e6a77e，工具链 .7；.6 用 ee243c321ddff6b18fcf18916be1b96ef70e2363
 git apply /path/to/patches/compose-multiplatform-core-build.patch
 ```
 
@@ -83,6 +83,8 @@ $ git -C /tmp/verify-compose apply --check patches/compose-multiplatform-core-bu
 ```
 
 工具链 .6（2026-11-20，`compose-multiplatform-core-build.patch` sha256 `335d7a32…`，新增 `ui` 的强制重组）：在 JetBrains/compose-multiplatform-core 的基线 `ee243c321ddf` 上用临时 index 检查，`git apply --cached --check` 通过（`patches/apply-check.log`）。
+
+工具链 .7（2026-11-20，补丁不变，仍是 `335d7a32…`）：在官方标签 `v1.13.0-rc01`（`f39822e6a77e`，提交号经 GitHub API 核对）上用临时 index 检查，`git apply --cached --check` 退出码 0；在 `v1.13.0-beta02`（`7649a819edb3`）上 `ComposeSceneMediator.ios.kt` 那一段打不上（退出码 1，beta02 还没有 #3597 的延迟 `setContent`），所以基线选 rc01（`patches/apply-check.log`）。
 
 B11（2026-11-19，`llvm-kaldo.patch` sha256 `3bb8a987…`）：在 gabryon99/llvm-project-kotlin 的基线提交上，用临时 index
 （`GIT_INDEX_FILE=<tmp> git read-tree 2f8844c2b355…`，不动工作区）检查：

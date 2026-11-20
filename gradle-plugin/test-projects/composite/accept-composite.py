@@ -60,6 +60,7 @@ F = {
     "core_ios": "lib-build/core/src/iosMain/kotlin/org/example/core/Core.ios.kt",
     "core_res": "lib-build/core/src/commonMain/composeResources/values/strings.xml",
     "util": "lib-build/util/src/commonMain/kotlin/org/example/util/Util.kt",
+    "shared": "lib-build/util/src/iosSharedMain/kotlin/org/example/util/Shared.kt",
     "demo": "lib-build/demo/src/commonMain/kotlin/org/example/demo/Demo.kt",
     "app_build": "app/build.gradle.kts",
 }
@@ -403,12 +404,38 @@ def phase_e():
     set_included(['includedModule("lib-build", ":util")', 'includedModule("lib-build", ":core")'])
 
 
+def phase_f():
+    say("## F. a source set outside the default hierarchy (lib-build:util iosSharedMain)")
+    rc, out, dt = gradle(":app:hotReloadPackage")
+    warn = grep(out, r"lib-build:util has Kotlin source sets that hot reload does not compile")
+    snippet = 'create("iosSharedMain") { srcDir("src/iosSharedMain/kotlin"); dependsOn("commonMain") }' in out
+    check("default declaration: a warning names util/src/iosSharedMain/kotlin and shows the sourceSets to declare",
+          rc == 0 and warn and "lib-build/util/src/iosSharedMain/kotlin" in warn[0] and snippet and 'includedModule("lib-build", ":util") {' in out,
+          (warn[:1] or ["-"])[0].strip()[:200])
+    set_included(['includedModule("lib-build", ":util") { sourceSets { create("commonMain") { srcDir("src/commonMain/kotlin") }; '
+                  'create("iosSharedMain") { srcDir("src/iosSharedMain/kotlin"); dependsOn("commonMain") } } }',
+                  'includedModule("lib-build", ":core")'])
+    rc, out, dt = gradle(":app:hotReloadPackage")
+    check("declared as suggested: no warning, package OK", rc == 0 and "hot reload does not compile" not in out, f"{dt:.0f}s")
+    rc, out, dt = gradle(":app:hotReloadRun")
+    check("run", rc == 0 and "app started" in out)
+    s = open(f("core_ios")).read()
+    tag = s[s.index("actual fun coreTag"):].split('"')[1]
+    edit("core_ios", f'"{tag}"', f'"{tag} " + org.example.util.sharedLine()')
+    reload(APP, "core's actual now calls util's iosSharedMain function", "HOT", f"{tag} shared-1")
+    edit("shared", '"shared-1"', '"shared-2"')
+    reload(APP, "an edit in util's iosSharedMain (declared source set)", "HOT", f"{tag} shared-2")
+    stop(APP)
+    set_included(['includedModule("lib-build", ":util")', 'includedModule("lib-build", ":core")'])
+
+
 try:
     phase_a()
     phase_b()
     phase_c()
     phase_d()
     phase_e()
+    phase_f()
 except Exception as e:
     check(f"script error: {type(e).__name__}: {e}", False)
 finally:

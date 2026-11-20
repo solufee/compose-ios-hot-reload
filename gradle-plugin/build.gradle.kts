@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.solufee.cmp"
-version = "0.2.2"
+version = "0.2.3"
 
 gradlePlugin {
     plugins {

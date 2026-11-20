@@ -18,9 +18,10 @@
 | Gradle 双模块示例（app + ui），一条命令出包 | ✅ |
 | 已有的 Kotlin Multiplatform 工程（向导模板，插件加在 `shared` 上） | ✅ 0.2.0：commonMain/iosMain 函数体热替换，`expect`/`actual` 签名改动和增删一对自动温重启 |
 | KMP 工程的第三方 iOS 依赖 | ✅ 从 Gradle 解析（含传递依赖）；工具链自带的库（stdlib、kotlinx、Compose、AndroidX）只链工具链那一份 |
-| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（Compose Multiplatform ≤ 1.13.0-beta01）；超出时打包前报错，写出库名和拉进它的依赖 |
+| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.3 / 工具链 .7：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
 | KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
 | 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
+| Compose 1.13 的 `ComposeUIView`（嵌在 app 自己的 `UIViewController` 里） | ✅ 0.2.3 实测（工具链 .7，CMP 1.13.0-beta02）：插件生成的入口只调用 `MainViewController()`，和它不冲突；给定宽高时正常显示，热替换后不用点就刷新。⚠️ 两点：`ComposeUIView` 里的内容不进无障碍树；只设 `preferredSizeReportingStrategy = IntrinsicContentSize`、不给宽高时，这个视图在热重载 app 里没有得到尺寸（空白），是否 Compose 本身的行为没有核实，暂时请给定宽高 |
 | 复合构建（`includeBuild`） | ✅ 0.2.2：included build 的模块声明 `includedModule(...)` 后热重载；不声明时用那个构建编出的 klib，改动时温重启；插件也可以应用在 included build 里、从主构建运行（TRYOUT 第 8 节） |
 | 多个 KMP 模块互相依赖 | ✅ 0.2.1：间接依赖也一起热重载；库模块的 `expect`/`actual` 和 Compose 资源都支持（三模块工程验收） |
 | Compose 资源（strings、drawables） | ➖ 不能热替换：打包时拷进 app；只改资源时 `hotReload` 自动温重启 |

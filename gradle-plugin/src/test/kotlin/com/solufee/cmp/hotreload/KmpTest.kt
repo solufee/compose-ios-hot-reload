@@ -182,4 +182,61 @@ class KmpTest {
         modules = listOf(app), infoPlist = "/p", linkerOptions = emptyList(), keepCompactUnwind = true, port = 5567, udid = "booted",
         launchLog = "/l", readyMarker = null, launchTimeoutSec = 1, launchRetries = 1, reinstall = true, warmRestart = true,
     )
+
+    @Test
+    fun `the generated Info plist keeps its 0_2_2 bytes by default, UIDeviceFamily is configurable`() {
+        // The text 0.2.2 generated (UIDeviceFamily [1]); the default must stay byte-identical (#9).
+        val v022 = """
+            |<?xml version="1.0" encoding="UTF-8"?>
+            |<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            |<plist version="1.0">
+            |<dict>
+            |    <key>CFBundleExecutable</key><string>KmpHr</string>
+            |    <key>CFBundleIdentifier</key><string>org.example.kmphr.hotreload</string>
+            |    <key>CFBundleName</key><string>KmpHr</string>
+            |    <key>CFBundlePackageType</key><string>APPL</string>
+            |    <key>CFBundleShortVersionString</key><string>1.0</string>
+            |    <key>CFBundleVersion</key><string>1</string>
+            |    <key>CADisableMinimumFrameDurationOnPhone</key><true/>
+            |    <key>LSRequiresIPhoneOS</key><true/>
+            |    <key>MinimumOSVersion</key><string>17.0</string>
+            |    <key>UIDeviceFamily</key><array><integer>1</integer></array>
+            |    <key>UILaunchScreen</key><dict/>
+            |</dict>
+            |</plist>
+            |""".trimMargin()
+        assertEquals(v022, Kmp.infoPlist("KmpHr", "org.example.kmphr.hotreload"))
+        assertEquals(v022, Kmp.infoPlist("KmpHr", "org.example.kmphr.hotreload", listOf(1)))
+        assertEquals(v022.replace("<integer>1</integer></array>", "<integer>1</integer><integer>2</integer></array>"),
+            Kmp.infoPlist("KmpHr", "org.example.kmphr.hotreload", listOf(1, 2)))
+        assertTrue("<key>UIDeviceFamily</key><array><integer>2</integer></array>" in Kmp.infoPlist("A", "a.b", listOf(2)))
+        assertEquals(setOf(1, 2), Kmp.DEVICE_FAMILIES)
+    }
+
+    @Test
+    fun `toolchain 7 (Compose rc01) - beta02 and rc01 projects pass, 1_13_0 and 1_14_0-alpha01 fail before packaging`() {
+        // Case table for #12: each Compose module against the toolchain's copy of that module (compose-klibs carry the
+        // fork's version, 1.13.0-rc01; androidx.compose.runtime comes from external-klibs/<version>/).
+        val stdlib = klib("stdlib", "stdlib", abi = "2.5.0", dir = true)
+        File(tmp, "tc/androidx.compose.runtime/runtime-iossimulatorarm64/1.13.0-rc01").mkdirs()
+        val tcRuntime = klib("tc/androidx.compose.runtime/runtime-iossimulatorarm64/1.13.0-rc01/rt", "androidx.compose.runtime:runtime")
+        val tcUi = klib("tc-ui", "org.jetbrains.compose.ui:ui", dir = true)
+        val tc = listOf(tcRuntime.path, tcUi.path)
+        fun deps(jb: String, androidx: String) = listOf(
+            Kmp.Dependency("org.jetbrains.compose.ui:ui-iossimulatorarm64:$jb", klib("ui-$jb", "org.jetbrains.compose.ui:ui")),
+            Kmp.Dependency("androidx.compose.runtime:runtime-iossimulatorarm64:$androidx", klib("rt-$androidx", "androidx.compose.runtime:runtime")),
+        )
+        val cases = listOf(
+            Triple("1.13.0-beta02", "1.13.0-beta02", true),
+            Triple("1.13.0-rc01", "1.13.0-rc01", true),
+            Triple("1.13.0", "1.13.0-rc01", false),
+            Triple("1.14.0-alpha01", "1.13.0-rc01", false),
+            Triple("1.13.0-rc01", "1.13.0", false),          // the androidx side alone newer
+        )
+        for ((jb, ax, ok) in cases) {
+            val r = runCatching { Kmp.selectKlibs(tc, stdlib, deps(jb, ax), "1.13.0-rc01", null) }
+            assertEquals(ok, r.isSuccess, "ui $jb / runtime $ax: ${r.exceptionOrNull()?.message}")
+            if (!ok) assertTrue("is newer than the toolchain's copy" in r.exceptionOrNull()!!.message!!, r.exceptionOrNull()!!.message)
+        }
+    }
 }

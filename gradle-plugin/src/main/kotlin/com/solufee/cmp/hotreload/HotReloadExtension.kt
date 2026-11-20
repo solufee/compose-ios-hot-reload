@@ -158,6 +158,13 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
      */
     abstract val forceRecompose: Property<Boolean>
 
+    /**
+     * UIDeviceFamily of the Info.plist the plugin generates for an app module without one (#9): listOf(1) iPhone
+     * (default), listOf(1, 2) iPhone and iPad, listOf(2) iPad. Also `-Pcmp.hotreload.deviceFamily=1,2`. An app module
+     * that has its own Info.plist uses it as is (this setting is then ignored, with a warning).
+     */
+    abstract val deviceFamily: ListProperty<Int>
+
     /** Klibs to link in addition to the toolchain's and the modules' Gradle dependencies. */
     abstract val extraKlibs: ConfigurableFileCollection
 

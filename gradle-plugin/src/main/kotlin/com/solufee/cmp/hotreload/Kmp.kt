@@ -244,7 +244,15 @@ object Kmp {
 
     // ---------------------------------------------------------------- generated Info.plist
 
-    fun infoPlist(executable: String, bundleId: String): String = """
+    /** Allowed UIDeviceFamily values: 1 iPhone, 2 iPad. */
+    val DEVICE_FAMILIES = setOf(1, 2)
+
+    /**
+     * Info.plist for an app module without one (KMP template). [deviceFamily] is UIDeviceFamily: [1] iPhone (default,
+     * the output is unchanged from 0.2.0), [1, 2] iPhone and iPad, [2] iPad; on an iPad simulator only a family
+     * containing 2 runs the app at iPad size instead of in iPhone compatibility mode.
+     */
+    fun infoPlist(executable: String, bundleId: String, deviceFamily: List<Int> = listOf(1)): String = """
         |<?xml version="1.0" encoding="UTF-8"?>
         |<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         |<plist version="1.0">
@@ -258,7 +266,7 @@ object Kmp {
         |    <key>CADisableMinimumFrameDurationOnPhone</key><true/>
         |    <key>LSRequiresIPhoneOS</key><true/>
         |    <key>MinimumOSVersion</key><string>17.0</string>
-        |    <key>UIDeviceFamily</key><array><integer>1</integer></array>
+        |    <key>UIDeviceFamily</key><array>${deviceFamily.joinToString("") { "<integer>$it</integer>" }}</array>
         |    <key>UILaunchScreen</key><dict/>
         |</dict>
         |</plist>

@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.6**。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.7**。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -72,6 +72,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 ./gradlew hotReloadPackage   # 出包：build/hotreload/<App>.app
 ./gradlew hotReloadRun       # 安装并启动，app 起来后返回（app 继续运行，控制台写到 launch.log）
 ./gradlew hotReload          # 改完代码后执行：编译改动、ld -r 合并、符号检查、发送
+./gradlew hotReloadWatch -t  # 一直运行：每次保存做一次 hotReload（Gradle 连续构建），Ctrl-C 结束
 ```
 
 | 任务 | 作用 |
@@ -81,6 +82,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `hotReloadPackage` | split 编译 app（走 klib 守护进程；它不可用或编译失败时改用 `kotlinc-native` 重跑，并打印一行提示）→ `merge-payloads.py`（热符号集按各模块源码里的 package 自动生成；不变的库 archive 的处理结果缓存在 `build/hotreload/merge-cache/`）→ `embed-merged.py` → 组装 `.app`。日志最后一行 `package timing ms=… compile=… merge=… embed+bundle=…` |
 | `hotReload` | 先分类（见下文“分类器与温重启”）；可热替换时：守护进程 cache-only 编译 → 按 mtime 取本次重建的对象 → 按 `_kfun:<package>` 归到模块 → `ld -r` → 逐模块符号检查 → 发送。`--no-warm`：需要温重启时只报原因并失败 |
 | `hotReloadRun` | 安装并启动；首帧标记（`readyMarker`）出现或 Kotlin main 运行 3 s 即算启动成功，失败最多重试 3 次。`--args="..."` 传给 app（如 `--hr-state=2,3`） |
+| `hotReloadWatch` | 和 `hotReload` 相同，配合 `-t` 使用：Gradle 监视热模块的源码和 composeResources（下文“输入与 up-to-date”），每次保存重跑；某次失败不结束监视；不加 `-t` 时只跑一次并提示 |
 | `hotReloadDaemonStart` / `hotReloadDaemonStop` | 启动或复用、停止本项目的两个编译守护进程 |
 | `hotReloadClean` | 停掉本项目的守护进程，删除 `build/hotreload/`（app、编译缓存、merge 缓存、分类器快照）；下次 `hotReloadPackage` 从头建 |
 | `hotReloadVerifyRelease` | release 零改动校验：见下文 |
@@ -97,6 +99,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `llvmHome` | 清单的 `tools.llvmTools`；没有时看 dist 旁边的 `llvm-tools/`；再没有就不设（工具自己的默认值） | 传给打包工具的 `KONAN_LLVM_HOME` |
 | `keepCompactUnwind` | `true` | 打包时导出 `KALDO_KEEP_COMPACT_UNWIND=1`（INTERFACE §3.3 第 1 条） |
 | `forceRecompose` | `true`（`cmp.hotreload.forceRecompose`） | 工具链 .6 起：每次热替换成功后整个界面完整重组一次，参数没变的调用点也显示新代码，`remember` 状态保留。`false` 时传 `KONAN_HR_FORCE_RECOMPOSE=0`（.5 的行为）；下次启动 app 时生效 |
+| `deviceFamily` | `listOf(1)`（`cmp.hotreload.deviceFamily=1,2`） | 插件生成的 Info.plist 的 `UIDeviceFamily`（0.2.3）：1 iPhone、2 iPad；`listOf(1, 2)` 时在 iPad 模拟器上以 iPad 尺寸全屏运行。默认值生成的文件和 0.2.2 逐字节相同。app 模块自带 Info.plist 时原样使用它，这一项不起作用并给出警告 |
 | `warmRestart` | `true`（`cmp.hotreload.warmRestart`） | 分类器判定需要温重启时：`true` 自动重新打包并带着保存的状态重启；`false` 只报原因、任务失败、不发送 |
 | `simulator { udid; port; launchLog; readyMarker; launchTimeoutSeconds; launchRetries; reinstall }` | `booted`、清单端口、`launch.log`、无、120、3、`true` | 端口同时传给发送端和 app |
 | `app(":x") { sourceDir; infoPlist; linkerOptions; dependsOn }` | `src/main/kotlin`、`Info.plist`、ImageIO 等、全部库 | |
@@ -104,12 +107,21 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `app(":x") { sourceSets { create("commonMain") { srcDir(...); dependsOn(...) } } }` | 从 Kotlin Multiplatform 插件读 | 模块的源码片段；写了就不读 KMP 插件。`library` 同样可写 |
 | `app(":x") { iosEntry }` | 自动找 `fun MainViewController()`（模块里有 `fun main(` 时不生成入口） | 返回 `UIViewController` 的函数全名；插件生成调用它的 UIKit 入口 |
 | `app(":x") { bundleId }` | `infoPlist` 里的；没有 Info.plist 时为入口所在包名 + `.hotreload` | 只用于插件生成的 Info.plist（app 名为根项目名的字母数字部分） |
-| `includedModule("<build>", ":<path>") { projectDir; sourceSets; generatorTasks }` | 无 | 复合构建（0.2.2）：included build 里的 KMP 模块从源码编译、参与热重载；按依赖顺序声明。默认按 KMP 默认层级和 Compose 生成目录找源码，资源生成任务通过跨构建任务引用先跑。不声明的 included 模块用那个构建编出的 klib 链接，改动时温重启（`WARM external-klibs`）。见 TRYOUT 第 8 节 |
+| `includedModule("<build>", ":<path>") { projectDir; sourceSets; generatorTasks }` | 无 | 复合构建（0.2.2）：included build 里的 KMP 模块从源码编译、参与热重载；按依赖顺序声明。默认按 KMP 默认层级和 Compose 生成目录找源码，资源生成任务通过跨构建任务引用先跑。不声明的 included 模块用那个构建编出的 klib 链接，改动时温重启（`WARM external-klibs`）。有不在默认层级里的 `src/<set>Main/kotlin` 时打印警告并给出要声明的 `sourceSets`（0.2.3）。见 TRYOUT 第 8 节 |
 | `extraKlibs` | 空 | 另外要链进来的 klib 文件或目录；所在目录也作为自动缓存的根（`-Xauto-cache-from`） |
 | `resolveDependencyKlibs` | `true` | 从 `iosSimulatorArm64CompileKlibraries` 解析依赖 klib（KMP 模块）。工具链自带的库按 klib 的 `unique_name` 和 Maven 组件整体替换成工具链的那份；klib ABI 不在 1.6.0–2.5.0、metadata 高于 2.6.0、某个 Compose 模块比工具链里同名的那份新时打包前报错（写出拉进它的依赖）；cinterop klib 打警告（0.2.0 不支持） |
 
 `cmp.hotreload.*` 属性（`-P`、gradle.properties、local.properties）可覆盖大多数默认值，
 包括 `readyMarker`、`launchTimeoutSeconds`、`launchRetries`、`reinstall`、`keepCompactUnwind`、`probeHost`。
+
+## 输入与 up-to-date（0.2.3）
+
+- `hotReload` / `hotReloadWatch` **永远不是 UP-TO-DATE**：它们要和正在运行的 app 比（分类器基线、`applied.stamp`），由自己判断；
+  没有任何对象被重新编译时打印 `nothing changed (N hot modules checked); nothing sent`，退出码 0，什么也不发送。
+  同一种情况只有这一种结果，不会出现 Gradle 的 UP-TO-DATE 跳过。
+- 它们的输入（`@InputFiles`，相对路径）是每个热模块所有源码片段的目录（含 `includedModule` 声明的模块），以及各模块的
+  `src/<set>/composeResources`；生成的代码不列（它跟着生成任务走）。这样 Gradle 的连续构建（`-t`）在这些文件变化时重跑。
+- 编译错误、链路或发送错误照常让任务失败。
 
 ## 分类器与温重启（INTERFACE §10）
 

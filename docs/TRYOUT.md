@@ -1,4 +1,4 @@
-# 试用指南（0.2.2，实验性）
+# 试用指南（0.2.3，实验性）
 
 这份指南带你在自己的 Mac 上，把 Compose Multiplatform 的 iOS 模拟器热重载接进工程：改 Kotlin 代码、执行一条命令，
 正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。有两种接法：
@@ -32,16 +32,16 @@
 
 ## 2. 下载工具链
 
-工具链版本：**2.5.255-hotreload.6**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
+工具链版本：**2.5.255-hotreload.7**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
 
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.6/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.7/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.6/`（下文记作 `<TOOLCHAIN>`）：
+完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.7/`（下文记作 `<TOOLCHAIN>`）：
 
 | 目录 | 内容 |
 |---|---|
@@ -49,17 +49,18 @@ python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
 | `compose-klibs/`、`compose-plugin/` | Compose fork 的 klib 和编译器插件 |
 | `kaldo/` | libKaldo（app 里负责加载新代码的库） |
 | `orc-runtime/`、`cmp-uikit-utils/`、`llvm-tools/` | 打包和启动要用的运行库与工具 |
-| `external-klibs/`、`bundled-klibs/` | 公开依赖 klib（见下） |
+| `external-klibs/`、`bundled-klibs/`（只有 .6 有） | 公开依赖 klib（见下） |
 | `klibs.txt` | 编译用的全部 klib 清单 |
 
 sha256 对不上时脚本会删掉文件并以退出码 3 结束，不会留下没校验过的文件。网络中断时脚本会自动重试几次；如果最后仍然失败（退出码 5），检查网络后重新运行同一条命令即可，已经下载并校验过的部分会跳过。
 
 脚本最后会提示 `source …/env.sh`：那是给仓库里的参考脚本（`example-gradle/hotreload.sh`）用的，用 Gradle 插件不需要。
 
-App 还要用到 21 个公开的 klib（kotlinx-coroutines、atomicfu、kotlinx-datetime、kotlinx-serialization、
+App 还要用到二十多个公开的 klib（kotlinx-coroutines、atomicfu、kotlinx-datetime、kotlinx-serialization、
 androidx collection/annotation/lifecycle/savedstate/navigationevent、Compose runtime 等）。下载脚本会按清单里固定的地址，
-直接从 Maven Central 和 Google Maven 下载它们，并逐个校验 sha256，放在 `<TOOLCHAIN>/external-klibs/`。这些仓库里没有的
-skiko 预发布版本的 2 个 klib 随工具链一起分发（`<TOOLCHAIN>/bundled-klibs/`）。整个过程不读你本机的 Gradle 缓存。
+直接从 Maven Central 和 Google Maven 下载它们，并逐个校验 sha256，放在 `<TOOLCHAIN>/external-klibs/`。工具链 .6 用的
+skiko 预发布版本这两个仓库里没有，它的 2 个 klib 随工具链一起分发（`<TOOLCHAIN>/bundled-klibs/`）；工具链 .7 用的 skiko 0.156.1 在 Maven Central 上，
+不再随工具链分发，也就没有 `bundled-klibs/`。整个过程不读你本机的 Gradle 缓存。
 所以下载时需要能访问 `github.com`、`repo1.maven.org` 和 `dl.google.com`。这些 klib 的来源和许可证列在 [NOTICE](../NOTICE) 里。
 
 ## 3. 接入（三步）
@@ -101,7 +102,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.2"
+    id("com.solufee.cmp.hotreload") version "0.2.3"
 }
 
 cmpHotReload {
@@ -122,7 +123,11 @@ cmp.hotreload.toolchainDir=<TOOLCHAIN>/kotlin-native
 # cmp.hotreload.port=5567
 ```
 
-不写 `simulatorUdid` 时，插件用**唯一一台**已启动的模拟器；一台都没启动或同时启动了好几台，`hotReloadRun` 会列出它们并要你写上 UDID。
+不写 `simulatorUdid` 时（默认值 `booted`），插件用**唯一一台**已启动的模拟器；一台都没启动或同时启动了好几台，`hotReloadRun`
+（以及温重启）会停下来，列出已启动的设备并要你写上 UDID（实测：三台都启动时报 `3 simulators are booted, so "booted" is ambiguous`，
+并逐行列出名字和 UDID）。这个属性也可以写成 `-Pcmp.hotreload.simulatorUdid=<UDID>` 或放在 `~/.gradle/gradle.properties`，
+优先级是 `-P` / gradle.properties 高于 local.properties。用 iPad 模拟器时一般要显式写它的 UDID（通常还开着一台 iPhone）。
+`hotReload` 本身只通过端口（`cmp.hotreload.port`）找正在运行的 app，不看 UDID；两个 app 同时运行时给它们不同的端口。
 新建并启动一台专用模拟器：
 
 ```bash
@@ -311,6 +316,14 @@ fun main(args: Array<String>) {
 （启动后的**第一次**热重载要 9–10 秒，因为编译守护进程刚起来还要预热，之后才是 5–6 秒）；
 计数器的值、所在页面都不变，进程也不重启。改 `main.kt` 里 `Text("Counter: $count")` 的文字也一样，大约 4–5 秒。
 
+没有改动时执行 `hotReload`，输出 `nothing changed (… hot modules checked); nothing sent` 并正常结束（退出码 0），不发送任何东西；
+编译错误、发送失败照常让任务失败。
+
+**边改边看（0.2.3 起）**：`./gradlew hotReloadWatch -t` 一直运行，每次保存都自动做一次热重载（资源改动自动温重启），
+Ctrl-C 结束。它用的是 Gradle 的连续构建（`-t`，也可以写 `./gradlew hotReload -t`）：Gradle 监视热模块的源码和
+`composeResources/`，等改动停下来（默认 250 ms 静默期）再跑一次，配置缓存和编译守护进程一直复用；某一次编译出错只让那一次失败，
+继续监视。不加 `-t` 时 `hotReloadWatch` 只跑一次并提示加 `-t`。
+
 改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（约 17 秒，其中重新打包约 11 秒）：
 类的字段布局、函数签名、`inline` 函数、`suspend` 函数，以及新增顶层属性。输出里会逐行列出 `WARM …` 原因，最后是
 `WARM OK ms=…`。
@@ -330,7 +343,7 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 ## 5. 已知限制
 
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
-- 工具链版本固定，插件只认 2.5.255-hotreload.6。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
+- 工具链版本固定，插件只认 2.5.255-hotreload.7。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
 - 温重启约 17 s（实测 17–24 s），其中约 11 s 是重新打包；清理过 `build/hotreload`（`hotReloadClean`）后的第一次打包要重建缓存，约 2 分钟。温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
 - 兼容性检查（判断能不能热替换）和编译同时进行。只改 app 时检查本身约 0.6 s，但被编译时间盖住，端到端只多十几毫秒。
@@ -392,7 +405,7 @@ Xcode 工程（`iosApp/`）和你平时的 debug 构建都和原来一样。热�
 | 同工程的其他 KMP 模块 | 这个模块依赖的同工程模块（含间接依赖，例如 `shared` → `core` → `base`）都会一起热重载，作为库模块，源码必须写 `package`；它们自己的 `expect`/`actual` 和 Compose 资源也都支持（0.2.1 起，按三模块工程验收） |
 | Compose 资源 | 字符串、图片等放在各模块 `composeResources/` 里的资源，打包时拷进 app。只改资源时 `./gradlew hotReload` 会自动温重启（输出 `WARM compose-resources: …`）来换上新资源；资源不能热替换 |
 | 第三方依赖 | 自动从 `iosSimulatorArm64CompileKlibraries` 解析（含传递依赖）。Kotlin 标准库、kotlinx、Compose、AndroidX 这些工具链自带的库，一律换成工具链里的那一份（不会链进两份） |
-| Compose 版本 | 每个 Compose 模块（`org.jetbrains.compose.*`、`androidx.compose.*`）和工具链里**同名的那一份**比版本（两套版本号各比各的）：比工具链的新就在打包前报错，写出是哪个依赖拉进来的。工具链的 Compose fork 是 **1.13.0-beta01**，所以工程里的 Compose Multiplatform 用 1.13.0-beta01 或更早的版本。工具链里没有的 Compose 模块不做版本判断 |
+| Compose 版本 | 每个 Compose 模块（`org.jetbrains.compose.*`、`androidx.compose.*`）和工具链里**同名的那一份**比版本（两套版本号各比各的）：比工具链的新就在打包前报错，写出是哪个依赖拉进来的。工具链 2.5.255-hotreload.7 基于官方 Compose Multiplatform **1.13.0-rc01**，所以 1.13.0-beta02 和 rc01 的工程都能用；1.13.0 正式版及以后（例如 1.14.0-alpha01）会在打包前报错。工具链里没有的 Compose 模块不做版本判断 |
 | 依赖库的 klib 版本 | klib ABI 在 **1.6.0（Kotlin 1.6.10）到 2.5.0** 之间、metadata 不高于 **2.6.0**，即用 Kotlin 2.5 及更早版本编出的库。超出范围的库在打包前报错，报错里有库名、版本和该怎么换 |
 | 带原生代码的库（cinterop） | **0.2.0 不支持**。依赖里有 cinterop klib（绑定系统框架、静态库或 C 库的那类，例如 SQLite 驱动）时，打包会打印 `warning: cinterop klibs … are not supported in 0.2.0`，并列出是哪些库、谁拉进来的、要链接什么；它们可能链接失败或运行出错。kotlinx-datetime 这类纯 Kotlin 库没有问题 |
 | 你工程里的 Kotlin 版本 | 不受限制（向导模板的 2.4.21 实测可用）：热重载不用它编译，只用它读设置 |
@@ -421,7 +434,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.2"
+    id("com.solufee.cmp.hotreload") version "0.2.3"
 }
 ```
 
@@ -494,10 +507,15 @@ cmpHotReload {
             create("iosMain") { srcDir("src/iosMain/kotlin"); dependsOn("commonMain") }
         }
     }
+    deviceFamily = listOf(1, 2)           // 生成的 Info.plist 的 UIDeviceFamily：1 iPhone（默认）、2 iPad；在 iPad 模拟器上要含 2 才是 iPad 尺寸全屏
     extraKlibs.from("libs/my-lib.klib")   // 另外要链进来的 klib（不在 Gradle 依赖里的）
     resolveDependencyKlibs = false        // 不从 Gradle 解析依赖，只用工具链和 extraKlibs
 }
 ```
+
+在 iPad 模拟器上试用：写上 `deviceFamily = listOf(1, 2)`（或 `-Pcmp.hotreload.deviceFamily=1,2`），并用 `cmp.hotreload.simulatorUdid` 指定那台 iPad；
+不写时 app 在 iPad 上以 iPhone 兼容模式的小窗口运行。插件只在 app 模块**没有**自己的 Info.plist 时才生成它；模块里有 `Info.plist` 时原样使用，
+`deviceFamily` 不起作用（Gradle 配置时打印警告），请直接在那个文件里写 `UIDeviceFamily`。
 
 ## 8. 复合构建（includeBuild，0.2.2 起）
 
@@ -539,6 +557,15 @@ includedModule("lib-build", ":core") {
     generatorTasks = listOf(":core:generateComposeResClass")   // 编译前先跑的那个构建里的任务（默认：Compose 资源生成）
 }
 ```
+
+**哪些能自动推出、哪些不能（0.2.3）**：
+
+- 主构建里的 KMP 模块：源码集直接从 Kotlin 插件读（包括自定义源码集和 `dependsOn`），不用写任何东西；
+- included build 里的模块：Gradle 不让主构建在配置阶段看到另一个构建的 Kotlin 设置，平台 klib 的 manifest 里也没有源码集信息，
+  所以只按默认层级推：`commonMain`、`nativeMain`、`appleMain`、`iosMain`、`iosSimulatorArm64Main`；
+- 有不在默认层级里的源码集（例如 `src/iosSharedMain/kotlin`）时，插件**不会悄悄漏掉**：`hotReloadCheckToolchain` 和打包时打印警告，
+  列出这些目录，并给出可以直接粘贴的 `includedModule(...) { sourceSets { ... } }`（按其中的注释把 `dependsOn` 改成和那个模块的
+  构建脚本一致）。别的平台的源码集（android、jvm、js、wasm、desktop、macOS、tvOS、watchOS、iosArm64、iosX64）不提示。
 
 ### 插件应用在 included build 里
 

@@ -1,0 +1,46 @@
+# earlier runs of accept-watch.py, kept for the record:
+# run 1 (11/15): 'nothing changed' was still decided by rebuilt objects (wrong right after packaging); every source edit invalidated the configuration cache (the entry detection read the sources); Ctrl-C was ignored because the script ran in the background with SIGINT ignored, and its fallback killed only the Gradle client - that daemon kept the continuous build running.
+# run 2 (10/15): that leftover continuous build from run 1 (same work dir) compiled and sent every edit before the script's own runs; fixed by stopping that daemon by PID and checking for held build locks at the end.
+
+# #7/#8 acceptance, 2026-11-20 14:42:57, plugin 0.2.3, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+PASS package | 139s
+PASS run | pid 50931
+## one-shot hotReload
+FAIL no edit: exit 0, 'nothing changed', nothing sent | 19.5s; 
+PASS an edit: HOT, on screen | 5.8s
+PASS a compile error: the task fails with the compiler's message |   shared/src/commonMain/kotlin/org/example/kmphr/GreetingUtil.kt:3:12: error: syntax error: Expecting ')'.
+PASS after the fix: the next hotReload succeeds | 3.7s
+## hotReloadWatch -t
+PASS watch: first run succeeds ('nothing changed'), then waits | hotReloadWatch: watching 11 source and resource files of the hot modules; save a change to reload, Ctrl-C to stop
+PASS watch: a saved edit -> HOT, on screen without taps | modified: <WORK>/KmpHr/shared/src/commonMain/kotlin/org/example/kmphr/App.kt; Change detected, executing build...; compat: HOT (class
+PASS watch: touching a file without changing it sends nothing | re-run: nothing changed
+PASS watch: a Compose resource edit -> WARM (compose-resources) | WARM compose-resources: 1 file(s) changed since packaging (composeResources/kmphr.shared.generated.resources/drawable/compose-multiplatform.xml); resources are copied into the app when it is packaged; WARM OK ms=27542 ms
+PASS watch: a compile error fails that run, the watch keeps going
+PASS watch: the fix reloads (HOT)
+FAIL watch: configuration cache reused on the re-runs, no problems | 2 reuses
+FAIL watch: Ctrl-C (SIGINT) stops it | exit None
+FAIL after the watch: a plain hotReload works | 6.3s
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+summary: 11/15 PASS; FAILED: ["no edit: exit 0, 'nothing changed', nothing sent", 'watch: configuration cache reused on the re-runs, no problems', 'watch: Ctrl-C (SIGINT) stops it', 'after the watch: a plain hotReload works']
+
+# ---- run 2
+# #7/#8 acceptance, 2026-11-20 14:49:15, plugin 0.2.3, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+PASS package | 123s
+PASS run | pid 57123
+## one-shot hotReload
+PASS no edit: exit 0, 'nothing changed', nothing sent | 1.1s; nothing changed (1 hot module checked); nothing sent
+FAIL an edit: HOT, on screen | 9.2s
+PASS a compile error: the task fails with the compiler's message |   shared/src/commonMain/kotlin/org/example/kmphr/GreetingUtil.kt:3:12: error: syntax error: Expecting ')'.
+PASS after the fix: the next hotReload succeeds | 2.1s
+## hotReloadWatch -t
+PASS watch: first run succeeds ('nothing changed'), then waits | hotReloadWatch: watching 11 source and resource files of the hot modules; save a change to reload, Ctrl-C to stop
+FAIL watch: a saved edit -> HOT, on screen without taps | modified: <WORK>/KmpHr/shared/src/commonMain/kotlin/org/example/kmphr/App.kt; Change detected, executing build...
+PASS watch: touching a file without changing it sends nothing | re-run: nothing changed
+FAIL watch: a Compose resource edit -> WARM (compose-resources) | WARM compose-resources: 1 file(s) changed since packaging (composeResources/kmphr.shared.generated.resources/drawable/compose-multiplatform.xml); resources are copied into the app when it is packaged
+PASS watch: a compile error fails that run, the watch keeps going
+FAIL watch: the fix reloads (HOT)
+PASS watch: configuration cache reused on the re-runs, no problems | 6 reuses
+PASS watch: Ctrl-C (SIGINT) stops it | exit 130
+FAIL after the watch: a plain hotReload works | 4.8s
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+summary: 10/15 PASS; FAILED: ['an edit: HOT, on screen', 'watch: a saved edit -> HOT, on screen without taps', 'watch: a Compose resource edit -> WARM (compose-resources)', 'watch: the fix reloads (HOT)', 'after the watch: a plain hotReload works']

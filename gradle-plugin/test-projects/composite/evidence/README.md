@@ -1,3 +1,11 @@
+# Plugin 0.2.3 #10 (source sets outside the default hierarchy) - evidence
+
+| File | What | Result |
+|---|---|---|
+| `accept-composite-010-toolchain6.txt` | phases A-E as in 0.2.2 (lib-build:util now has a real non-default source set `iosSharedMain`, unused in A-E) plus F: the default declaration prints the warning with `util/src/iosSharedMain/kotlin` and the `includedModule("lib-build", ":util") { sourceSets { ... } }` to add; declared that way the warning is gone, core's actual calls util's `sharedLine()` (HOT, on screen) and an edit in `iosSharedMain` is HOT (`lib-build-util=1`) | 51/51 |
+
+---
+
 # Plugin 0.2.2 (composite builds) - evidence
 
 Toolchain **2.5.255-hotreload.6**, configuration cache on (the fixture's `gradle.properties`, as in the KMP wizard template).

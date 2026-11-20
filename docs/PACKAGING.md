@@ -19,7 +19,9 @@
 | `bundled-klibs` | skiko 的 2 个 klib（见下）及其许可证 | 43.6 MiB | **43.3 MiB** | `19840745492b5c27` |
 | **合计** | | **590.2 MiB** | **149.0 MiB** | |
 
-另外 `fetch-toolchain.py` 从 Maven Central / Google Maven 下载 21 个公开 klib，共 5.1 MiB。每个组件都带
+上表是 .6 及以前的组件。**工具链 .7**（Compose 基线 `v1.13.0-rc01`）只有前 8 个组件，没有 `bundled-klibs`，压缩后共 **105.7 MiB**：`kotlin-native` 67.1 MiB、`compose-klibs` 10.5 MiB、`compose-compiler-plugin` 0.5 MiB、`kaldo-iossim` 10.1 MiB、`kaldo-macos` 10.0 MiB、`orc-runtime` 0.5 MiB、`cmp-uikit-utils` 0.06 MiB（用 rc01 的源码重编）、`llvm-tools` 7.0 MiB；清单见 `docs/toolchain-bundle.example.json`。
+
+另外 `fetch-toolchain.py` 从 Maven Central / Google Maven 下载公开 klib（.6：21 个坐标，共 5.1 MiB；.7：27 个 klib 文件，含 skiko 0.156.1 的 2 个）。每个组件都带
 `licenses-compose-ios-hot-reload/`（LICENSE、NOTICE）。完整哈希和字节数见打包产物里的 `packaging-manifest.json`（schema 3）
 和发布清单（示例：`docs/toolchain-bundle.example.json`）。
 
@@ -33,7 +35,7 @@
 `pack-toolchain.sh` 在每个组件打包前，用 `scripts/scan-binary-leaks.py` 扫描暂存目录里的**所有文件**，二进制也按字节扫，
 zip（jar、zip 格式的 klib）会解开逐个成员扫：macOS / Linux 的用户目录前缀、本机家目录、`agent-` 加 8 位十六进制，以及本机 deny 文件里
 `# binary-scan: begin/end` 之间的人名、主机名、内部名称（deny 文件只在本机，不进仓库）。命中任何一项就停止打包，不写清单。
-唯一的豁免是 `bundled-klibs` 里原样转发的 skiko klib：它是 JetBrains 发布的原文件，IR 里带着 JetBrains CI 的构建路径；
+唯一的豁免是 `bundled-klibs` 里原样转发的 skiko klib（只有 .4–.6 有；.7 没有随包的 klib，豁免用不上，名单也没加条目）：它是 JetBrains 发布的原文件，IR 里带着 JetBrains CI 的构建路径；
 只有当**每一处**命中都是这个路径时才放行，并在输出里逐条列出。测试：`scripts/test-scan-binary-leaks.sh`。
 
 ### llvmHome：官方 LLVM 够用（B6 结论）
@@ -77,7 +79,8 @@ app 用到的 23 个公开 klib 文件（21 个坐标；skiko 和 atomicfu 各�
 - 21 个由 `fetch-toolchain.py` 按清单 `externalKlibs` 直接从 Maven Central（`repo1.maven.org`）或 Google Maven（`dl.google.com`）下载，
   逐个校验 sha256。清单由 `gen-external-klibs.py` 生成：它读每个坐标的 Gradle 模块元数据，用同名文件的真实 `url` 下载，
   要求本机已验证的缓存文件、下载文件、元数据里发布的 sha256 三者一致；许可证取自 POM，全部是 Apache-2.0。
-- skiko `0.157.0-alpha01` 的 2 个 klib 在这两个仓库里都没有（只在 JetBrains 的 Compose dev 仓库
+- 工具链 .7 用 rc01 搭配的 skiko `0.156.1`，它在 Maven Central 上，和其他公开 klib 一样下载，不再随包分发，`bundledKlibs` 为空。
+- .4–.6：skiko `0.157.0-alpha01` 的 2 个 klib 在这两个仓库里都没有（只在 JetBrains 的 Compose dev 仓库
   `https://packages.jetbrains.team/maven/p/cmp/dev`，sha256 相同），所以原样放进第 9 个组件 `bundled-klibs`（约 43 MiB）。
   它静态包含 Skia（BSD-3-Clause）和 Skia 的第三方库，许可证全文在 `licenses/bundled-klibs/`，也随组件分发。
 

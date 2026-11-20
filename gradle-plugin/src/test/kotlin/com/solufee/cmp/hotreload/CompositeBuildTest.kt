@@ -134,4 +134,23 @@ class CompositeBuildTest {
         }
         assertTrue("project :lib-build:core: built for klib ABI 2.7.0, the toolchain's compiler reads up to 2.5.0" in e.message!!, e.message)
     }
+
+    @Test
+    fun `source sets outside the default hierarchy are found, other targets are not, and the warning says what to declare`() {
+        val util = File(tmp, "lib-build/util")
+        fun kt(set: String, name: String) = File(util, "src/$set/kotlin/$name").apply { parentFile.mkdirs(); writeText("package u\n") }
+        kt("commonMain", "A.kt"); kt("iosSharedMain", "Shared.kt"); kt("iosMain", "Ios.kt")
+        kt("androidMain", "Android.kt"); kt("iosArm64Main", "Device.kt"); kt("commonTest", "T.kt")
+        File(util, "src/emptyMain/kotlin").mkdirs()                                  // no Kotlin file: not a source set
+        val fragments = HotReloadPlugin.defaultFragments(util)
+        val missing = HotReloadPlugin.uncollectedSourceSets(util, fragments.flatMap { it.dirs })
+        assertEquals(listOf(File(util, "src/iosSharedMain/kotlin")), missing)
+        val w = HotReloadPlugin.sourceSetWarning("lib-build:util", "includedModule(\"lib-build\", \":util\")", util, fragments, missing)
+        assertTrue(w.startsWith("CMP hot reload: warning: lib-build:util has Kotlin source sets that hot reload does not compile: ${File(util, "src/iosSharedMain/kotlin").path}"), w)
+        assertTrue("includedModule(\"lib-build\", \":util\") {" in w, w)
+        assertTrue("create(\"commonMain\") { srcDir(\"src/commonMain/kotlin\") }" in w, w)
+        assertTrue("create(\"iosMain\") { srcDir(\"src/iosMain/kotlin\"); dependsOn(\"commonMain\") }" in w, w)   // chained over present sets only
+        assertTrue("create(\"iosSharedMain\") { srcDir(\"src/iosSharedMain/kotlin\"); dependsOn(\"commonMain\") }" in w, w)
+        assertEquals(emptyList<File>(), HotReloadPlugin.uncollectedSourceSets(util, fragments.flatMap { it.dirs } + File(util, "src/iosSharedMain/kotlin").path))
+    }
 }

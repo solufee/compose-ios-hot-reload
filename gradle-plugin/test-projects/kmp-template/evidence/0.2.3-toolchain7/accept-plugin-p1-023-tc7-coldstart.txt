@@ -1,0 +1,11 @@
+start[0] OK attempt=1 pid=31858 app=4.9s total=5.7s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[1] OK attempt=1 pid=31928 app=4.9s total=5.5s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[2] OK attempt=1 pid=31984 app=4.8s total=5.5s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[3] OK attempt=1 pid=32055 app=4.8s total=5.4s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[4] OK attempt=1 pid=32137 app=9.6s total=10.2s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[5] OK attempt=1 pid=32334 app=5.4s total=6.2s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[6] OK attempt=1 pid=32494 app=8.6s total=9.2s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[7] OK attempt=1 pid=32697 app=6.2s total=6.8s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[8] OK attempt=1 pid=32797 app=4.9s total=5.5s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+start[9] OK attempt=1 pid=32861 app=5.1s total=5.8s EH=128476 FDE/3783 lsda/0+0 bad/registered=128476 probe=True
+=== cold start: ok=10/10 distinct_pids=10 ===

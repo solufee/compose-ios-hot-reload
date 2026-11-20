@@ -1,0 +1,52 @@
+pid0 28612
+ui[0] OK total=8520ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[1] OK total=5327ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[2] OK total=4811ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[3] OK total=4718ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[4] OK total=4505ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[5] OK total=4449ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[6] OK total=4449ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[7] OK total=4330ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[8] OK total=4443ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[9] OK total=4363ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[10] OK total=4380ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[11] OK total=4321ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[12] OK total=4365ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[13] OK total=4458ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[14] OK total=4491ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[15] OK total=4448ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[16] OK total=4650ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[17] OK total=4756ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[18] OK total=4611ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+ui[19] OK total=4744ms sym=symbols: ui defined=9 kept_in_merged=9 found=True other=True pid=28612 compat=none
+app[0] OK total=3183ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[1] OK total=3064ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[2] OK total=3133ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[3] OK total=3069ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[4] OK total=3092ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[5] OK total=3319ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[6] OK total=3220ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[7] OK total=3047ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[8] OK total=3112ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[9] OK total=3157ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[10] OK total=3113ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[11] OK total=3171ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[12] OK total=3171ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[13] OK total=3157ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[14] OK total=3363ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[15] OK total=3370ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[16] OK total=3397ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[17] OK total=3377ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[18] OK total=3427ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+app[19] OK total=3476ms sym=symbols: app defined=138 kept_in_merged=138 found=True other=True pid=28612 compat=none
+both[0] OK total=4931ms same_tick=True syms=[('app', '138'), ('ui', '9')] pid=28612 compat=none
+both[1] OK total=4888ms same_tick=True syms=[('app', '138'), ('ui', '9')] pid=28612 compat=none
+both[2] OK total=4760ms same_tick=True syms=[('app', '138'), ('ui', '9')] pid=28612 compat=none
+=== summary ===
+ui: ok=20/20 p50=4475ms p90=4862ms
+app: ok=20/20 p50=3171ms p90=3400ms
+both: ok=3/3 p50=4888ms p90=4922ms
+ui classifier: not run
+app classifier: not run
+both classifier: not run
+# sources restored: 0 files under */src differ from git

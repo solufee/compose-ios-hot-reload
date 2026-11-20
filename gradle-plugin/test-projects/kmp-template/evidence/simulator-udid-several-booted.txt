@@ -1,0 +1,18 @@
+# #11: cmp.hotreload.simulatorUdid not set (default "booted") with three simulators booted, 2026-11-20, plugin 0.2.3
+# (the KMP template packaged for accept-ipad.py; local.properties without simulatorUdid; restored afterwards)
+$ xcrun simctl list devices booted
+    HR-Plugin (67FC79E4-473A-47C9-87C0-1ADEA85CBBBB) (Booted)
+    iPhone 18 Pro (0B879832-98D9-49A5-AC00-8BAB579AFBB2) (Booted)
+    HR-Plugin-iPad (A0E5B482-7C8F-414F-A5E2-BDE3F8CE9C4C) (Booted)
+$ ./gradlew hotReloadRun
+* What went wrong:
+Execution failed for task ':shared:hotReloadRun' (registered by plugin 'com.solufee.cmp.hotreload').
+> CMP hot reload: 3 simulators are booted, so "booted" is ambiguous:
+    HR-Plugin (67FC79E4-473A-47C9-87C0-1ADEA85CBBBB) (Booted)
+    iPhone 18 Pro (0B879832-98D9-49A5-AC00-8BAB579AFBB2) (Booted)
+    HR-Plugin-iPad (A0E5B482-7C8F-414F-A5E2-BDE3F8CE9C4C) (Booted)
+  set cmp.hotreload.simulatorUdid=<UDID> in local.properties
+# Nothing was installed or launched. Code: Launcher.requireSingleBootedSimulator (launch and warm restart);
+# the default comes from HotReloadPlugin: simulator.udid convention prop("cmp.hotreload.simulatorUdid").orElse("booted"),
+# where prop() reads -P / gradle.properties first, then local.properties of the build that applies the plugin.
+# Unit test: CompatContractTest "booted simulators are listed".

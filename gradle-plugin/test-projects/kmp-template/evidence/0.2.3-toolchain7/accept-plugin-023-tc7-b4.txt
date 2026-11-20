@@ -1,0 +1,30 @@
+# B4 through plugin 0.2.3 (integration: main 4c664c8 + #10 + #12), toolchain 2.5.255-hotreload.7, 2026-11-20 16:03:42
+CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+package timing ms=12990 compile=8234 merge=2519 embed+bundle=2237
+BUILD SUCCESSFUL in 14s
+started app pid 41843
+
+=== B4 matrix ===
+01-text                    hot   PASS pid 41843->41843 render=True shot_changed=True 
+02-color                   hot   PASS pid 41843->41843 render=True shot_changed=True 
+03-if                      hot   PASS pid 41843->41843 render=True shot_changed=True 
+03b-revert-if              hot   PASS pid 41843->41843 render=True shot_changed=True 
+04-fnbody                  hot   PASS pid 41843->41843 render=True shot_changed=True 
+05-add-composable          hot   PASS pid 41843->41843 render=True shot_changed=True 
+06-remove-composable       hot   PASS pid 41843->41843 render=True shot_changed=True 
+07a-add-class              hot   PASS pid 41843->41843 render=True shot_not_checked 
+07b-field-layout           warm  PASS reason=True WARM_OK=True pid 41843->43313 shot_same=True warm_ms=18837 package_ms=11775 relaunch_ms=7062 [compile=5285 merge=2583 embed+bundle=2669]
+08a-add-fun                hot   PASS pid 43313->43313 render=True shot_not_checked 
+08b-signature              warm  PASS reason=True WARM_OK=True pid 43313->44208 shot_same=True warm_ms=22836 package_ms=11204 relaunch_ms=11632 [compile=5221 merge=2728 embed+bundle=2383]
+09a-add-inline             hot   PASS pid 44208->44208 render=True shot_not_checked 
+09b-inline-body            warm  PASS reason=True WARM_OK=True pid 44208->45291 shot_same=True warm_ms=17688 package_ms=11165 relaunch_ms=6523 [compile=5033 merge=2638 embed+bundle=2552]
+10a-add-suspend            hot   PASS pid 45291->45291 render=True shot_not_checked 
+10b-suspend-body           warm  PASS reason=True WARM_OK=True pid 45291->46056 shot_same=True warm_ms=17373 package_ms=10869 relaunch_ms=6504 [compile=5118 merge=2560 embed+bundle=2337]
+11-top-level-property      warm  PASS reason=True WARM_OK=True pid 46056->46747 shot_same=True warm_ms=17884 package_ms=11372 relaunch_ms=6512 [compile=5526 merge=2625 embed+bundle=2364]
+12-tap-after-warm          tap   PASS pid 46747->46747 Back@(201.2,528.3)->count=3/page=0 +@(247.5,499.4)->count=4/page=0 Next@(201,569.7)->count=4/page=1 Back@(201.2,528.3)->count=4/page=0 page2_kept4=True page1_counter4=True crash=none
+summary: 17/17 passed
+# sources restored from git
+## launch.log checks (last launch)
+[kaldo] :: STUB-SEL check: 648 stubs, 0 mismatch
+[kaldo] :: EH check: 128487 FDE, 3783 lsda, 0 lsda-out-of-range, 0 pc-out-of-range, 0 unresolved-personality
+HR forceRecompose: on
