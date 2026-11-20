@@ -1,0 +1,9 @@
+build/
+.gradle/
+.kotlin/
+.hr/
+launch.log
+local.properties
+gradlew
+gradlew.bat
+gradle/wrapper/

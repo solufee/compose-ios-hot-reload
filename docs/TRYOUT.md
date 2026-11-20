@@ -1,4 +1,4 @@
-# 试用指南（0.2.1，实验性）
+# 试用指南（0.2.2，实验性）
 
 这份指南带你在自己的 Mac 上，把 Compose Multiplatform 的 iOS 模拟器热重载接进工程：改 Kotlin 代码、执行一条命令，
 正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。有两种接法：
@@ -101,7 +101,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.1"
+    id("com.solufee.cmp.hotreload") version "0.2.2"
 }
 
 cmpHotReload {
@@ -421,7 +421,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.1"
+    id("com.solufee.cmp.hotreload") version "0.2.2"
 }
 ```
 
@@ -498,3 +498,71 @@ cmpHotReload {
     resolveDependencyKlibs = false        // 不从 Gradle 解析依赖，只用工具链和 extraKlibs
 }
 ```
+
+## 8. 复合构建（includeBuild，0.2.2 起）
+
+适用于用 `includeBuild(...)` 把另一个 Gradle 构建拉进来的工程，最常见的是“边改库边跑 app”：app 在主构建里，
+KMP 库在被包含的构建（下称 included build）里，app 用 `group:name:version` 依赖它，由 Gradle 自动替换成源码工程。
+
+### 两档支持
+
+Gradle 不让一个构建在配置阶段看到另一个构建的工程模型，所以插件分两档：
+
+| | 不做任何声明（默认） | 在 app 里声明 `includedModule(...)` |
+|---|---|---|
+| included build 的模块怎么进来 | 由那个构建用它自己的 Kotlin 插件编成 klib，app 链接这个 klib | 插件用工具链直接编译它的源码，和主构建里的库模块一样 |
+| 改它的代码 | 能用，`hotReload` 会自动温重启（输出 `WARM external-klibs: …`） | 热替换（`compat: HOT`），规则同第 4、7 节 |
+| 它的 `expect`/`actual`、Compose 资源 | 资源会打进 app | 都支持（改签名、增删一对、改资源时温重启） |
+| 打包时的提示 | 每个这样的模块打印一行 `… comes from the included build … To hot reload it: cmpHotReload { includedModule(…) }` | 无 |
+
+声明写在应用插件的 app 模块里，按依赖顺序写（被依赖的写在前面）：
+
+```kotlin
+cmpHotReload {
+    includedModule("lib-build", ":util")   // includeBuild("lib-build") 里的 :util
+    includedModule("lib-build", ":core")   // :core 用到 :util，写在后面
+}
+```
+
+第一个参数是 included build 的名字（默认是 `includeBuild(...)` 目录的名字），第二个是它里面的工程路径。插件默认按
+Kotlin Multiplatform 的默认层级找源码：`src/commonMain`、`src/nativeMain`、`src/appleMain`、`src/iosMain`、
+`src/iosSimulatorArm64Main` 下的 `kotlin/`，以及 Compose 为它生成的资源访问代码；模块有 `composeResources/` 时，
+插件会先让那个构建跑它的资源生成任务。目录或源码集不是默认的写法时：
+
+```kotlin
+includedModule("lib-build", ":core") {
+    projectDir = "libs/core"                       // 在 lib-build 里的目录（默认由工程路径推出：:core -> core）
+    sourceSets {
+        create("commonMain") { srcDir("src/commonMain/kotlin") }
+        create("iosMain") { srcDir("src/iosMain/kotlin"); dependsOn("commonMain") }
+    }
+    generatorTasks = listOf(":core:generateComposeResClass")   // 编译前先跑的那个构建里的任务（默认：Compose 资源生成）
+}
+```
+
+### 插件应用在 included build 里
+
+插件也可以应用在 included build 的某个模块上（比如库自带一个演示 app），在主构建里直接运行：
+
+```bash
+./gradlew :lib-build:demo:hotReloadPackage
+./gradlew :lib-build:demo:hotReloadRun
+./gradlew :lib-build:demo:hotReload
+```
+
+这时插件以它所在的构建为准：读 `lib-build/local.properties`（工具链、模拟器、端口），工作目录是
+`lib-build/demo/build/hotreload/`；那个构建里它依赖的其他模块照常作为库模块热重载。插件的仓库要写在
+**这个构建自己的** `settings.gradle.kts` 的 `pluginManagement { repositories { … } }` 里：included build 不会用主构建的
+`pluginManagement`。两个 app 同时运行时，给它们配不同的端口（`cmp.hotreload.port`）。
+
+### 支持范围
+
+- 实测过的组合（`gradle-plugin/test-projects/composite/`）：主构建有两个 KMP 模块（其中一个通过 `build-logic` 里的
+  convention plugin 应用 KMP），included build 有三个（`:util`、带 `expect`/`actual` 和字符串资源的 `:core`、应用了插件的 `:demo`）；
+  两档、Dialog、release 校验都在里面。
+- KMP 由 convention plugin 应用（`pluginManagement { includeBuild("build-logic") }`）没有问题：插件只读 Kotlin 插件的设置，不管它是谁应用的。
+  `buildSrc` 的情况同理，但没有单独验收。
+- **不支持**：included build 的模块依赖主构建的模块（反方向）；included build 改了构建目录（`buildDir`）时，默认的生成代码目录找不到，
+  需要用上面的 `sourceSets` 和 `generatorTasks` 写清楚；不声明的模块不能热替换（只会温重启）。
+- Compose 资源生成任务的名字按 Compose Multiplatform 1.12/1.13 的写法；以后的版本改了名字时，用 `generatorTasks` 覆盖。
+

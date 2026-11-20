@@ -21,6 +21,7 @@
 | 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（Compose Multiplatform ≤ 1.13.0-beta01）；超出时打包前报错，写出库名和拉进它的依赖 |
 | KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
 | 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
+| 复合构建（`includeBuild`） | ✅ 0.2.2：included build 的模块声明 `includedModule(...)` 后热重载；不声明时用那个构建编出的 klib，改动时温重启；插件也可以应用在 included build 里、从主构建运行（TRYOUT 第 8 节） |
 | 多个 KMP 模块互相依赖 | ✅ 0.2.1：间接依赖也一起热重载；库模块的 `expect`/`actual` 和 Compose 资源都支持（三模块工程验收） |
 | Compose 资源（strings、drawables） | ➖ 不能热替换：打包时拷进 app；只改资源时 `hotReload` 自动温重启 |
 | 只编 `iosSimulatorArm64`；Android、iosArm64、桌面目标 | ➖ 不参与热重载，也不受影响 |
@@ -60,8 +61,11 @@
    每次启动有 658 个这样的定义（TECHNICAL-NOTES §1.5）。修复后不收窄 `KALDO_HOT_SYMBOLS`、不重试，冷启动 30/30。
    收窄仍是默认：启动更快（p50 5.3 s 对 6.5 s），热替换范围也限定在用户模块；只是不再是稳定性所必需。
    用 .5 及以前的工具链时仍要收窄；`run.sh` 保留最多 3 次重试兜底。
-7. **长会话退化**。App 连续运行 3.5 小时（tick≈12,400）后，发送到首帧从 0.9 s 涨到 1.86 s；重启进程恢复。
-   原因（JIT 符号表、旧模块回收还是 Compose 侧）未定位。KEEP 打开后的长会话还没测。
+7. **长会话退化**。同一个 app 进程里，每次 reload 在 app 内的加载耗时和之前做过的 reload 次数成正比：工具链 .6、KEEP 开、
+   强制重组开，3 小时 341 次 reload（每 30 s 一次），app 模块从发出到新帧的 app 内耗时从 0.3 s 涨到 3.2 s，ui 模块从 0.08 s 涨到
+   0.64 s（每多 100 次 reload，app 约 +1 s、ui 约 +0.2 s）；编译守护进程、klib 守护进程和强制重组那一帧都不涨，内存也不增长，
+   341 次全部成功（REPORT §30.1）。重启 app（温重启约 16 s）恢复。慢在 Kaldo 加载的哪一步（JIT 符号查找、ObjC 注册、EH 登记）
+   还没定位。旧观察：工具链 .4 手动会话 3.5 小时后发送到首帧 0.9 s → 1.86 s。
 8. **release 构建的确定性**。`__text` 大小和符号表一致，但每次链接整文件 md5 都不同（`LC_UUID`、
    `__objc_methname`、`__LINKEDIT`），不能用整文件 md5 做验收口径，应比较 section 大小 + 符号表 + `__text` 内容。
    另外，同一源码、同样参数两次 release 构建，`__text` 偶发 78 字节差异。根因已查清（REPORT §28）：Apple 链接器给

@@ -91,6 +91,19 @@ object Kmp {
         return via.map { (k, v) -> "$k|$v" }
     }
 
+    /**
+     * Whether dependency [d] is the klib that an included build produces for its module [path] (which hot reload
+     * compiles from source instead): by coordinates (`project :<build><path>`), by location (inside the module's
+     * directory), or by unique_name (`<group>:<module name>` from inside that included build).
+     */
+    fun isOwnBuildKlib(d: Dependency, build: String, path: String, moduleDir: File, buildDir: File): Boolean {
+        if (d.id == "project :$build$path") return true
+        val f = d.file.absoluteFile.path
+        if (f.startsWith(moduleDir.absoluteFile.path + File.separator)) return true
+        val unique = manifest(d.file)["unique_name"] ?: return false
+        return f.startsWith(buildDir.absoluteFile.path + File.separator) && unique.substringAfterLast(':') == path.substringAfterLast(':')
+    }
+
     /** `key=value` lines of a klib's manifest (zip or unpacked directory). */
     fun manifest(klib: File): Map<String, String> {
         val text = try {

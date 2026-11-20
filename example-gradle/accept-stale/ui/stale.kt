@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +27,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,6 +41,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.Popup
 import androidx.navigationevent.DirectNavigationEventInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import kotlinx.coroutines.launch
 
 const val S_MARK = "s0"
 
@@ -120,7 +123,11 @@ fun ListRow(i: Int) {
 
 @Composable
 fun BigList() {
-    LazyColumn(Modifier.fillMaxWidth().padding(4.dp)) {
+    val state = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    // "Scroll": benchmark for accept-stale.py --scroll-only (scrollbench.kt).
+    Button(onClick = { scope.launch { scrollBenchmark(state) } }) { Text("Scroll") }
+    LazyColumn(Modifier.fillMaxWidth().padding(4.dp), state = state) {
         items(600) { i -> BigRow(i) }
     }
 }

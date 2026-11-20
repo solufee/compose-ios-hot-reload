@@ -25,6 +25,29 @@ abstract class HotReloadSourceSet @Inject constructor(private val name: String) 
     fun dependsOn(vararg sourceSets: String) = dependsOn.addAll(*sourceSets)
 }
 
+/**
+ * A Kotlin Multiplatform module of an included build (composite build, `includeBuild(...)`) compiled from source
+ * so that its code hot reloads too (0.2.2). Gradle does not show another build's project model to this build, so
+ * the module is declared: the included build's name and the project path inside it. Its sources default to the
+ * Kotlin Multiplatform default hierarchy for iosSimulatorArm64 (commonMain -> nativeMain -> appleMain -> iosMain ->
+ * iosSimulatorArm64Main under src/<set>/kotlin) plus the Compose resource accessors that build generates.
+ */
+abstract class IncludedModuleSpec @Inject constructor(private val name: String, objects: ObjectFactory) : Named {
+    override fun getName(): String = name
+    abstract val build: Property<String>
+    abstract val projectPath: Property<String>
+    /** Module directory relative to the included build (default: the project path, ":a:b" -> "a/b"). */
+    abstract val projectDir: Property<String>
+    /** Source sets when the module does not use the default hierarchy (directories relative to the module). */
+    val sourceSets: NamedDomainObjectContainer<HotReloadSourceSet> = objects.domainObjectContainer(HotReloadSourceSet::class.java)
+    fun sourceSets(action: Action<in NamedDomainObjectContainer<HotReloadSourceSet>>) = action.execute(sourceSets)
+    /**
+     * Tasks of the module (paths inside its build, e.g. ":core:generateComposeResClass") run before compiling it.
+     * Default: the Compose resource generators when the module has a composeResources/ directory.
+     */
+    abstract val generatorTasks: ListProperty<String>
+}
+
 /** One Gradle module that takes part in hot reload. The name is the project path, e.g. ":ui". */
 abstract class HotReloadModule @Inject constructor(private val name: String, objects: ObjectFactory) : Named {
     override fun getName(): String = name
@@ -157,6 +180,27 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
     fun app(path: String, action: Action<in HotReloadModule> = Action { }) {
         modules.register(path) {
             kind.set(ModuleKind.APP)
+            action.execute(this)
+        }
+    }
+
+    /** Modules of included builds compiled from source (0.2.2), in dependency order (a module after those it uses). */
+    val includedModules: NamedDomainObjectContainer<IncludedModuleSpec> = objects.domainObjectContainer(IncludedModuleSpec::class.java)
+
+    /** Declaration order of [includedModules] (the container itself iterates by name). */
+    internal val includedOrder = mutableListOf<String>()
+
+    /**
+     * `includedModule("lib-build", ":core")`: the module :core of the included build lib-build takes part in hot reload
+     * (its changes are HOT/WARM like any library module). Without this, a module of an included build that the app
+     * depends on is linked as the klib that build produces: it works, and a change in it restarts the app.
+     */
+    fun includedModule(build: String, path: String, action: Action<in IncludedModuleSpec> = Action { }) {
+        val p = if (path.startsWith(":")) path else ":$path"
+        includedOrder += ":$build$p"
+        includedModules.register(":$build$p") {
+            this.build.set(build)
+            projectPath.set(p)
             action.execute(this)
         }
     }

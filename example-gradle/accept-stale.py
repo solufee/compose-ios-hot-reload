@@ -2,6 +2,7 @@
 """Forced recomposition after hot reload (toolchain .6): screens, state and timing.
 
   source <toolchain>/env.sh; [UDID=… RELOADS=10] python3 accept-stale.py [--skip-timing]
+  source <toolchain>/env.sh; [UDID=… SCROLL_RUNS=5] python3 accept-stale.py --scroll-only
 
 Uses the test app in accept-stale/ (copied to build/regression/stale/src, so the
 tracked sources are never edited). Every screen shows S_MARK through call sites whose
@@ -29,7 +30,14 @@ the Big page. Per reload: ui klib build ms, reload ms (send -> ack), and with it
 runtime's line (scopes invalidated/recomposed, reload success -> frame applied ms) and
 send -> frame applied ms. Off mode shows the old behaviour: the marks stay stale.
 
-Output: build/regression/stale/ (step logs, screenshots, timing.csv, summary.txt).
+--scroll-only (instead of parts 1 and 2): the cost of forced recomposition outside reloads.
+Every restartable group keeps a recompose scope while it is on, so ordinary recompositions may
+be slower. The app is launched with it on and then off; on the Big page "Scroll" scrolls the
+600-row list from the top, one scrollBy per frame for 120 frames (scrollbench.kt), SCROLL_RUNS
+times per mode. Per run: frame intervals (p50/p95/max, dropped frames) and the total time spent
+in compositions (all compositions, lazy list items included).
+
+Output: build/regression/stale/ (step logs, screenshots, timing.csv, scroll.txt, summary.txt).
 """
 import csv
 import importlib.util
@@ -333,6 +341,57 @@ def measure(force, page_label):
     return rows
 
 
+SCROLL_RE = re.compile(r"SCROLL frames=(\d+) p50=([\d.]+) p95=([\d.]+) max=([\d.]+) over=(\d+) "
+                       r"compMs=([\d.]+) compositions=(\d+) lastItem=(\d+)")
+
+
+def scroll_part():
+    runs = int(os.environ.get("SCROLL_RUNS", "5"))
+    rows, lines = [], []
+    for force in (True, False):
+        mode = "on" if force else "off"
+        pid0 = launch(force)
+        tap("Big", r"SHOW BIG0 ")
+        time.sleep(1.5)
+        for i in range(1, runs + 1):
+            start = len(log_lines())
+            tap("Scroll", None)
+            line = wait_for(start, lambda l: SCROLL_RE.search(l) is not None, 30)
+            m = SCROLL_RE.search(line or "")
+            if not m:
+                record(f"scroll-{mode}-{i}", False, "no SCROLL line")
+                continue
+            row = dict(zip(("frames", "p50", "p95", "max", "over", "compMs", "compositions", "lastItem"),
+                           m.groups()), mode=mode, i=i)
+            rows.append(row)
+            print(f"  scroll {mode} #{i} p50={row['p50']} p95={row['p95']} max={row['max']} over={row['over']} "
+                  f"compMs={row['compMs']} compositions={row['compositions']} lastItem={row['lastItem']}", flush=True)
+            time.sleep(1.0)
+        screenshot(f"scroll-{mode}.png")
+        record(f"scroll-{mode}", app_pid() == pid0 and len([r for r in rows if r["mode"] == mode]) == runs,
+               f"{runs} runs, same pid")
+    lines.append(f"scroll benchmark: {SCROLL_FRAMES} frames x {SCROLL_STEP_PX} px from the top of the 600-row list, "
+                 f"{runs} runs per mode (median over runs; frame intervals in ms)")
+    lines.append("mode  frame p50  frame p95  frame max  dropped  composition ms  compositions")
+    for mode in ("on", "off"):
+        rs = [r for r in rows if r["mode"] == mode]
+        if not rs:
+            continue
+        med = lambda k: statistics.median(float(r[k]) for r in rs)
+        lines.append(f"{mode:4}  {med('p50'):9.1f}  {med('p95'):9.1f}  {med('max'):9.1f}  {med('over'):7.0f}  "
+                     f"{med('compMs'):14.1f}  {med('compositions'):12.0f}")
+    with open(os.path.join(OUT, "scroll.txt"), "w") as f:
+        f.write("\n".join(lines) + "\n")
+        for r in rows:
+            f.write(f"{r['mode']} #{r['i']} " + " ".join(f"{k}={r[k]}" for k in
+                    ("p50", "p95", "max", "over", "compMs", "compositions", "lastItem")) + "\n")
+    print("\n".join(lines), flush=True)
+    return lines
+
+
+SCROLL_FRAMES, SCROLL_STEP_PX = 120, 30
+
+
 def stats(vals):
     v = [float(x) for x in vals if x not in ("", None, "timeout")]
     return (statistics.median(v), max(v), len(v)) if v else (None, None, 0)
@@ -377,7 +436,8 @@ def part2():
 def main():
     global SCREEN
     skip_timing = "--skip-timing" in sys.argv[1:]
-    if any(a not in ("--skip-timing",) for a in sys.argv[1:]):
+    scroll_only = "--scroll-only" in sys.argv[1:]
+    if any(a not in ("--skip-timing", "--scroll-only") for a in sys.argv[1:]):
         print(__doc__.strip().splitlines()[2], file=sys.stderr)
         return 2
     shutil.rmtree(OUT, ignore_errors=True)
@@ -389,10 +449,13 @@ def main():
     if rc != 0:
         return 1
     try:
-        part1()
         summary = []
-        if not skip_timing:
-            summary, _ = part2()
+        if scroll_only:
+            summary = scroll_part()
+        else:
+            part1()
+            if not skip_timing:
+                summary, _ = part2()
     except Exception as e:  # keep the partial results
         record("error", False, repr(e))
         summary = []

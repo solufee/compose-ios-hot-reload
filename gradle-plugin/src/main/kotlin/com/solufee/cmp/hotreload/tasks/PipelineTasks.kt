@@ -39,6 +39,10 @@ abstract class HotReloadTask : DefaultTask() {
     @get:Internal
     abstract val externalKlibIds: ListProperty<String>
 
+    /** Included-build modules compiled from source (`build|path|dir|build dir`): their own build's klibs are left out. */
+    @get:Internal
+    abstract val fromSourceModules: ListProperty<String>
+
     /** `component|direct dependency` of the resolved graphs, for "pulled in by" in messages. */
     @get:Internal
     abstract val externalKlibVia: ListProperty<String>
@@ -54,10 +58,27 @@ abstract class HotReloadTask : DefaultTask() {
         val ids = externalKlibIds.getOrElse(emptyList())
         if (ids.isEmpty()) return s
         val via = externalKlibVia.getOrElse(emptyList()).associate { it.substringBefore('|') to it.substringAfter('|') }
-        val deps = ids.map { val parts = it.split("|", limit = 2); com.solufee.cmp.hotreload.Kmp.Dependency(parts[0], File(parts[1]), via[parts[0]]) }
+        val all = ids.map { val parts = it.split("|", limit = 2); com.solufee.cmp.hotreload.Kmp.Dependency(parts[0], File(parts[1]), via[parts[0]]) }
             .filter { it.file.name.endsWith(".klib") || it.file.isDirectory }
+        val fromSource = fromSourceModules.getOrElse(emptyList()).map { it.split("|") }
+        val (dropped, deps) = all.partition { d -> fromSource.any { f -> com.solufee.cmp.hotreload.Kmp.isOwnBuildKlib(d, f[0], f[1], File(f[2]), File(f[3])) } }
+        if (report && dropped.isNotEmpty()) {
+            logger.lifecycle("dependency klibs: left out ${dropped.size} klib(s) of included-build modules compiled from source: " +
+                dropped.joinToString { it.id })
+        }
         val toolchain = Pipeline.externalKlibs(File(s.klibList).readLines(), File(s.dist))
         val sel = com.solufee.cmp.hotreload.Kmp.selectKlibs(toolchain, File(s.dist, "klib/common/stdlib"), deps, composeVersion.get(), if (report) logger else null)
+        if (report) {
+            // Composite build: projects of another build that were not declared with includedModule(...) are linked
+            // as the klibs their build produces (only this build's projects and declared modules are filtered out).
+            deps.filter { it.id.startsWith("project ") && it.file.path in sel.klibs }.map { it.id }.distinct().forEach { id ->
+                val path = id.removePrefix("project ").trim()
+                val build = path.trim(':').substringBefore(':')
+                val module = ":" + path.trim(':').substringAfter(':', "")
+                logger.lifecycle("dependency klibs: $id comes from the included build $build and is linked as the klib that build produces; " +
+                    "its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule(\"$build\", \"$module\") }")
+            }
+        }
         return s.copy(extraKlibs = sel.klibs)
     }
 

@@ -104,6 +104,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `app(":x") { sourceSets { create("commonMain") { srcDir(...); dependsOn(...) } } }` | 从 Kotlin Multiplatform 插件读 | 模块的源码片段；写了就不读 KMP 插件。`library` 同样可写 |
 | `app(":x") { iosEntry }` | 自动找 `fun MainViewController()`（模块里有 `fun main(` 时不生成入口） | 返回 `UIViewController` 的函数全名；插件生成调用它的 UIKit 入口 |
 | `app(":x") { bundleId }` | `infoPlist` 里的；没有 Info.plist 时为入口所在包名 + `.hotreload` | 只用于插件生成的 Info.plist（app 名为根项目名的字母数字部分） |
+| `includedModule("<build>", ":<path>") { projectDir; sourceSets; generatorTasks }` | 无 | 复合构建（0.2.2）：included build 里的 KMP 模块从源码编译、参与热重载；按依赖顺序声明。默认按 KMP 默认层级和 Compose 生成目录找源码，资源生成任务通过跨构建任务引用先跑。不声明的 included 模块用那个构建编出的 klib 链接，改动时温重启（`WARM external-klibs`）。见 TRYOUT 第 8 节 |
 | `extraKlibs` | 空 | 另外要链进来的 klib 文件或目录；所在目录也作为自动缓存的根（`-Xauto-cache-from`） |
 | `resolveDependencyKlibs` | `true` | 从 `iosSimulatorArm64CompileKlibraries` 解析依赖 klib（KMP 模块）。工具链自带的库按 klib 的 `unique_name` 和 Maven 组件整体替换成工具链的那份；klib ABI 不在 1.6.0–2.5.0、metadata 高于 2.6.0、某个 Compose 模块比工具链里同名的那份新时打包前报错（写出拉进它的依赖）；cinterop klib 打警告（0.2.0 不支持） |
 
@@ -240,7 +241,7 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 ../example-gradle/gradlew -p . test -Pcmp.hotreload.toolchainDir=<KOTLIN_NATIVE_DIST>
 ```
 
-共 56 个测试；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
+共 63 个测试；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
 
 | 测试类 | 数量 | 内容 |
 |---|---|---|
@@ -254,6 +255,7 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 | `ExpectActualCasesTest` | 5 | 增删一对 expect/actual 判温重启的 12 例用例表（6 正 6 反）；Compose 资源改动判温重启；回归：只含初始化桩的目标文件、生成的 UIKit 入口（根包）在多模块时归 app、失败编译后的待发送列表 |
 | `ProjectDependenciesTest` | 1 | 同工程 KMP 模块依赖按传递关系、依赖在前的顺序找出，环路不死循环 |
 | `ReleaseDigestTest` | 1 | release 校验比 `__text` 摘要：同一二进制摘要一致，改一个代码字节必须失败；原始 `__text` 哈希只记录 |
+| `CompositeBuildTest` | 7 | 复合构建（0.2.2）：included 模块的默认层级源码集和 Compose 生成目录；included 模块排在前、按声明顺序、依赖关系；声明顺序保留（容器按名字迭代）；外部 klib 改变判温重启；included build 自己编出的 klib 按坐标、位置、unique_name 排除（不重复链接）；included build 的 klib 同样过 ABI 预检；写错 build 名时的报错（TestKit，真实 includeBuild） |
 
 ## 验收脚本与证据
 
@@ -264,4 +266,5 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 | `example-gradle/accept-p1-full.sh` | 示例工程的完整矩阵（ui/app/both、多文件、点击翻页、冷启动、三模块、release） | `example-gradle/accept-plugin-p1-v7full-*.txt` |
 | `example-gradle/accept-release.sh` | release 零改动校验 | `example-gradle/accept-plugin-p1-release*.txt` |
 | `test-projects/three-modules/accept-three.py` | 三模块（app → ui → core） | `test-projects/three-modules/accept-three.txt` |
+| `test-projects/composite/accept-composite.py` | 0.2.2 复合构建：根 build（app、convention plugin 应用 KMP 的 feature）加 included build lib-build（util、core、demo）；声明/不声明 includedModule 两档、只声明 core、插件装在 included build 里从根 build 运行、资源、Dialog、release 校验、配置缓存、写错 includedModule 的报错 | `test-projects/composite/evidence/` |
 | `test-projects/kmp-template/accept-kmp.py` | 0.2.0：KMP 向导模板（只选 iOS）加一对 expect/actual 和 kotlinx-datetime，只按 TRYOUT 第 7 节接入：打包、启动、commonMain/iosMain 改动 HOT、expect 签名和增删一对 WARM、改过 manifest 的 klib 报错、release 校验 | `test-projects/kmp-template/evidence/` |

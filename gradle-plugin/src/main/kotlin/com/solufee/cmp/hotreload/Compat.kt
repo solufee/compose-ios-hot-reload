@@ -29,6 +29,15 @@ fun resourceReasons(changed: List<String>): List<String> =
         (if (changed.size > 3) ", ..." else "") + "); resources are copied into the app when it is packaged")
 
 /**
+ * Warm-restart reason for external klibs that changed since packaging (e.g. a module of an included build linked as
+ * its klib): the app has to be linked again.
+ */
+fun externalKlibReasons(changed: List<String>): List<String> =
+    if (changed.isEmpty()) emptyList()
+    else listOf("WARM external-klibs: ${changed.size} changed since packaging (${changed.take(3).joinToString { File(it).name }}" +
+        (if (changed.size > 3) ", ..." else "") + "); declare includedModule(...) for modules of an included build to hot reload them")
+
+/**
  * Warm-restart reasons for expect/actual pairs added or removed between two sets of `expect` declarations
  * ("kind name", from [expectDeclarations]). Only the presence of a pair is judged here; a changed signature
  * is caught by the classifier (compat-classify.py) like any other signature change.
@@ -93,7 +102,7 @@ class Compat(private val s: HrSettings, private val logger: Logger, private val 
         // An expect/actual pair added or removed: warm restart (Kotlin Multiplatform, 0.2.0).
         val expectReasons = (if (expectFile.isFile) {
             expectActualReasons(expectFile.readLines().filter { it.isNotBlank() }.toSet(), expectDeclarations())
-        } else emptyList()) + resourceReasons(pipeline.resourceChanges())
+        } else emptyList()) + resourceReasons(pipeline.resourceChanges()) + externalKlibReasons(pipeline.externalKlibChanges())
         when (r.exit) {
             0 -> if (expectReasons.isEmpty()) Result(Verdict.HOT, emptyList(), ms) else Result(Verdict.WARM, expectReasons, ms)
             3 -> Result(Verdict.WARM, r.output.lines().filter { it.startsWith("WARM ") } + expectReasons, ms)

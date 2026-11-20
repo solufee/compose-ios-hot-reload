@@ -103,7 +103,8 @@ class HotReloadPlugin : Plugin<Project> {
         project.gradle.projectsEvaluated {
             val errors = mutableListOf<String>()
             val kmp = KmpModules()
-            val modules = resolveModules(project, ext, errors, singleModule, kmp)
+            val included = includedModules(project, ext, errors)
+            val modules = withIncluded(resolveModules(project, ext, errors, singleModule, kmp), included.map { it.module })
             val libraries = modules.filter { it.kind == ModuleKind.LIBRARY }
             val app = modules.firstOrNull { it.kind == ModuleKind.APP }
             val appSpec = app?.let { a -> ext.modules.findByName(a.path) }
@@ -128,10 +129,13 @@ class HotReloadPlugin : Plugin<Project> {
             // that has them (a library's strings and drawables are looked up in the same bundle directory).
             val composeResProjects = modules.mapNotNull { m -> project.findProject(m.path) }
                 .mapNotNull { p -> p.tasks.findByName("assembleIosSimulatorArm64MainResources")?.let { p to it } }
-            val composeResTasks = composeResProjects.map { it.second }
+            // Modules of included builds that are linked as their build's klibs (not declared): their Compose resources
+            // are assembled by their build and bundled too (which of them the app uses is known only when resolving).
+            val foreignRes = foreignResourceModules(project, included.map { it.componentKey }.toSet())
+            val composeResTasks: List<Any> = composeResProjects.map { it.second } + included.flatMap { it.generatorTasks } + foreignRes.map { it.first }
             val composeResources = composeResProjects.map { (p, _) ->
                 File(p.layout.buildDirectory.get().asFile, "generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path
-            }
+            } + included.mapNotNull { it.composeResources } + foreignRes.map { it.second }
             val linkerOptions = appSpec?.linkerOptions?.get() ?: DEFAULT_LINKER_OPTIONS
             val socketDir = socketDir(rootDir)
             val tc = manifest.getOrElse(emptyMap())
@@ -196,10 +200,21 @@ class HotReloadPlugin : Plugin<Project> {
             val depKlibs = project.files()
             val depIds = mutableListOf<Provider<List<String>>>()
             val depVia = mutableListOf<Provider<List<String>>>()
-            if (ext.resolveDependencyKlibs.get()) {
+            // With DSL errors (e.g. an includedModule naming a build that is not included) nothing is resolved or
+            // compiled: hotReloadCheckToolchain reports them first.
+            if (ext.resolveDependencyKlibs.get() && errors.isEmpty()) {
                 for (m in modules) {
                     val cfg = project.findProject(m.path)?.configurations?.findByName(Kmp.DEPENDENCY_CONFIGURATION) ?: continue
-                    val view = cfg.incoming.artifactView { componentFilter { it !is org.gradle.api.artifacts.component.ProjectComponentIdentifier } }
+                    // Skip this build's projects (hot reload modules) and the declared included modules (compiled from
+                    // source); a project of another build (composite build) that is not declared is linked as its klib.
+                    val thisBuild = buildPath(project)
+                    val fromSource = included.map { it.componentKey }.toSet()
+                    val view = cfg.incoming.artifactView {
+                        componentFilter { id ->
+                            id !is org.gradle.api.artifacts.component.ProjectComponentIdentifier ||
+                                (id.build.buildPath != thisBuild && "${id.build.buildPath.substringAfterLast(':')}|${id.projectPath}" !in fromSource)
+                        }
+                    }
                     depKlibs.from(view.files)
                     depIds += view.artifacts.resolvedArtifacts.map { set -> set.map { "${it.id.componentIdentifier.displayName}|${it.file.path}" } }
                     depVia += cfg.incoming.resolutionResult.rootComponent.map { Kmp.requesters(it) }
@@ -212,6 +227,7 @@ class HotReloadPlugin : Plugin<Project> {
                 if (this !is DaemonStopTask && this !is CleanTask) {
                     externalKlibFiles.from(depKlibs)
                     externalKlibIds.set(allIds)
+                    fromSourceModules.set(included.map { it.fromSource })
                     externalKlibVia.set(depVia.fold(project.provider { emptyList<String>() }) { acc, p -> acc.zip(p) { a, b -> a + b } })
                     composeVersion.set(PinnedToolchain.current.composeVersion)
                     // Generated KMP sources (Compose resource accessors, ...) are built before any compile.
@@ -292,6 +308,116 @@ class HotReloadPlugin : Plugin<Project> {
 
         /** ":feature:ui" -> "FeatureUi". */
         fun taskSuffix(m: HrModule) = m.label.split('-', '_', '.').joinToString("") { it.replaceFirstChar(Char::uppercase) }
+
+        /** Identity path of the build [p] belongs to (":" for the root build, ":lib-build" for an included build). */
+        internal fun buildPath(p: Project): String =
+            runCatching { p.gradle.javaClass.getMethod("getIdentityPath").invoke(p.gradle).toString() }.getOrNull()
+                ?: if (p.gradle.parent == null) ":" else ":${p.rootProject.name}"
+
+        /** The KGP default hierarchy for iosSimulatorArm64, parents first. */
+        val DEFAULT_HIERARCHY = listOf("commonMain", "nativeMain", "appleMain", "iosMain", "iosSimulatorArm64Main")
+
+        /** Compose resource generators of a KMP module for iosSimulatorArm64 (Compose Multiplatform 1.12/1.13). */
+        val COMPOSE_GENERATORS = listOf("generateComposeResClass", "generateExpectResourceCollectorsForCommonMain",
+            "generateActualResourceCollectorsForIosSimulatorArm64Main") +
+            DEFAULT_HIERARCHY.map { "generateResourceAccessorsFor" + it.replaceFirstChar(Char::uppercase) } +
+            "assembleIosSimulatorArm64MainResources"
+
+        /** A declared included module: the hot reload module, its generator task references and assembled resources. */
+        class Included(val module: HrModule, val componentKey: String, val generatorTasks: List<Any>, val composeResources: String?,
+                       val dir: File, val buildDir: File) {
+            /** `build|path|module dir|included build dir`, for leaving its own build's klib out (no double linking). */
+            val fromSource: String get() = "$componentKey|${dir.path}|${buildDir.path}"
+        }
+
+        /**
+         * Fragments of an included module laid out by the default hierarchy: each source set's src/<set>/kotlin and the
+         * Compose resource code generated for it under build/generated/compose/resourceGenerator/kotlin.
+         */
+        fun defaultFragments(dir: File): List<HrFragment> {
+            val gen = File(dir, "build/generated/compose/resourceGenerator/kotlin")
+            return DEFAULT_HIERARCHY.mapIndexed { i, set ->
+                val dirs = listOf(File(dir, "src/$set/kotlin"), File(gen, "${set}ResourceAccessors"), File(gen, "${set}ResourceCollectors")) +
+                    (if (set == "commonMain") listOf(File(gen, "commonResClass")) else emptyList())
+                HrFragment(set, dirs.map { it.path }, if (i == 0) emptyList() else listOf(DEFAULT_HIERARCHY[i - 1]))
+            }
+        }
+
+        /**
+         * Modules of this build's included builds (not declared with includedModule) that have Compose resources: a task
+         * reference to their assembleIosSimulatorArm64MainResources and its output directory. Modules are found as
+         * directories (up to two levels) with a build script and src/<set>/composeResources/.
+         */
+        fun foreignResourceModules(project: Project, declared: Set<String>): List<Pair<Any, String>> =
+            (project.gradle.includedBuilds + (project.gradle.parent?.includedBuilds ?: emptyList())).distinctBy { it.name }.flatMap { ib ->
+                val root = ib.projectDir
+                root.walkTopDown().maxDepth(2).filter { d ->
+                    d.isDirectory && d != root && (File(d, "build.gradle.kts").isFile || File(d, "build.gradle").isFile) &&
+                        File(d, "src").listFiles()?.any { File(it, "composeResources").isDirectory } == true
+                }.mapNotNull { d ->
+                    val path = ":" + d.relativeTo(root).path.replace(File.separatorChar, ':')
+                    if ("${ib.name}|$path" in declared) null
+                    else ib.task("$path:assembleIosSimulatorArm64MainResources") to
+                        File(d, "build/generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path
+                }.toList()
+            }
+
+        /** The declared included modules (0.2.2), resolved against this build's included builds. */
+        fun includedModules(project: Project, ext: HotReloadExtension, errors: MutableList<String>): List<Included> {
+            if (ext.includedModules.isEmpty()) return emptyList()
+            // A plugin applied in an included build sees its siblings through the root build.
+            val builds = (project.gradle.includedBuilds + (project.gradle.parent?.includedBuilds ?: emptyList())).associateBy { it.name }
+            val specs = ext.includedModules.sortedBy { s -> ext.includedOrder.indexOf(s.name).let { if (it < 0) Int.MAX_VALUE else it } }
+            return specs.mapNotNull { spec ->
+                val buildName = spec.build.get()
+                val path = spec.projectPath.get()
+                val ib = builds[buildName]
+                if (ib == null) {
+                    errors += "includedModule(\"$buildName\", \"$path\"): no included build named $buildName " +
+                        "(included builds: ${builds.keys.sorted().ifEmpty { listOf("none") }}); add includeBuild(...) to settings.gradle(.kts)"
+                    return@mapNotNull null
+                }
+                val dir = File(ib.projectDir, spec.projectDir.orNull ?: path.trim(':').replace(':', '/'))
+                if (!dir.isDirectory) {
+                    val known = ib.projectDir.walkTopDown().maxDepth(2).filter { d ->
+                        d != ib.projectDir && d.isDirectory && (File(d, "build.gradle.kts").isFile || File(d, "build.gradle").isFile)
+                    }.map { ":" + it.relativeTo(ib.projectDir).path.replace(File.separatorChar, ':') }.sorted().toList()
+                    errors += "includedModule(\"$buildName\", \"$path\"): no directory ${dir.path} in the included build $buildName " +
+                        "(modules found there: ${known.ifEmpty { listOf("none") }}); fix the path or set projectDir = \"<dir in $buildName>\""
+                    return@mapNotNull null
+                }
+                val fragments = if (spec.sourceSets.isEmpty()) defaultFragments(dir)
+                else spec.sourceSets.map { HrFragment(it.name, it.srcDirs.get().map { d -> File(dir, d).path }, it.dependsOn.get()) }
+                val hasResources = File(dir, "src").listFiles()?.any { File(it, "composeResources").isDirectory } == true
+                val generators = spec.generatorTasks.orNull?.takeIf { it.isNotEmpty() }
+                    ?: if (hasResources) COMPOSE_GENERATORS.map { "$path:$it" } else emptyList()
+                val srcDir = fragments.firstNotNullOfOrNull { f -> f.dirs.firstOrNull { File(it).isDirectory } } ?: dir.path
+                Included(
+                    module = HrModule(spec.name, ModuleKind.LIBRARY, srcDir, emptyList(), fragments),
+                    componentKey = "$buildName|$path",
+                    generatorTasks = generators.map { ib.task(it) },
+                    composeResources = if (hasResources) File(dir, "build/generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path else null,
+                    dir = dir, buildDir = ib.projectDir,
+                )
+            }
+        }
+
+        /**
+         * Included modules go first (in declaration order: they cannot use this build's modules), then this build's
+         * libraries; every library may use the libraries before it, the app uses all of them.
+         */
+        fun withIncluded(modules: List<HrModule>, included: List<HrModule>): List<HrModule> {
+            if (included.isEmpty()) return modules
+            val inc = included.mapIndexed { i, m -> m.copy(deps = included.take(i).map { it.path }) }
+            val incPaths = inc.map { it.path }
+            val rest = modules.map { m ->
+                when (m.kind) {
+                    ModuleKind.APP -> m.copy(deps = incPaths + m.deps.filter { it !in incPaths })
+                    ModuleKind.LIBRARY -> m.copy(deps = incPaths + m.deps)
+                }
+            }
+            return rest.filter { it.kind == ModuleKind.APP } + inc + rest.filter { it.kind == ModuleKind.LIBRARY }
+        }
 
         /** Kotlin source directory sets of KMP modules (by project path): task inputs that carry generated sources. */
         class KmpModules {

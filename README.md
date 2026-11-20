@@ -41,7 +41,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.1"
+    id("com.solufee.cmp.hotreload") version "0.2.2"
 }
 ```
 
@@ -71,6 +71,20 @@ Check the setup with `./gradlew hotReloadCheckToolchain`.
   changes to signatures, class fields or `expect`/`actual` declarations, and resource-only edits.
 
 Stop with `./gradlew hotReloadDaemonStop`.
+
+### Composite builds (`includeBuild`)
+
+Modules of an included build that your app depends on work without extra setup and are linked as that build's
+klibs (a change there restarts the app). To hot reload them too, declare them in the app module, in dependency order:
+
+```kotlin
+cmpHotReload {
+    includedModule("lib-build", ":core")   // :core of includeBuild("lib-build")
+}
+```
+
+The plugin can also be applied inside an included build and run from the root build
+(`./gradlew :lib-build:demo:hotReload`). See [docs/TRYOUT.md](docs/TRYOUT.md) section 8.
 
 ## Scope
 

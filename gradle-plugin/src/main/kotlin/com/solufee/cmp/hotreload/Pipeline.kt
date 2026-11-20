@@ -97,6 +97,25 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         return (before.keys + now.keys).sorted().filter { before[it] != now[it] }
     }
 
+    /** Size and mtime of every external klib linked at package time (`stamp  path`). */
+    val externalKlibManifest get() = File(work, "external-klibs.stamps")
+
+    private fun externalKlibStamps(): Map<String, String> = s.extraKlibs.map(::File).associate { f ->
+        val files = if (f.isDirectory) f.walkTopDown().filter { it.isFile }.toList() else listOf(f)
+        f.path to "${files.sumOf { it.length() }}-${files.maxOfOrNull { it.lastModified() } ?: 0}"
+    }.toSortedMap()
+
+    /**
+     * External klibs that differ from those the running app was packaged with (e.g. a module of an included build that
+     * is linked as its klib and was rebuilt): added, removed or changed paths; empty without a manifest.
+     */
+    fun externalKlibChanges(): List<String> {
+        if (!externalKlibManifest.isFile) return emptyList()
+        val before = externalKlibManifest.readLines().filter { it.isNotBlank() }.associate { it.substringAfter("  ") to it.substringBefore("  ") }
+        val now = externalKlibStamps()
+        return (before.keys + now.keys).sorted().filter { before[it] != now[it] }
+    }
+
     /** The UIKit entry generated for [HrSettings.iosEntry] (written by [writeGeneratedMain]). */
     fun generatedMain(): File = File(s.generatedDir, "HotReloadMain.kt")
 
@@ -285,6 +304,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         val resDirs = s.composeResources.map(::File).filter { it.isDirectory }
         resDirs.forEach { res -> res.copyRecursively(File(bundle, "compose-resources"), overwrite = true) }
         resourceManifest.writeText(resourceDigests(resDirs).entries.joinToString("") { (k, v) -> "$v  $k\n" })
+        externalKlibManifest.writeText(externalKlibStamps().entries.joinToString("") { (k, v) -> "$v  $k\n" })
+        // Every klib the app is linked with: the hot reload modules' own klibs, then the external ones.
+        File(work, "linked-klibs.txt").writeText((s.libraries.map { "module  ${s.klibOf(it).path}" } + s.extraKlibs.map { "external  $it" }).joinToString("\n", postfix = "\n"))
         if (resDirs.isNotEmpty()) {
             logger.lifecycle("compose resources: ${resDirs.sumOf { d -> d.walkTopDown().count { it.isFile } }} files from ${resDirs.size} module(s) -> compose-resources/")
         }
