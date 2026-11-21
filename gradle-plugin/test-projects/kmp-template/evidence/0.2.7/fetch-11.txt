@@ -1,0 +1,11 @@
+fetched kotlin-native (sha256 853a55099bc7 ok)
+fetched compose-klibs (sha256 245d8ff9cf21 ok)
+fetched compose-compiler-plugin (sha256 4af51d97c171 ok)
+fetched kaldo-iossim (sha256 439e7c94f889 ok)
+fetched kaldo-macos (sha256 228ddd13e3ab ok)
+fetched orc-runtime (sha256 42aaebcbfa0a ok)
+fetched cmp-uikit-utils (sha256 ff155c90c4ff ok)
+fetched llvm-tools (sha256 0d631c05112e ok)
+fetched 27 public klibs from their Maven repositories (sha256 ok)
+toolchain ready: <WS>/scratch/release-smoke/toolchains/2.5.255-hotreload.11/kotlin-native/toolchain.json
+env: source <WS>/scratch/release-smoke/toolchains/2.5.255-hotreload.11/env.sh

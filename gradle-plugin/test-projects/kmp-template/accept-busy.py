@@ -181,6 +181,20 @@ mvc = open(MVC).read()
 mvc = re.sub(r"(ComposeUIViewController\s*(?:\([^)]*\))?\s*\{\s*App\(\)\s*\})", r"\1.also { installBusyHook() }", mvc, count=1)
 open(MVC, "w").write(mvc)
 watch = None
+# Issue #66: `axe describe-ui` turns on the simulator's accessibility switch (ApplicationAccessibilityEnabled,
+# AccessibilityEnabled; ~1.8 s more at every app start). The shared helper saves both keys before the first describe-ui
+# and writes them back when the script ends, also after a failure (absent keys are written back as NO).
+AX_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../example-gradle/tools/sim-ax-keys.sh")
+
+
+def ax_keys(cmd):
+    """Run example-gradle/tools/sim-ax-keys.sh save|restore for this simulator. Returns (ok, line)."""
+    r = subprocess.run(["bash", AX_HELPER, cmd, a.udid], capture_output=True, text=True)
+    line = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"sim-ax-keys.sh {cmd}: no output"]
+    return r.returncode == 0, line[0]
+
+
+say(ax_keys("save")[1])
 try:
     say("## 1. package, run, one edit")
     rc, out, dt = gradle("hotReloadPackage")
@@ -278,6 +292,8 @@ finally:
     subprocess.run(["xcrun", "simctl", "terminate", a.udid, BUNDLE], capture_output=True)
     gradle("hotReloadDaemonStop")
     say(f"stopped {BUNDLE} and the compile daemons; app running: {pid() is not None}")
+    ax_ok, ax_line = ax_keys("restore")
+    check("simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui)", ax_ok, ax_line)
 failed = [n for n, ok in results if not ok]
 say(f"summary: {len(results) - len(failed)}/{len(results)} PASS" + ("" if not failed else f"; FAILED: {failed}"))
 sys.exit(1 if failed else 0)

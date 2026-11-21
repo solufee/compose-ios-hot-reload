@@ -7,7 +7,7 @@
 |---|---|---|---|
 | `kotlin-native-hot-reload.patch` | https://github.com/JetBrains/kotlin | `8e53ee99fbc08e264828ab082aee3e448194eca8` | 三个未合并 PR 的完整改动 + 本项目的改动 |
 | `llvm-kaldo.patch` | https://github.com/gabryon99/llvm-project-kotlin | `2f8844c2b35557baced9106c50b9b8758fa6a0de` | libKaldo 插件（selector 修复、compact-unwind→eh_frame、EH 注册、模块初始化器、符号外部化） |
-| `compose-multiplatform-core-build.patch` | https://github.com/JetBrains/compose-multiplatform-core | 工具链 .7：官方标签 `v1.13.0-rc01` = `f39822e6a77eea5d194e4f9bb56cb6961321b849`（.6 及以前：`ee243c321ddff6b18fcf18916be1b96ef70e2363`，补丁内容相同，两处都能打上） | 构建接线，让 Compose 用 2.5.255-SNAPSHOT 出 klib；工具链 .6 起另含 `ui` 模块 iOS 源码的一处改动：热重载成功后强制完整重组（新文件 `compose/ui/ui/src/iosMain/.../scene/HotReloadRecompose.ios.kt`，`ComposeSceneMediator.ios.kt` 包一层，TECHNICAL-NOTES §1.6）。不改 Compose runtime（runtime 用 Google 发布的 klib） |
+| `compose-multiplatform-core-build.patch` | https://github.com/JetBrains/compose-multiplatform-core | 工具链 .7：官方标签 `v1.13.0-rc01` = `f39822e6a77eea5d194e4f9bb56cb6961321b849`（.6 及以前：`ee243c321ddff6b18fcf18916be1b96ef70e2363`，补丁内容相同，两处都能打上） | 构建接线，让 Compose 用 2.5.255-SNAPSHOT 出 klib；工具链 .6 起另含 `ui` 模块 iOS 源码的一处改动：热重载成功后强制完整重组（新文件 `compose/ui/ui/src/iosMain/.../scene/HotReloadRecompose.ios.kt`，`ComposeSceneMediator.ios.kt` 包一层，TECHNICAL-NOTES §1.6）。工具链 .11 起，两种 Metal 渲染器（`MetalRedrawer.ios.kt`、`SurfaceMetalRedrawer.ios.kt`）在第一帧提交后打印首帧就绪标记 `HR READY first-frame`（INTERFACE §6.1）；调用点由 `isHotReloadBinary()` 守卫，release 代码不变。不改 Compose runtime（runtime 用 Google 发布的 klib） |
 
 ## Kotlin 补丁包含的 PR
 
@@ -22,7 +22,7 @@
 
 本项目在它们之上的改动（原理见 `docs/TECHNICAL-NOTES.md`）：eh_frame 合成、
 `-Xhot-reload` 的 cache-only 分支、稳定的中间 klib 名、用户模块 per-file 缓存、
-ObjC selector 修复的 runtime 侧配合等。补丁共 100 个文件、约 3.1k 行新增。
+ObjC selector 修复的 runtime 侧配合，以及首帧就绪标记用的 `kotlin.native.runtime.isHotReloadBinary()` / `HotReload.isEnabled`（工具链 .11，`CompilerConstants.cpp` 里的 `Kotlin_native_runtime_HotReload_isEnabled`）等。补丁共 106 个文件、约 3.1k 行新增。
 
 ## 应用
 
@@ -81,6 +81,8 @@ ee243c321ddff6b18fcf18916be1b96ef70e2363
 $ git -C /tmp/verify-compose apply --check patches/compose-multiplatform-core-build.patch
 （无输出，退出码 0）
 ```
+
+Issue #60（工具链 .11 首帧就绪标记，2026-11-21）：`kotlin-native-hot-reload.patch` sha256 `1ccbcca1…`。改动是 `HotReload.kt` 新增 `isHotReloadBinary()` 和 `HotReload.isEnabled`，`CompilerConstants.cpp` 新增 `Kotlin_native_runtime_HotReload_isEnabled`，stdlib 的 API dump 同步更新；共 106 个文件，在 JetBrains/kotlin 基线 `8e53ee99` 上 `git apply --check` 通过。`compose-multiplatform-core-build.patch` sha256 `8f9229c0…`。改动是 `HotReloadRecompose.ios.kt` 的 `hotReloadFrameCommitted()`，以及 `MetalRedrawer.ios.kt`、`SurfaceMetalRedrawer.ios.kt` 的调用点；共 16 个文件，在 `f39822e6a77e` 上 `git apply --check` 通过。两次检查都是先用 `git archive` 取出基线里被改的文件，再在里面跑。`llvm-kaldo.patch` 不变。
 
 Issue #53（#32 第二步，2026-11-21）：`llvm-kaldo.patch` sha256 `81fa2129…`（`Kaldo.cpp` 每条 bootstrap payload 一个 buffer 名、清单种类 2 从文件加载对象，`Kaldo.hpp`，`ManifestReader.cpp` 接受种类 2），在 gabryon99/llvm-project-kotlin 的基线 `2f8844c2b355` 上 `git apply --cached --check` 通过，3 个文件与工作树逐字节相同；`kotlin-native-hot-reload.patch` sha256 `3fcf2ab7…`（新增 binary option `splitPayloadReserve`），在 `8e53ee99fbc0` 上通过，2 个文件逐字节相同（`patches/apply-check.log`）。
 

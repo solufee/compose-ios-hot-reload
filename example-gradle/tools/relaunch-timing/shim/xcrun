@@ -1,0 +1,8 @@
+#!/bin/bash
+# Timing shim (#60, measurement only): logs start/end of every xcrun call, then runs the real xcrun unchanged.
+T=${RELAUNCH_TIMING_LOG:-/dev/null}
+now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
+echo "$(now) START $*" >> "$T"
+/usr/bin/xcrun "$@"; rc=$?
+echo "$(now) END rc=$rc $*" >> "$T"
+exit $rc

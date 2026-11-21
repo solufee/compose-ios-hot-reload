@@ -215,6 +215,7 @@ class HotReloadPlugin : Plugin<Project> {
                     udid = ext.simulator.udid.get(),
                     launchLog = ext.simulator.launchLog.get().asFile.path,
                     readyMarker = ext.simulator.readyMarker.orNull,
+                    toolchainReadyMarker = tc["readyMarker"],
                     launchTimeoutSec = ext.simulator.launchTimeoutSeconds.get(),
                     launchRetries = ext.simulator.launchRetries.get(),
                     reinstall = ext.simulator.reinstall.get(),
@@ -654,6 +655,7 @@ class HotReloadPlugin : Plugin<Project> {
                 t.kaldoIossimSha256?.let { put("kaldoIossimSha256", it) }
                 t.target?.let { put("target", it) }
                 t.reloadPort?.let { put("reloadPort", it.toString()) }
+                t.readyMarker?.let { put("readyMarker", it) }
                 t.toolsLlvm?.let { put("toolsLlvm", it) }
                 t.toolsOrcRuntime?.let { put("toolsOrcRuntime", it) }
                 t.toolsUikitUtils?.let { put("toolsUikitUtils", it) }

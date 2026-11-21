@@ -1,0 +1,25 @@
+# lambda stress: app/src/main/kotlin/main.kt, pid 83435, 20 reloads, a tap on '+' after each
+ax saved: App=1 AX=1
+reload00 OK add      r0   3838ms hot=True loaded=True screen=True tap +:0->+1 pid 83435->83435 crash=none
+reload01 OK remove   -    3869ms hot=True loaded=True screen=True tap +:1->+1 pid 83435->83435 crash=none
+reload02 OK add-back r0   3714ms hot=True loaded=True screen=True tap +:2->+1 pid 83435->83435 crash=none
+reload03 OK add      r1   3870ms hot=True loaded=True screen=True tap +:3->+1 pid 83435->83435 crash=none
+reload04 OK remove   -    3723ms hot=True loaded=True screen=True tap +:4->+1 pid 83435->83435 crash=none
+reload05 OK add-back r1   3806ms hot=True loaded=True screen=True tap +:5->+1 pid 83435->83435 crash=none
+reload06 OK add      r2   3875ms hot=True loaded=True screen=True tap +:6->+1 pid 83435->83435 crash=none
+reload07 OK remove   -    3629ms hot=True loaded=True screen=True tap +:7->+1 pid 83435->83435 crash=none
+reload08 OK add-back r2   3873ms hot=True loaded=True screen=True tap +:8->+1 pid 83435->83435 crash=none
+reload09 OK add      r3   3672ms hot=True loaded=True screen=True tap +:9->+1 pid 83435->83435 crash=none
+reload10 OK remove   -    3816ms hot=True loaded=True screen=True tap +:10->+1 pid 83435->83435 crash=none
+reload11 OK add-back r3   3738ms hot=True loaded=True screen=True tap +:11->+1 pid 83435->83435 crash=none
+reload12 OK add      r4   3686ms hot=True loaded=True screen=True tap +:12->+1 pid 83435->83435 crash=none
+reload13 OK remove   -    3707ms hot=True loaded=True screen=True tap +:13->+1 pid 83435->83435 crash=none
+reload14 OK add-back r4   3729ms hot=True loaded=True screen=True tap +:14->+1 pid 83435->83435 crash=none
+reload15 OK add      e0   3718ms hot=True loaded=True screen=True tap +:15->+1 pid 83435->83435 crash=none
+reload16 OK remove   -    3628ms hot=True loaded=True screen=True tap +:16->+1 pid 83435->83435 crash=none
+reload17 OK add      e2   3765ms hot=True loaded=True screen=True tap +:17->+1 pid 83435->83435 crash=none
+reload18 OK remove   -    3745ms hot=True loaded=True screen=True tap +:18->+1 pid 83435->83435 crash=none
+reload19 OK add      e4   3626ms hot=True loaded=True screen=True tap +:19->+1 pid 83435->83435 crash=none
+# file restored
+PASS simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | ax restored: App=1 AX=1 (before describe-ui: App=1 AX=1)
+summary: 20/20 reloads OK in one process

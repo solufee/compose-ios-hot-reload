@@ -20,7 +20,7 @@ picks up the change without restarting. Navigation and `remember` state are kept
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.10/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.11/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
@@ -41,7 +41,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.6"
+    id("com.solufee.cmp.hotreload") version "0.2.7"
 }
 ```
 
@@ -49,7 +49,7 @@ plugins {
 from step 1, written as an absolute path:
 
 ```properties
-cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.10/kotlin-native
+cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.11/kotlin-native
 ```
 
 Add `<module>/.hr/` and `<module>/launch.log` to `.gitignore`. No source changes are needed: source sets,
@@ -143,6 +143,13 @@ where you were, the app keeps what matters in `Documents/hr-state.json` inside i
 
 `warm: the app saved no state (Documents/hr-state.json)` means the file did not exist when the restart began: the app
 restarts from its first screen. Nothing else is affected. A normal `hotReloadRun` reinstalls without the old file.
+
+Since plugin 0.2.7, a warm restart usually does not reinstall: when the new build differs from the installed app only in
+its executable, the plugin replaces the executable in the installed app (checked byte for byte; any other difference
+reinstalls). The app's data (Documents, preferences) then stays as it is, like an app update. If the app was
+uninstalled or its data container deleted, the warm restart installs it afresh. With toolchain .11, the app counts as
+started once it has drawn its first frame (`HR READY first-frame`, docs/INTERFACE.md §6.1) instead of 3 s after Kotlin
+main started; the wizard template's warm restart is ~1.3 s shorter.
 
 Minimal sample (iosMain):
 

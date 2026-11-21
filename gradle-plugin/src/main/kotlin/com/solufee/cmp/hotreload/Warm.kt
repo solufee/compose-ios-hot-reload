@@ -15,12 +15,15 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
     data class State(val page: Int, val count: Int)
 
     /** Raw bytes of the app's Documents/hr-state.json, or null when the app wrote none. */
-    fun savedStateFile(bundleId: String): ByteArray? {
+    fun savedStateFile(bundleId: String): ByteArray? = stateIn(dataContainer(bundleId))
+
+    /** The app's data container as simctl reports it, or null when the app is not installed. */
+    private fun dataContainer(bundleId: String): File? {
         val r = Proc.run(listOf("xcrun", "simctl", "get_app_container", s.udid, bundleId, "data"), echo = false)
-        if (r.exit != 0) return null
-        val f = File(r.output.trim(), "Documents/$STATE_FILE")
-        return if (f.isFile) f.readBytes() else null
+        return if (r.exit != 0) null else File(r.output.trim())
     }
+
+    private fun stateIn(data: File?): ByteArray? = data?.let { File(it, "Documents/$STATE_FILE") }?.takeIf { it.isFile }?.readBytes()
 
     fun savedState(bundleId: String): State? = savedStateFile(bundleId)?.let { parseState(it.toString(Charsets.UTF_8)) }
 
@@ -30,7 +33,11 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
         val info = pipeline.appInfo()
         // The whole file travels across the reinstall (any fields the app keeps, INTERFACE §10.3 plus the
         // app's own transient state); page/count, when present, are also passed as --hr-state.
-        val stateFile = savedStateFile(info.bundleId)
+        val data = dataContainer(info.bundleId)
+        val stateFile = stateIn(data)
+        // #62: the in-place update keeps the data container; when it is gone (or the app was uninstalled) the warm
+        // restart installs afresh instead.
+        val noInPlace = inPlaceBlocked(data)
         val state = stateFile?.let { parseState(it.toString(Charsets.UTF_8)) }
         logger.lifecycle(
             when {
@@ -46,7 +53,7 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
         val launcher = Launcher(s, logger)
         val args = state?.let { listOf("--hr-state=${it.page},${it.count}") } ?: emptyList()
         val tokens = state?.let { listOf("page=${it.page}", "count=${it.count}") } ?: emptyList()
-        launcher.launch(pipeline, args, tokens, stateFile?.let { mapOf(STATE_FILE to it) } ?: emptyMap())
+        val started = launcher.launch(pipeline, args, tokens, stateFile?.let { mapOf(STATE_FILE to it) } ?: emptyMap(), inPlace = true, inPlaceBlocked = noInPlace)
         val end = System.currentTimeMillis()
         val log = File(s.launchLog).readText()
         if (log.lines().any { it.startsWith("EH FAIL") }) {
@@ -54,12 +61,19 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
         }
         logger.lifecycle(
             "WARM OK ms=${end - t0} ms_package=${tPkg - t0} ms_relaunch=${end - tPkg}" +
-                (state?.let { " page=${it.page} count=${it.count}" } ?: " page=- count=-"),
+                (state?.let { " page=${it.page} count=${it.count}" } ?: " page=- count=-") + " ready=${started.ready}",
         )
         return end - t0
     }
 
     companion object {
+        /** #62: why the installed app cannot be updated in place, or null when it can (data container present). */
+        fun inPlaceBlocked(data: File?): String? = when {
+            data == null -> "the app is not installed"
+            !data.isDirectory -> "the app's data container is gone"
+            else -> null
+        }
+
         const val STATE_FILE = "hr-state.json"
         private val PAGE = Regex(""""page"\s*:\s*(-?\d+)""")
         private val COUNT = Regex(""""count"\s*:\s*(-?\d+)""")

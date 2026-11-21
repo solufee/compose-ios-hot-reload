@@ -797,6 +797,20 @@ def stop():
     say(f"terminated {BUNDLE} (pid {p_last}); compile daemons stopped; app running now: {pid() is not None}")
 
 
+# Issue #66: `axe describe-ui` turns on the simulator's accessibility switch (ApplicationAccessibilityEnabled,
+# AccessibilityEnabled; ~1.8 s more at every app start). The shared helper saves both keys before the first describe-ui
+# and writes them back when the script ends, also after a failure (absent keys are written back as NO).
+AX_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../example-gradle/tools/sim-ax-keys.sh")
+
+
+def ax_keys(cmd):
+    """Run example-gradle/tools/sim-ax-keys.sh save|restore for this simulator. Returns (ok, line)."""
+    r = subprocess.run(["bash", AX_HELPER, cmd, a.udid], capture_output=True, text=True)
+    line = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"sim-ax-keys.sh {cmd}: no output"]
+    return r.returncode == 0, line[0]
+
+
+say(ax_keys("save")[1])
 try:
     main()
 except Exception as e:
@@ -804,6 +818,8 @@ except Exception as e:
 finally:
     say("## 7. stop")
     stop()
+    ax_ok, ax_line = ax_keys("restore")
+    check("simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui)", ax_ok, ax_line)
 # ---------------------------------------------------------------- 7. stop and summary
 gap_after = os.path.getmtime(GAP) if os.path.exists(GAP) else None
 check("libKaldo wrote no SELREF debug log (/tmp/gap-selrefs.log unchanged)", gap_after == gap_before, f"{gap_before} -> {gap_after}")

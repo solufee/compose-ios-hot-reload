@@ -1,0 +1,94 @@
+# composite build acceptance, 2026-11-21 14:38:18, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB, ports 5568 (app) / 5569 (lib-build demo)
+# plugin 0.2.7-dev62c from a local Maven directory
+## A. includedModule("lib-build", ":util"/":core"): modules of the included build compiled from source
+PASS release baseline recorded (lib-build modules compiled from source) | 116s; release baseline recorded: <P>/app/build/hotreload/release/baseline.fingerprint (63594 symbols, 41 sections, __text digest 13e51ab4e3af)
+  dependency klibs: 1 linked, 88 replaced by the toolchain's copies
+  hot packages: org.example.app,org.example.core,org.example.core.res,org.example.feature,org.example.util; keep compact unwind: true
+  compose resources: 1 files from 3 module(s) -> compose-resources/
+  package timing ms=108836 compile=101260 merge=5922 embed+bundle=1654 embed=772 bundle=882 baseline-wait=0
+  BUILD SUCCESSFUL in 1m 52s
+PASS package: lib-build modules are hot packages, core's resources bundled | 113s
+PASS linked klibs: core and util each exactly once (our module klibs; lib-build's own klibs left out) | core=['module'] util=['module'] of 4 klibs
+PASS configuration cache: a second package reuses it (cross-build task references included) | 4.2s
+PASS run | 8.0s pid 92471
+PASS run: EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('128978', '0')] SEL [('569', '0')] crash=none
+PASS screen: app, feature (convention plugin), core (included build, string resource, actual) and util | ['App: app-1 | feature-1', 'Feature: feature-1 | feature-ios-1', 'Core: Core title v1 | core-ios-1 | core-1 util-1']
+## A1. hot changes in both builds, on screen without taps
+PASS root :app body -> HOT | 6.5s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=0 feature=0 [] screen has ('App: app-2',): True
+PASS root :feature body (convention plugin module) -> HOT | 5.6s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=0 feature=1 [] screen has ('App: app-2 | feature-2', ''): True
+PASS root :feature iosMain actual -> HOT | 5.9s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=0 feature=2 [] screen has ('Feature: feature-2 | feature-ios-2',): True
+PASS included lib-build:core body -> HOT | 6.3s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=1 feature=0 [] screen has ('core-2 util-1',): True
+PASS included lib-build:util body (used only through core) -> HOT | 6.2s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=1 lib-build-core=1 feature=0 [] screen has ('core-2 util-2',): True
+PASS included lib-build:core iosMain actual -> HOT | 5.8s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=2 feature=0 [] screen has ('core-ios-2',): True
+## A2. expect/actual and resource changes in the included build
+PASS included core expect/actual signature (#28) -> HOT | 5.9s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=2 feature=0 [] screen has ('core-ios-3',): True
+PASS add an expect/actual fun pair in included core and use it (#28) -> HOT | 6.1s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=2 feature=0 [] screen has ('core-ios-4 sim',): True
+PASS remove the expect/actual fun pair in included core (#28) -> HOT | 5.2s exit=0 compat=HOT pid 92471->92471 changed objects: app=3 lib-build-util=0 lib-build-core=2 feature=0 [] screen has ('core-ios-5',): True
+PASS add an expect/actual class pair in included core -> WARM | 17.1s exit=0 compat=WARM pid 92471->93843 changed objects: app=3 lib-build-util=0 lib-build-core=2 feature=0 ['WARM expect-actual CoreClock: expect class added'] screen has ('core-ios-5',): True
+PASS add an expect/actual class pair in included core (after warm restart): EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('128978', '0')] SEL [('569', '0')] crash=none
+PASS included core string resource -> WARM | 15.8s exit=0 compat=WARM pid 93843->94225 changed objects: app=3 lib-build-util=0 lib-build-core=3 feature=0 ['WARM compose-resources: 1 file(s) changed since packaging (composeResources/org.example.core.res/values/strings.commonMain.cvr); resources are copied into the app when it is packaged'] screen has ('Core: Core title v2',): True
+PASS included core string resource (after warm restart): EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('128978', '0')] SEL [('569', '0')] crash=none
+## A3. Dialog: open, then a HOT reload of included code updates it
+PASS an open Dialog shows the reloaded app and included code (HOT, same pid) | 5.7s labels with util-3: 1
+## A4. release: sources back to the baseline, hotReloadVerifyRelease (daemons running)
+  release unchanged: 63594 symbols, 41 section sizes and the __text digest 13e51ab4e3af identical to the baseline (raw __text 38fedeb47bf5 -> 567ecc826e6c, recorded only)
+  BUILD SUCCESSFUL in 1m 51s
+PASS hotReloadVerifyRelease (digest) with lib-build modules | 111s
+## B. without includedModule: lib-build's own build makes the klibs, the app links them
+  klib feature: compiling (sources changed: Feature.kt, Feature.ios.kt; module klibs changed: lib-build-core, lib-build-util; dependency klibs changed: core, util; compiler arguments or toolchain changed)
+  dependency klibs: 3 linked, 88 replaced by the toolchain's copies
+  dependency klibs: project :lib-build:core comes from the included build lib-build and is linked as the klib that build produces; its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule("lib-build", ":core") }
+  dependency klibs: project :lib-build:util comes from the included build lib-build and is linked as the klib that build produces; its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule("lib-build", ":util") }
+  hot packages: org.example.app,org.example.feature; keep compact unwind: true
+  app klib (classifier): compiling (sources changed: App.kt; module klibs changed: feature, lib-build-core, lib-build-util; dependency klibs changed: core, util; compiler arguments or toolchain changed)
+  compose resources: 1 files from 3 module(s) -> compose-resources/
+  package timing ms=14696 compile=8167 merge=5789 embed+bundle=740 embed=288 bundle=452 baseline-wait=0
+  BUILD SUCCESSFUL in 18s
+PASS package: core and util linked as lib-build's klibs, with the includedModule hint | 19s, 2 hints
+PASS run
+PASS run (klibs from lib-build): EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('129073', '0')] SEL [('569', '0')] crash=none
+PASS screen: core's string resource bundled from lib-build | ['Core: Core title v1 | core-ios-1 | core-1 util-1']
+PASS a change in lib-build's core (linked as klib) -> WARM | 16.3s exit=0 compat=WARM pid 95831->96159  ['WARM external-klibs: 1 changed since packaging (core); declare includedModule(...) for modules of an included build to hot reload them'] screen has ('core-9',): True
+PASS a change in lib-build's core (linked as klib) (after warm restart): EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('129073', '0')] SEL [('569', '0')] crash=none
+## C. the plugin applied inside the included build (:lib-build:demo), run from the root build
+  dependency klibs: 1 linked, 88 replaced by the toolchain's copies, 1 duplicates skipped
+  hot packages: org.example.core,org.example.core.res,org.example.demo,org.example.util; keep compact unwind: true
+  compose resources: 2 files from 3 module(s) -> compose-resources/
+  package timing ms=107661 compile=100211 merge=5749 embed+bundle=1701 embed=766 bundle=935 baseline-wait=0
+  BUILD SUCCESSFUL in 1m 51s
+PASS package from the root build: work dir under lib-build/demo, core/util as project dependencies | 112s
+PASS run: lib-build's local.properties (its own port) | CMP hot reload: app started (attempt 1, pid 1382, 6.1 s, port 5569, log <P>/lib-build/demo/launch.log)
+PASS demo run: EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('128978', '0')] SEL [('569', '0')] crash=none
+PASS screen: demo and core | ['Demo: demo-1', 'Core: Core title v1 | core-ios-1 | core-9 util-1']
+PASS demo body (included build's own app) -> HOT | 6.8s exit=0 compat=HOT pid 1382->1382 changed objects: demo=3 util=0 core=0 [] screen has ('Demo: demo-2',): True
+PASS core actual through the demo app -> HOT | 5.8s exit=0 compat=HOT pid 1382->1382 changed objects: demo=3 util=0 core=2 [] screen has ('core-ios-5',): True
+## D. only :core declared: :util (which core uses) is linked as lib-build's klib
+  klib lib-build-core: compiling (sources changed: String0.commonMain.kt, Core.kt, Core.ios.kt; module klibs changed: lib-build-util; dependency klibs changed: util; compiler arguments or toolchain changed)
+  klib feature: compiling (module klibs changed: lib-build-core; dependency klibs changed: core; compiler arguments or toolchain changed)
+  dependency klibs: 2 linked, 88 replaced by the toolchain's copies
+  dependency klibs: project :lib-build:util comes from the included build lib-build and is linked as the klib that build produces; its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule("lib-build", ":util") }
+  hot packages: org.example.app,org.example.core,org.example.core.res,org.example.feature; keep compact unwind: true
+  app klib (classifier): compiling (module klibs changed: feature, lib-build-core; dependency klibs changed: core; compiler arguments or toolchain changed)
+  package timing ms=14383 compile=7780 merge=5931 embed+bundle=672 embed=268 bundle=404 baseline-wait=0
+  BUILD SUCCESSFUL in 18s
+PASS package: core compiled from source, util linked as lib-build's klib, each once; the hint names :util only | core=['module'] util=['external'] hints=1
+PASS run
+PASS run (core from source, util as klib): EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('128982', '0')] SEL [('569', '0')] crash=none
+PASS core body (declared) while util is a klib -> HOT | 8.8s exit=0 compat=HOT pid 2186->2186 changed objects: app=3 lib-build-core=1 feature=0 [] screen has ('core-10',): True
+PASS util body (not declared: its klib changes) -> WARM | 16.7s exit=0 compat=WARM pid 2186->2587  ['WARM external-klibs: 1 changed since packaging (util); declare includedModule(...) for modules of an included build to hot reload them'] screen has ('core-10 util-7',): True
+PASS util body (not declared: its klib changes) (after warm restart): EH check FDE > 0, 0 pc-out-of-range; SELREF 0 mismatch; no crash | EH [('128982', '0')] SEL [('569', '0')] crash=none
+## E. a wrong includedModule is reported before anything compiles
+PASS wrong build name: the error lists the included builds |     - includedModule("lib-buidl", ":core"): no included build named lib-buidl (included builds: [build-logic, lib-build]); add includeBuild(...) to settings.gradle(.kts)
+PASS wrong path: the error lists the modules of that build, nothing compiled |     - includedModule("lib-build", ":cor"): no directory <WORK>/CompositeApp/lib-build/cor in the included build lib-build (modules found th
+## F. a source set outside the default hierarchy (lib-build:util iosSharedMain)
+PASS default declaration: a warning names util/src/iosSharedMain/kotlin and shows the sourceSets to declare | CMP hot reload: warning: lib-build:util has Kotlin source sets that hot reload does not compile: <WORK>/CompositeApp/li
+PASS declared as suggested: no warning, package OK | 6s
+PASS run
+PASS core's actual now calls util's iosSharedMain function -> HOT | 9.8s exit=0 compat=HOT pid 3310->3310 changed objects: app=3 lib-build-util=0 lib-build-core=2 feature=0 [] screen has ('core-ios-5 shared-1',): True
+PASS an edit in util's iosSharedMain (declared source set) -> HOT | 6.5s exit=0 compat=HOT pid 3310->3310 changed objects: app=3 lib-build-util=1 lib-build-core=2 feature=0 [] screen has ('core-ios-5 shared-2',): True
+## stop
+apps running now: False
+PASS ~/.konan/dependencies not touched (names and mtimes)
+PASS libKaldo wrote no SELREF debug log
+PASS configuration cache on (fixture gradle.properties) in all 42 Gradle runs, no configuration cache problems | 0 runs with problems
+summary: 50/50 PASS

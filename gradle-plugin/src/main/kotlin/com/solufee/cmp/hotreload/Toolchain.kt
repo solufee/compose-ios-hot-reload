@@ -38,6 +38,8 @@ data class Toolchain(
     val toolsUikitUtils: String? = null,
     /** Set in downloaded toolchains (and in the plugin's pin): e.g. 2.5.255-hotreload.4. */
     val toolchainVersion: String? = null,
+    /** runtime.readyMarker (.11+, INTERFACE §6.1): the app prints this line once its first frame is committed. */
+    val readyMarker: String? = null,
 ) {
     companion object {
         fun parse(manifest: File): Toolchain = parse(manifest, manifest.readText())
@@ -83,6 +85,7 @@ data class Toolchain(
                 toolsOrcRuntime = tools.str("orcRuntime"),
                 toolsUikitUtils = tools.str("uikitUtils"),
                 toolchainVersion = root.str("toolchainVersion"),
+                readyMarker = runtime.str("readyMarker"),
             )
         }
     }

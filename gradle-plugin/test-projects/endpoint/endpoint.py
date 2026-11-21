@@ -268,6 +268,20 @@ def cold_round(i):
     results.setdefault("cold", []).append((ok, 0))
 
 
+# Issue #66: `axe describe-ui` turns on the simulator's accessibility switch (ApplicationAccessibilityEnabled,
+# AccessibilityEnabled; ~1.8 s more at every app start). The shared helper saves both keys before the first describe-ui
+# and writes them back when the script ends, also after a failure (absent keys are written back as NO).
+AX_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../example-gradle/tools/sim-ax-keys.sh")
+
+
+def ax_keys(cmd):
+    """Run example-gradle/tools/sim-ax-keys.sh save|restore for this simulator. Returns (ok, line)."""
+    r = subprocess.run(["bash", AX_HELPER, cmd, a.udid], capture_output=True, text=True)
+    line = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"sim-ax-keys.sh {cmd}: no output"]
+    return r.returncode == 0, line[0]
+
+
+out(ax_keys("save")[1])
 try:
     if a.package:
         r = gradle("hotReloadPackage", timeout=1800)
@@ -297,9 +311,12 @@ finally:
     subprocess.run(["xcrun", "simctl", "terminate", a.udid, a.bundle], capture_output=True)
     out("# app stopped")
 
+    ax_ok, ax_line = ax_keys("restore")
+    results["ax"] = [(ax_ok, 0)]
+    out(f"{'PASS' if ax_ok else 'FAIL'} simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | {ax_line}")
 out("=== summary ===")
 failed = 0
-for k in ("ui", "app", "both", "warm", "taps", "cold"):
+for k in ("ui", "app", "both", "warm", "taps", "cold", "ax"):
     v = results.get(k)
     if not v:
         continue

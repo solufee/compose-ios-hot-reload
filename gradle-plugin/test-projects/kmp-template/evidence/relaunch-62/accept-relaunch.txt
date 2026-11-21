@@ -1,0 +1,37 @@
+# #62 acceptance (install paths and state), 2026-11-21 14:50:48, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+PASS package | 11s
+PASS run with --hr-state=2,3 | install: uninstall + install (412 ms; not a warm restart) / CMP hot reload: app started (attempt 1, pid 4362, 5.2 s, port 5568, log <REPO>/example-gradle/launch.log)
+PASS the app saved its state | Documents/hr-state.json = {"page":2,"count":3}
+## 2. in-place update
+PASS warm restart OK | WARM OK ms=10538 ms_package=5399 ms_relaunch=5139 page=2 count=3
+PASS executable replaced in the installed app | install: executable replaced in the installed app (167 ms; every other file identical, the installed executable checked byte for byte)
+PASS state carried: the app's data container kept (same path, state file not rewritten by the plugin) | data container unchanged=True, Documents/hr-state.json = {"page":2,"count":3}
+PASS the new app is on page 2, count 3 | warm: restoring page=2 count=3 (Documents/hr-state.json, 21 bytes)
+PASS installed executable == packaged executable | installed ComposeHR sha256 e35202a847e45a5e packaged e35202a847e45a5e
+## 3. forced reinstall (installed Info.plist changed by hand)
+PASS warm restart OK | WARM OK ms=11541 ms_package=5215 ms_relaunch=6326 page=2 count=3
+PASS uninstall + install because Info.plist changed | install: uninstall + install (446 ms; Info.plist changed)
+PASS state carried: the plugin wrote hr-state.json into the new install | CMP hot reload: restored Documents/hr-state.json (21 bytes) into the new install; Documents/hr-state.json = {"page":2,"count":3}
+PASS the new app is on page 2, count 3 | warm: restoring page=2 count=3 (Documents/hr-state.json, 21 bytes)
+PASS installed executable == packaged executable | installed ComposeHR sha256 66286ffaba5e3de9 packaged 66286ffaba5e3de9
+PASS installed Info.plist == packaged Info.plist | installed Info.plist sha256 72a495e66477c918 packaged 72a495e66477c918
+## 4. data container deleted
+PASS data container removed | <HOME>/Library/Developer/CoreSimulator/Devices/67FC79E4-473A-47C9-87C0-1ADEA85CBBBB/data/Containers/Data/Application/F07A1DC6-3DEB-4087-9E4A-F6D0355D6A6B
+PASS warm restart OK, no error | WARM OK ms=10887 ms_package=5103 ms_relaunch=5784 page=- count=-
+PASS installed afresh (data container gone) | install: uninstall + install (387 ms; the app's data container is gone)
+PASS the app runs (no saved state: first page) | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+PASS installed executable == packaged executable | installed ComposeHR sha256 b45db6d1ad0f6de5 packaged b45db6d1ad0f6de5
+## 5. app uninstalled by hand
+PASS uninstalled
+PASS warm restart OK, no error | WARM OK ms=10845 ms_package=5307 ms_relaunch=5538 page=- count=-
+PASS installed afresh (app not installed) | install: uninstall + install (349 ms; the app is not installed)
+PASS the app runs
+PASS installed executable == packaged executable | installed ComposeHR sha256 a2876349355a8001 packaged a2876349355a8001
+## 6. back to the in-place update
+PASS warm restart OK | WARM OK ms=10261 ms_package=5044 ms_relaunch=5217 page=0 count=0
+PASS executable replaced in the installed app | install: executable replaced in the installed app (170 ms; every other file identical, the installed executable checked byte for byte)
+PASS installed executable == packaged executable | installed ComposeHR sha256 adcee662ded68e98 packaged adcee662ded68e98
+## 7. accessibility note
+PASS simulator reads ApplicationAccessibilityEnabled = 1 (exit 0): the note exactly once per run | hotReloadRun: 1, warm restart 1: 1, warm restart 2: 1, warm restart 3: 1, warm restart 4: 1, warm restart 5: 1
+# app/src/main/kotlin/main.kt restored; app and compile daemons stopped
+summary: 28/28 checks passed

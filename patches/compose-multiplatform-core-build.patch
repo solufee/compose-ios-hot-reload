@@ -252,10 +252,10 @@ index dd57ae408..927127808 100644
                  }
 diff --git a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/HotReloadRecompose.ios.kt b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/HotReloadRecompose.ios.kt
 new file mode 100644
-index 00000000000..bd0f6897f2b
+index 00000000000..73cc0c1120b
 --- /dev/null
 +++ b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/HotReloadRecompose.ios.kt
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,314 @@
 +/*
 + * Copyright 2026 The Android Open Source Project
 + *
@@ -299,6 +299,7 @@ index 00000000000..bd0f6897f2b
 +import kotlin.native.runtime.HotReload
 +import kotlin.native.runtime.NativeRuntimeApi
 +import kotlinx.cinterop.ExperimentalForeignApi
++import kotlinx.cinterop.convert
 +import kotlinx.cinterop.toKString
 +import kotlinx.coroutines.CoroutineScope
 +import kotlinx.coroutines.Dispatchers
@@ -311,6 +312,9 @@ index 00000000000..bd0f6897f2b
 +import platform.Foundation.NSThread
 +import platform.Foundation.timeIntervalSince1970
 +import platform.posix.getenv
++import platform.posix.setenv
++import platform.posix.CLOCK_REALTIME
++import platform.posix.clock_gettime_nsec_np
 +
 +/*
 + * Hot reload with the Kotlin/Native "hotreload" debug toolchain (these klibs are only used by
@@ -541,6 +545,90 @@ index 00000000000..bd0f6897f2b
 +            "totalMs=${(done - reloaded).toLong()} frameEpochMs=${done.toLong()}"
 +    )
 +}
++
++// ---- First-frame ready marker (Issue #60, INTERFACE §6.1) -----------------------------------------------------------
++// After the first frame that is actually committed to Metal in this process (any window, either redrawer), print once:
++//   HR READY first-frame epochMs=<host clock, ms>
++// so hot reload drivers know the app is up without waiting a fixed time. Only in hot reload binaries: debug and compiled
++// with the split scheme (HotReload.isEnabled); release, optimized and ordinary debug binaries never print it.
++// KONAN_HR_READY_MARKER=0 in the app's environment turns it off (to test the consumers' fallback).
++
++// No new top-level state on purpose: every top-level property or object adds a storage record to the global
++// initialization of every binary, release included. The once-only flag lives in the process environment instead.
++// Frames of one redrawer are committed one after another (main thread or its serial rendering queue), so in
++// practice the line is printed once; consumers take the first one anyway.
++private const val READY_MARKER_SEEN = "KONAN_HR_READY_MARKER_SEEN"
++
++/** Called by both Metal redrawers right after a frame's command buffer is committed (only in hot reload binaries). */
++internal fun hotReloadFrameCommitted() {
++    if (!Platform.isDebugBinary || getenv(READY_MARKER_SEEN) != null) return
++    setenv(READY_MARKER_SEEN, "1", 1)
++    if (getenv("KONAN_HR_READY_MARKER")?.toKString() == "0") return
++    println("HR READY first-frame epochMs=${epochMsPosix()}")
++}
++
++// Host clock via POSIX, not NSDate (a new use of an ObjC class here would reorder the binary's class references) and
++// without a struct (memScoped/alloc add global state): release code stays the same even though it never calls this.
++private fun epochMsPosix(): Long = (clock_gettime_nsec_np(CLOCK_REALTIME.convert()) / 1_000_000uL).toLong()
+diff --git a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/MetalRedrawer.ios.kt b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/MetalRedrawer.ios.kt
+index d7b68d0e9aa..d641516fb57 100644
+--- a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/MetalRedrawer.ios.kt
++++ b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/MetalRedrawer.ios.kt
+@@ -16,11 +16,14 @@
+ 
+ package androidx.compose.ui.window
+ 
++import androidx.compose.ui.scene.hotReloadFrameCommitted
+ import androidx.collection.IntIntPair
+ import androidx.compose.ui.uikit.utils.CMPMetalDrawablesHandler
+ import androidx.compose.ui.util.trace
+ import androidx.compose.ui.viewinterop.InteropSyncTransaction
+ import kotlin.math.roundToInt
++import kotlin.native.runtime.isHotReloadBinary
++import kotlin.native.runtime.NativeRuntimeApi
+ import kotlinx.cinterop.*
+ import org.jetbrains.skia.*
+ import platform.Foundation.NSThread
+@@ -252,6 +255,9 @@ internal class LegacyMetalRedrawer(
+                         dispatch_group_leave(inflightCommandBuffersGroup)
+                     }
+                     commandBuffer.commit()
++                    // Hot reload (debug toolchain): first committed frame -> ready marker (Issue #60).
++                    @OptIn(NativeRuntimeApi::class)
++                    if (isHotReloadBinary()) hotReloadFrameCommitted()
+ 
+                     if (presentsWithTransaction) {
+                         // If there are pending changes in UIKit interop, [waitUntilScheduled](https://developer.apple.com/documentation/metal/mtlcommandbuffer/1443036-waituntilscheduled) is called
+diff --git a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/SurfaceMetalRedrawer.ios.kt b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/SurfaceMetalRedrawer.ios.kt
+index 58f1a8b7569..7360bcf2a20 100644
+--- a/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/SurfaceMetalRedrawer.ios.kt
++++ b/compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/window/SurfaceMetalRedrawer.ios.kt
+@@ -17,12 +17,15 @@
+ package androidx.compose.ui.window
+ 
+ import androidx.collection.IntIntPair
++import androidx.compose.ui.scene.hotReloadFrameCommitted
+ import androidx.compose.ui.uikit.utils.CMPDrawable
+ import androidx.compose.ui.uikit.utils.CMPMetalLayer
+ import androidx.compose.ui.util.trace
+ import androidx.compose.ui.viewinterop.InteropSyncAction
+ import androidx.compose.ui.viewinterop.InteropSyncTransaction
+ import kotlin.math.roundToInt
++import kotlin.native.runtime.isHotReloadBinary
++import kotlin.native.runtime.NativeRuntimeApi
+ import kotlinx.cinterop.BetaInteropApi
+ import kotlinx.cinterop.autoreleasepool
+ import kotlinx.cinterop.objcPtr
+@@ -416,6 +419,9 @@ internal class SurfaceMetalRedrawer(
+             }
+         }
+         commandBuffer.commit()
++        // Hot reload (debug toolchain): first committed frame -> ready marker (Issue #60).
++        @OptIn(NativeRuntimeApi::class)
++        if (isHotReloadBinary()) hotReloadFrameCommitted()
+ 
+         if (frame.waitUntilCompletion) {
+             commandBuffer.waitUntilScheduled()
 diff --git a/gradle.properties b/gradle.properties
 index 32e9bf344..44287fc91 100644
 --- a/gradle.properties

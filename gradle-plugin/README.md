@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.10**（插件 0.2.6）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11**（插件 0.2.7）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -81,7 +81,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `hotReloadCompileKlib<Module>` | 每个库模块一个任务，编成 klib；源码和依赖 klib 不变时 UP-TO-DATE。0.2.4（#21）：klib 旁边的 `inputs.txt` 记下上次编译用的输入（编译参数、模块每个 Kotlin 源文件的 sha256、链接的模块 klib 的 sha256、依赖 klib 的大小和时间）；Gradle 因为别的原因重跑这个任务、而这些输入没变时，打印 `klib <模块>: inputs unchanged …; not recompiled`，klib 不动（分类器按 sha256 认出它没变，也不再 dump）；要编译时先打印一行原因，例如 `klib ui: compiling (sources changed: ui.kt)` 或 `(module klibs changed: base)` |
 | `hotReloadPackage` | split 编译 app（走 klib 守护进程；它不可用或编译失败时改用 `kotlinc-native` 重跑，并打印一行提示）→ `merge-payloads.py`（热符号集按各模块源码里的 package 自动生成；不变的库 archive 的处理结果缓存在 `build/hotreload/merge-cache/`）→ `embed-merged.py` → 组装 `.app`（可执行文件用 `cp -c` 克隆进去）。工具链 .9 起（#32/#52）：编译器认得 `-Xbinary=splitPayloadList` 时（看编译器 jar 里的 `BinaryOptions`），打包编译带上它，payload 路径写进 `build/hotreload/app/payloads.txt`，merge 用 `KALDO_PAYLOAD_LIST` 从磁盘读，不再经过可执行文件；补丁编译和 release 编译不带。分类器基线和 merge/embed/组装并行。工具链 .10 起（#56）：编译器认得 `splitPayloadReserve` 时，库对象另成一条 payload（`KALDO_LIB_PAYLOAD_DIRS` = 自动缓存目录，缓存在 merge-cache 里），预留按上次合并的大小给（库对象 + 4×用户对象 + 16 MB；放不下时自动用全量预留重打一次）；libKaldo 认得清单种类 2 且 `libsInExecutable` 关着时，库对象以 `@file:` 写进清单、启动时从文件读；去掉绝对 rpath 改在基础可执行文件的克隆上做，和合并并行。日志：`payload list (#32): on (N payloads read from disk)`、`library payload (#56): …; reserve …`，最后一行 `package timing ms=… compile=… merge=… embed+bundle=… embed=… bundle=… baseline-wait=…`（前四项含义不变） |
 | `hotReload` | 先分类（见下文“分类器与温重启”）；可热替换时：守护进程 cache-only 编译 → 按 mtime 取本次重建的对象 → 按 `_kfun:<package>` 归到模块 → `ld -r` → 逐模块符号检查 → 发送。`--no-warm`：需要温重启时只报原因并失败 |
-| `hotReloadRun` | 安装并启动；首帧标记（`readyMarker`）出现或 Kotlin main 运行 3 s 即算启动成功，失败最多重试 3 次。`--args="..."` 传给 app（如 `--hr-state=2,3`） |
+| `hotReloadRun` | 安装并启动；就绪判定：你配了 `readyMarker` 就等这一行；否则工具链 .11 起看到 app 的首帧标记 `HR READY first-frame`（`toolchain.json` 的 `runtime.readyMarker`），或 Kotlin main 运行满 3 s，哪个先到算哪个。失败最多重试 3 次。`--args="..."` 传给 app（如 `--hr-state=2,3`） |
 | `hotReloadWatch` | 和 `hotReload` 相同，配合 `-t` 使用：Gradle 监视热模块的源码和 composeResources（下文“输入与 up-to-date”），每次保存重跑；某次失败不结束监视；不加 `-t` 时只跑一次并提示 |
 | `hotReloadDaemonStart` / `hotReloadDaemonStop` | 启动或复用、停止本项目的两个编译守护进程 |
 | `hotReloadClean` | 停掉本项目的守护进程，删除 `build/hotreload/`（app、编译缓存、merge 缓存、分类器快照）；下次 `hotReloadPackage` 从头建 |
@@ -138,6 +138,8 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
   重新打包并写基线 → 安装后把这个文件**原样写回**新安装的 `Documents/` → 启动；文件里有 `page`/`count` 时还传 `--hr-state=N,M`，
   并等到首帧标记所在的行同时出现 `page=N` 和 `count=M` → 打印 `WARM OK ms=… ms_package=… ms_relaunch=… page=N count=M`。
   app 不写这个文件也能温重启，只是回到第 0 页；启动日志里出现 `EH FAIL` 时任务失败。
+- 0.2.7（#62）：温重启时，若新包和已安装的 app 除可执行文件外逐字节相同（Info.plist、签名资源、libKaldo、Compose 资源），就把新可执行文件写成已安装目录里的新文件、原子改名替换，再和打包出的逐字节核对，不卸载重装；数据容器保留，状态文件不再写回。已安装路径记在 `build/hotreload/installed-app.txt`（固定 UDID 时；目录还在才用，省一次 `simctl get_app_container`）。任何不一致、app 未安装、数据容器已被删掉或出错，都退回卸载 + 安装（回退时照旧把状态文件写进新安装）。`hotReloadRun` 仍是全新安装。就绪检测改成跟随日志（一个用 kqueue 等文件变化、不缓冲输出的小 python3 进程，事件驱动），不再每 0.2 s 读一次日志；没有就绪标记时的 3 s 规则保留。目标模拟器的 `com.apple.Accessibility ApplicationAccessibilityEnabled` 为 1 时（每次启动多 ~1.7 s），`hotReloadRun` 和温重启各打印一行提示和关闭命令；插件只读这个设置，读不到就不提示。
+- 0.2.7（#62 第 3 项，工具链 .11）：清单带 `runtime.readyMarker` 时，app 画完第一帧打印的 `HR READY first-frame epochMs=…`（只认行首，INTERFACE §6.1）就算就绪，不再等 Kotlin main 后的 3 s；旧规则先满足也算（纯 UIKit、首帧很慢的 app 不会更慢）。温重启的 page/count 在这一刻核对。你自己配的 `readyMarker` 优先；`SIMCTL_CHILD_KONAN_HR_READY_MARKER=0` 关掉标记（只用于测试回退）。`app started` 行写明按哪条判定和“launch -> first frame N ms”，`WARM OK` 行末尾加 `ready=marker|state|user-marker|rule`。向导模板的温重启里，重启这一步从 6.2 s 降到约 4.9 s。
 - 原因按分类器的原样输出，每行 `WARM <类别> <符号>: <说明>`；0.2.4（#18）起每行下面跟一行缩进的建议 `    -> …`（`WarmAdvice`），
   最后打印 `compat: N ABI changes, cannot hot-patch; warm restart took X s`（不重启时是 `not restarted (--no-warm)`）。HOT 时分类器的 `NOTE …` 行（0.2.4：`remember-reset`）显示为
   `compat: note: …`。
@@ -263,25 +265,27 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 ../example-gradle/gradlew -p . test -Pcmp.hotreload.toolchainDir=<KOTLIN_NATIVE_DIST>
 ```
 
-共 89 个测试（0.2.6）；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
+共 103 个测试（0.2.7）；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
 
 | 测试类 | 数量 | 内容 |
 |---|---|---|
 | `ToolchainValidatorTest` | 9 | 版本、基线 commit、补丁哈希、libKaldo 实际哈希、Xcode、缺文件、bundle 布局拒绝 |
-| `PipelineTest` | 5 | 模块归类（最长包名匹配、根包）、源码 package 读取、内置工具哈希、工具位置的查找顺序（显式设置 → 清单 `tools` → 下载布局 → `tools/`） |
+| `PipelineTest` | 7 | 模块归类（最长包名匹配、根包）、源码 package 读取、内置工具哈希、工具位置的查找顺序（显式设置 → 清单 `tools` → 下载布局 → `tools/`） |
 | `PackagerDutiesTest` | 4 | INTERFACE §3.3 的打包方义务（合并开关、启动开关、`CACHE_ONLY` 不漏进完整构建）；0.2.4 起启动开关里有 `KONAN_HR_RELOAD_ON_MAIN=1` 和 `KONAN_HR_MAIN_WAIT_MS`（`mainWaitMs`） |
 | `ReloadOutcomeTest` | 4 | 0.2.4（#40）：从 app 日志读出补丁结果：`HR reload: NOT applied` 判失败（即使加载器已经链接了补丁），`HR reload: ran on the main queue` 判成功并读出等待和执行时间，只有 `[kaldo] ::` 时按旧工具链处理 |
 | `ProtocolContractTest` | 4 | 钉住的 `interfaceVersion`；守护进程回复解析；发送协议逐字节；连真实 `HrCompileDaemon` 编译成功和语法错误（要工具链） |
 | `CompatContractTest` | 10 | 0.2.4（#28）：`@Composable` 改签名只有带 `--force-recompose` 才 HOT 并输出 remember-reset 提示，普通顶层函数改签名 HOT（含旧脚本按名字存的基线）；分类器随 jar 分发且哈希一致；源码里的 `expect` 声明（增删一对判温重启）；非快照输入不会判成 HOT；用真实 klib 验证“只改函数体退出 0、加字段退出 3”（要工具链）；`hr-state.json` 解析；带参数启动时找 app 进程；已启动模拟器列表；dist 旁边的 klib 会被链接 |
-| `PluginFunctionalTest` | 9 | TestKit：版本不匹配和下载版旧工具链的报错、没配工具链、DSL 配错时其它任务照常、debug 开关、应用插件前后 `tasks --all` 一致、`warmRestart` 与 `--no-warm`、加在单个模块上并声明源码片段、任务都在自己的组里 |
-| `KmpTest` | 10 | 版本比较；每个 Compose 模块和工具链里同名那份比版本（写出拉进它的依赖）；cinterop klib 警告；依赖 klib 按 `unique_name` 和 Maven 组件替换、去重、比工具链新时提示；klib ABI 高于 2.5.0 / 低于 1.6.0、metadata 高于 2.6.0 的报错；`MainViewController` 入口识别；多片段编译参数；按符号归模块 |
+| `PluginFunctionalTest` | 12 | TestKit：版本不匹配和下载版旧工具链的报错、没配工具链、DSL 配错时其它任务照常、debug 开关、应用插件前后 `tasks --all` 一致、`warmRestart` 与 `--no-warm`、加在单个模块上并声明源码片段、任务都在自己的组里 |
+| `KmpTest` | 12 | 版本比较；每个 Compose 模块和工具链里同名那份比版本（写出拉进它的依赖）；cinterop klib 警告；依赖 klib 按 `unique_name` 和 Maven 组件替换、去重、比工具链新时提示；klib ABI 高于 2.5.0 / 低于 1.6.0、metadata 高于 2.6.0 的报错；`MainViewController` 入口识别；多片段编译参数；按符号归模块 |
 | `ExpectActualCasesTest` | 5 | 增删一对 expect/actual 的用例表（0.2.4 起：类、object、接口、属性 4 例 WARM，`expect fun` 增删、改名和其余 9 例不报）；Compose 资源改动判温重启；回归：只含初始化桩的目标文件、生成的 UIKit 入口（根包）在多模块时归 app、失败编译后的待发送列表 |
 | `StableKeysTest` | 6 | 0.2.5（#47）：从 Compose 插件 jar 认出 `HotReloadStableKeys`；开着且认得时库 klib、分类器的 app klib、程序编译的参数里都有它，关掉或工具链不认得（.8）时没有；release 的编译命令里永远没有；HOT 提示随设置变化；0.2.5（#52）：编译器 jar 认得 `splitPayloadList` 时只有打包编译带它；0.2.6（#56）：认出 `splitPayloadReserve` 和 libKaldo 的清单种类 2，`libsInExecutable` 关掉文件加载，.9 编译器走原路径；release 命令里都没有 |
 | `KlibInputsTest` | 2 | 0.2.4（#21）：库 klib 的输入只随本模块源码、上游模块 klib 的字节、依赖 klib 变化；只改 app、原样保存文件、上游同样字节的重编都不算；重编原因写出变了的文件、模块或依赖 klib |
 | `WarmAdviceTest` | 4 | 0.2.4（#18）：每类 WARM 原因（27 行真实输出，覆盖分类器和插件输出的 10 个类别）各有一句建议；原因行保持原样、下面缩进一行建议；总结行 `N ABI changes, cannot hot-patch; warm restart took X s` |
 | `ProjectDependenciesTest` | 1 | 同工程 KMP 模块依赖按传递关系、依赖在前的顺序找出，环路不死循环 |
 | `ReleaseDigestTest` | 1 | release 校验比 `__text` 摘要：同一二进制摘要一致，改一个代码字节必须失败；原始 `__text` 哈希只记录 |
-| `CompositeBuildTest` | 7 | 复合构建（0.2.2）：included 模块的默认层级源码集和 Compose 生成目录；included 模块排在前、按声明顺序、依赖关系；声明顺序保留（容器按名字迭代）；外部 klib 改变判温重启；included build 自己编出的 klib 按坐标、位置、unique_name 排除（不重复链接）；included build 的 klib 同样过 ABI 预检；写错 build 名时的报错（TestKit，真实 includeBuild） |
+| `CompositeBuildTest` | 8 | 复合构建（0.2.2）：included 模块的默认层级源码集和 Compose 生成目录；included 模块排在前、按声明顺序、依赖关系；声明顺序保留（容器按名字迭代）；外部 klib 改变判温重启；included build 自己编出的 klib 按坐标、位置、unique_name 排除（不重复链接）；included build 的 klib 同样过 ABI 预检；写错 build 名时的报错（TestKit，真实 includeBuild） |
+| `RelaunchTest` | 7 | 0.2.7（#62）：原地更新只在除可执行文件外逐字节相同时进行；记住的已安装路径只在仍是该设备的包时使用；app 未安装或数据容器被删时不原地更新；无障碍提示只在读到 1 时出现；就绪行要求标记和全部 token；日志跟随不缓冲 |
+| `ReadyStateTest` | 7 | 0.2.7（#62 第 3 项）：首帧标记只认行首（`^HR READY first-frame( |$)`）并取 `epochMs`；没有标记时旧的 3 s 规则照常；温重启的 page/count 在标记那一刻核对，标记之前单独一行状态不算就绪；用户的 `readyMarker` 优先；清单的 `runtime.readyMarker` |
 
 ## 验收脚本与证据
 

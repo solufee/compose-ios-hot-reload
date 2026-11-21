@@ -1,0 +1,31 @@
+# manual hot-swap proof: ui/src/main/kotlin/ui.kt in example-gradle, app pid 86094
+ax saved: App=1 AX=1
+step00 OK 7508ms hot=True loaded=True on_screen=True pid 86094->86094 [setup: helper shown next to the mark] expect '|x0|'
+step01 OK 4959ms hot=True loaded=True on_screen=True pid 86094->86094 [new final class] expect '|c10|'
+step02 OK 4776ms hot=True loaded=True on_screen=True pid 86094->86094 [method added to a final class] expect '|c15|'
+step03 OK 4852ms hot=True loaded=True on_screen=True pid 86094->86094 [body of the method added by the previous reload] expect '|c20|'
+step04 OK 4633ms hot=True loaded=True on_screen=True pid 86094->86094 [new object] expect '|oa|'
+step05 OK 4756ms hot=True loaded=True on_screen=True pid 86094->86094 [method added to an object] expect '|ob|'
+step06 OK 4416ms hot=True loaded=True on_screen=True pid 86094->86094 [new class with a companion] expect '|c1|'
+step07 OK 4371ms hot=True loaded=True on_screen=True pid 86094->86094 [method added to a companion object] expect '|c2|'
+step08 OK 4385ms hot=True loaded=True on_screen=True pid 86094->86094 [new typealias] expect '|alias|'
+step09 OK 4469ms hot=True loaded=True on_screen=True pid 86094->86094 [new internal function] expect '|vint|'
+step10 OK 4544ms hot=True loaded=True on_screen=True pid 86094->86094 [internal -> public (and body)] expect '|vpub|'
+step11 OK 4749ms hot=True loaded=True on_screen=True pid 86094->86094 [top-level: parameter with a default added] expect '|alias2|'
+step12 OK 4493ms hot=True loaded=True on_screen=True pid 86094->86094 [top-level: parameter removed] expect '|al3|'
+step13 OK 4394ms hot=True loaded=True on_screen=True pid 86094->86094 [top-level: return type changed] expect '|r4|'
+step14 OK 4422ms hot=True loaded=True on_screen=True pid 86094->86094 [final member: parameter with a default added] expect '|c30|'
+step15 OK 4354ms hot=True loaded=True on_screen=True pid 86094->86094 [object member: return type changed] expect '|o7|'
+step16 OK 4499ms hot=True loaded=True on_screen=True pid 86094->86094 [companion member: parameter added (no default), caller changed] expect '|c9|'
+step17 OK 4685ms hot=True loaded=True on_screen=True pid 86094->86094 [final member removed] expect '|c10|'
+step18 OK 4512ms hot=True loaded=True on_screen=True pid 86094->86094 [const val added] expect '|k1|'
+step19 OK 4353ms hot=True loaded=True on_screen=True pid 86094->86094 [inline method added to a final class] expect '|q20|'
+step20 OK 4510ms hot=True loaded=True on_screen=True pid 86094->86094 [suspend method added to an object] expect '|os|'
+step21 OK 4366ms hot=True loaded=True on_screen=True pid 86094->86094 [new open class with a subclass] expect '|s3|'
+step22 OK 4511ms hot=True loaded=True on_screen=True pid 86094->86094 [final method added to an open class, called on a subclass instance] expect '|t6|'
+step23 OK 4711ms hot=True loaded=True on_screen=True pid 86094->86094 [new sealed class with a subclass] expect '|pa|'
+step24 OK 4564ms hot=True loaded=True on_screen=True pid 86094->86094 [subclass added to a sealed class (exhaustive when updated)] expect '|pb|'
+step25 OK 4315ms hot=True loaded=True on_screen=True pid 86094->86094 [companion object added to an existing class] expect '|m14|'
+# file restored
+PASS simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | ax restored: App=1 AX=1 (before describe-ui: App=1 AX=1)
+summary: 26/26 hot and on screen, same pid

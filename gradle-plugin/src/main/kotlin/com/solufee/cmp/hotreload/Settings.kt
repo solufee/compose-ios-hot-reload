@@ -86,6 +86,8 @@ data class HrSettings(
     val sourceSetWarnings: List<String> = emptyList(),
     /** Info.plist to write at [infoPlist] when the app module has none (KMP template). */
     val infoPlistContent: String? = null,
+    /** #62 (INTERFACE §6.1): the toolchain's first-frame ready marker (runtime.readyMarker, .11+); null on older toolchains. */
+    val toolchainReadyMarker: String? = null,
 ) : Serializable {
     val app: HrModule get() = modules.single { it.kind == ModuleKind.APP }
     val libraries: List<HrModule> get() = modules.filter { it.kind == ModuleKind.LIBRARY }

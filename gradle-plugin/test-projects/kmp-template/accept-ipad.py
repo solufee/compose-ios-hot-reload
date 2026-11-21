@@ -138,6 +138,20 @@ edit(BUILD, "plugins {\n", f'plugins {{\n    id("com.solufee.cmp.hotreload") ver
 open(os.path.join(P, "local.properties"), "w").write(
     f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\ncmp.hotreload.port={a.port}\n")
 edit(APP, '                Text("Click me!")\n            }\n', '                Text("Click me!")\n            }\n            Text("Static: st-1")\n')
+# Issue #66: `axe describe-ui` turns on the simulator's accessibility switch (ApplicationAccessibilityEnabled,
+# AccessibilityEnabled; ~1.8 s more at every app start). The shared helper saves both keys before the first describe-ui
+# and writes them back when the script ends, also after a failure (absent keys are written back as NO).
+AX_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../example-gradle/tools/sim-ax-keys.sh")
+
+
+def ax_keys(cmd):
+    """Run example-gradle/tools/sim-ax-keys.sh save|restore for this simulator. Returns (ok, line)."""
+    r = subprocess.run(["bash", AX_HELPER, cmd, a.udid], capture_output=True, text=True)
+    line = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"sim-ax-keys.sh {cmd}: no output"]
+    return r.returncode == 0, line[0]
+
+
+say(ax_keys("save")[1])
 try:
     say("## control: default deviceFamily")
     rc, out = gradle("hotReloadPackage")
@@ -171,6 +185,8 @@ except Exception as e:
 finally:
     stop()
     gradle("hotReloadDaemonStop")
+    ax_ok, ax_line = ax_keys("restore")
+    check("simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui)", ax_ok, ax_line)
 failed = [n for n, ok in results if not ok]
 say(f"summary: {len(results) - len(failed)}/{len(results)} PASS" + ("" if not failed else f"; FAILED: {failed}"))
 sys.exit(1 if failed else 0)

@@ -1,0 +1,18 @@
+# #66 revert check on the plugin line's own iPad simulator HR-Plugin-iPad (A0E5B482-7C8F-414F-A5E2-BDE3F8CE9C4C), 2026-11-21 16:26:14
+## 0. as found
+ax now: App=1 AX=1
+## 1. both keys set to NO (this simulator only)
+ax now: App=0 AX=0
+## 2. save, one axe describe-ui, restore
+ax saved: App=0 AX=0
+after describe-ui: ax now: App=1 AX=1
+ax restored: App=0 AX=0 (before describe-ui: App=0 AX=0)
+restore exit 0
+ax now: App=0 AX=0
+## 3. accept-ipad.py (save before describe-ui, restore at the end)
+accept-ipad rc=0
+ax saved: App=0 AX=0
+PASS simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | ax restored: App=0 AX=0 (before describe-ui: App=0 AX=0)
+summary: 7/7 PASS
+before the run: ax now: App=0 AX=0 | after the run: ax now: App=0 AX=0 | same
+# simulator shut down again

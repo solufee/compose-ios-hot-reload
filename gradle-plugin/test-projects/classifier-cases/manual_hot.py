@@ -5,7 +5,8 @@ Edits one module file of a running app step by step and runs `gradlew hotReload`
 step must be classified HOT, be loaded by the app, and show its new value on screen (AXe label), with the
 same PID. A helper `hrx()` is shown next to the module's mark so every new member is actually called.
 
-Usage: manual_hot.py --project DIR --file REL --text-anchor 'Text("UI $UI_MARK"' --udid U --exe NAME [--gradlew PATH]
+Usage: manual_hot.py --project DIR --file REL --text-anchor 'Text("UI $UI_MARK' --udid U --exe NAME [--gradlew PATH]
+(the anchor stops before the string's closing quote)
 The app must already be running (gradlew hotReloadRun). The file is restored at the end.
 """
 import argparse
@@ -120,6 +121,21 @@ src = orig
 p0 = pid()
 failed = 0
 print(f"# manual hot-swap proof: {a.file} in {os.path.basename(P)}, app pid {p0}", flush=True)
+# Issue #66: `axe describe-ui` turns on the simulator's accessibility switch (ApplicationAccessibilityEnabled,
+# AccessibilityEnabled; ~1.8 s more at every app start). The shared helper saves both keys before the first describe-ui
+# and writes them back when the script ends, also after a failure (absent keys are written back as NO).
+AX_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../example-gradle/tools/sim-ax-keys.sh")
+
+
+def ax_keys(cmd):
+    """Run example-gradle/tools/sim-ax-keys.sh save|restore for this simulator. Returns (ok, line)."""
+    r = subprocess.run(["bash", AX_HELPER, cmd, a.udid], capture_output=True, text=True)
+    line = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"sim-ax-keys.sh {cmd}: no output"]
+    return r.returncode == 0, line[0]
+
+
+ax_ok = False
+print(ax_keys("save")[1], flush=True)
 try:
     for i, (kind, edit, expect) in enumerate(STEPS):
         src = edit(src)
@@ -140,5 +156,7 @@ try:
 finally:
     open(F, "w").write(orig)
     print("# file restored", flush=True)
+    ax_ok, ax_line = ax_keys("restore")
+    print(f"{'PASS' if ax_ok else 'FAIL'} simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | {ax_line}", flush=True)
 print(f"summary: {len(STEPS) - failed}/{len(STEPS)} hot and on screen, same pid")
-sys.exit(1 if failed else 0)
+sys.exit(1 if failed or not ax_ok else 0)

@@ -1,0 +1,27 @@
+ax saved: App=1 AX=1
+package OK CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+compat: baseline written for app,ui (872 ms)
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 306, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+BUILD SUCCESSFUL in 9s
+run CMP hot reload: app started (attempt 1, pid 80961, 5.1 s, port 5568, log <REPO>/example-gradle/launch.log) BUILD SUCCESSFUL in 6s
+screen 402x874 points, app frame 320x480
+pid0 80961
+ui[0] OK 7827ms hot=True loaded=True on_screen=True pid 80961->80961 text=['UI ui0-49247']
+ui[1] OK 5165ms hot=True loaded=True on_screen=True pid 80961->80961 text=['UI ui1-49254']
+app[0] OK 3297ms hot=True loaded=True on_screen=True pid 80961->80961 text=['Counter app0-49260']
+app[1] OK 3200ms hot=True loaded=True on_screen=True pid 80961->80961 text=['Counter app1-49263']
+both[0] OK 4805ms hot=True loaded=True on_screen=True pid 80961->80961 text=['UI both0-49266', 'Counter both0-49266']
+warm[0] OK 14773ms add_class_hot=True warm=True pid 80961->82117 counter_before=0 WARM OK ms=10457 ms_package=5462 ms_relaunch=4995 page=0 count=0
+taps-after-warm OK +:0->1 Next->True Back->True pid 82117->82117 crash=none
+cold[0] OK attempt=1 pid=82459 4.9s EH=128071 FDE/3704 lsda/0+0 out/0 unresolved eh_ok=True
+# sources restored
+# app stopped
+PASS simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | ax restored: App=1 AX=1 (before describe-ui: App=1 AX=1)
+=== summary ===
+ui: ok=2/2 p50=5165ms p90=7827ms
+app: ok=2/2 p50=3200ms p90=3297ms
+both: ok=1/1 p50=4805ms p90=4805ms
+warm: ok=1/1
+taps: ok=1/1
+cold: ok=1/1
+ax: ok=1/1

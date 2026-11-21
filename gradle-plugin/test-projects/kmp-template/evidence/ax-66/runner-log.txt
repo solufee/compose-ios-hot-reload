@@ -1,0 +1,14 @@
+15:45:33 start
+15:48:32 accept-watch rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+15:58:46 accept-kmp rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:01:30 accept-busy rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:04:22 accept-warm rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:16:57 accept-composite rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:16:57 main end
+16:20:25 accept-ipad rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:20:28 ipad simulator booted here: 1 (shut down again if 1)
+16:21:43 endpoint rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:21:59 manual_hot rc=1 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:23:28 lambda_stress rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same
+16:23:29 part2 end
+16:25:59 manual_hot (rerun, anchor fixed) rc=0 | before: ax now: App=1 AX=1 | after: ax now: App=1 AX=1 | same

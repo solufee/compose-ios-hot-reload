@@ -1,0 +1,13 @@
+# #9 acceptance on iPad Pro 11-inch (M5) (A0E5B482-7C8F-414F-A5E2-BDE3F8CE9C4C), plugin 0.2.7-dev62c, 2026-11-21 16:17:12
+ax saved: App=1 AX=1
+## control: default deviceFamily
+PASS package (default) | UIDeviceFamily [1]
+PASS default generated Info.plist: UIDeviceFamily [1]
+  app frame {'height': 667, 'x': 0, 'y': 0, 'width': 375}; screenshot ipad-default-family1.png
+## deviceFamily = listOf(1, 2)
+PASS package with deviceFamily [1, 2] | UIDeviceFamily [1, 2]
+PASS run on the iPad
+PASS the app window is iPad size (larger than in iPhone compatibility mode) | default (375, 667) -> [1,2] (834, 1210); screenshot ipad-family12-fullscreen.png
+PASS hot reload on the iPad: HOT, shows without taps
+PASS simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | ax restored: App=1 AX=1 (before describe-ui: App=1 AX=1)
+summary: 7/7 PASS

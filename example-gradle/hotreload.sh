@@ -253,6 +253,29 @@ except Exception:
   fi
 }
 
+# Accessibility hint (Issue #60, read-only): with the simulator's ApplicationAccessibilityEnabled = 1, UIKit loads the
+# accessibility bundles at every app start (~1.8 s before didFinishLaunching). The key is read in the background while
+# `warm` packages and one line goes to stderr; the setting is never written. HR_AX_HINT=0 turns the check off.
+ax_hint_start() {
+  AX_HINT_PID=""
+  [ "${HR_AX_HINT:-1}" = 0 ] && return 0
+  AX_HINT_FILE="$BUILD/ax-hint.txt"; rm -f "$AX_HINT_FILE"; mkdir -p "$BUILD"
+  ( xcrun simctl spawn "$UDID" defaults read com.apple.Accessibility ApplicationAccessibilityEnabled \
+      > "$AX_HINT_FILE.tmp" 2>/dev/null && mv "$AX_HINT_FILE.tmp" "$AX_HINT_FILE" ) &
+  AX_HINT_PID=$!
+}
+ax_hint_print() {
+  [ -n "${AX_HINT_PID:-}" ] || return 0
+  wait "$AX_HINT_PID" 2>/dev/null || true
+  if [ "$(tr -d '[:space:]' < "$AX_HINT_FILE" 2>/dev/null)" = 1 ]; then
+    echo "hint: simulator $UDID has accessibility on (ApplicationAccessibilityEnabled=1): every app start spends ~1.8 s" \
+         "loading accessibility bundles. 'axe describe-ui' and other accessibility clients turn it on. To turn it off:" \
+         "xcrun simctl spawn $UDID defaults write com.apple.Accessibility ApplicationAccessibilityEnabled -bool NO" \
+         "(and AccessibilityEnabled -bool NO); HR_AX_HINT=0 hides this line." >&2
+  fi
+  rm -f "$AX_HINT_FILE"
+}
+
 case "${1:-}" in
 ui-klib)
   mkdir -p "$BUILD/ui"
@@ -490,6 +513,7 @@ warm)
   # and relaunch it. The classifier calls this automatically from `reload`.
   read_saved_state
   echo "warm: restoring page=$PAGE count=$COUNT"
+  ax_hint_start
   # Stop the previous console runner first: otherwise it sees its app die and
   # relaunches the OLD build while this warm restart is packaging the new one.
   pkill -f "$ROOT/run.sh" 2>/dev/null || true
@@ -497,22 +521,55 @@ warm)
   START=$(python3 -c 'import time; print(int(time.time()*1000))')
   "$ROOT/hotreload.sh" package
   PKG_DONE=$(python3 -c 'import time; print(int(time.time()*1000))')
+  ax_hint_print
   WARM_LOG=${WARM_LOG:-$ROOT/launch.log}
   : > "$WARM_LOG"
   APP_ARGS="--hr-state=$PAGE,$COUNT" LAUNCH_LOG="$WARM_LOG" \
     nohup "$ROOT/run.sh" >"$BUILD/warm-run.out" 2>&1 &
-  deadline=$((SECONDS + 90)); ok=0
+  # Ready rule (INTERFACE §6.1): toolchains that declare runtime.readyMarker (.11 on) print 'HR READY first-frame' after the
+  # first committed frame; then ready = marker + EH OK + the restored state, and the last two must already be there when the
+  # marker shows up (they are printed before the first frame). Without the field: the old rule (EH OK + state). HR_READY_MARKER
+  # overrides the manifest value (empty string = old rule).
+  if [ -z "${HR_READY_MARKER+x}" ]; then
+    HR_READY_MARKER=$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("runtime", {}).get("readyMarker", ""))
+except Exception: print("")' "${KOTLIN_DIST:-}/toolchain.json" 2>/dev/null)
+  fi
+  # KONAN_HR_READY_MARKER=0 turns the marker off in the app (run.sh passes it on), so the old rule applies.
+  [ "${KONAN_HR_READY_MARKER:-1}" = 0 ] && HR_READY_MARKER=""
+  # If the app is back (EH OK + state) but prints no marker (an app without Compose UI, a first frame that never
+  # comes), the old rule is used after HR_READY_FALLBACK_S seconds (default 5) instead of failing at the deadline.
+  FALLBACK_S=${HR_READY_FALLBACK_S:-5}
+  deadline=$((SECONDS + 90)); ok=0; why=""; READY_KIND=state; back_at=""
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if grep -q "count=$COUNT page=$PAGE" "$WARM_LOG" 2>/dev/null && \
-       grep -q '^EH OK' "$WARM_LOG" 2>/dev/null; then ok=1; break; fi
+    back=0
+    grep -q "count=$COUNT page=$PAGE" "$WARM_LOG" 2>/dev/null && grep -q '^EH OK' "$WARM_LOG" 2>/dev/null && back=1
+    if [ -n "$HR_READY_MARKER" ]; then
+      if grep -q "^$HR_READY_MARKER" "$WARM_LOG" 2>/dev/null; then
+        if [ "$back" = 1 ]; then
+          ok=1; READY_KIND=marker
+        else
+          why=" (ready marker seen, but no 'EH OK' or restored state before it)"
+        fi
+        break
+      fi
+      if [ "$back" = 1 ]; then
+        [ -n "$back_at" ] || back_at=$SECONDS
+        if [ $((SECONDS - back_at)) -ge "$FALLBACK_S" ]; then
+          ok=1; READY_KIND=fallback
+          echo "warm: ready marker '$HR_READY_MARKER' not seen ${FALLBACK_S} s after the app came back; used the old rule" >&2
+          break
+        fi
+      fi
+    elif [ "$back" = 1 ]; then ok=1; break; fi
     sleep 0.3
   done
   END=$(python3 -c 'import time; print(int(time.time()*1000))')
   if [ "$ok" != 1 ]; then
-    echo "warm: app did not come back with page=$PAGE count=$COUNT (log $WARM_LOG, run.sh output $BUILD/warm-run.out)" >&2
+    echo "warm: app did not come back with page=$PAGE count=$COUNT$why (log $WARM_LOG, run.sh output $BUILD/warm-run.out)" >&2
     exit 1
   fi
-  echo "WARM OK ms=$((END - START)) ms_package=$((PKG_DONE - START)) ms_relaunch=$((END - PKG_DONE)) page=$PAGE count=$COUNT"
+  echo "WARM OK ms=$((END - START)) ms_package=$((PKG_DONE - START)) ms_relaunch=$((END - PKG_DONE)) page=$PAGE count=$COUNT ready=$READY_KIND"
   ;;
 
 *)

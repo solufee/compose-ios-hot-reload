@@ -338,6 +338,13 @@ def localize(m, root, llvm_home, extra_klibs, auto_cache_from, public_klibs, pub
     for key in ("kotlin", "compose", "llvm"):  # identity comes from the published manifest
         for f in ("baseCommit", "patch", "patchSha256"):
             local[key][f] = m[key][f]
+    # .11: the ready marker is a property of the published build, so it is taken from the bundle manifest as is
+    # (present there only when that build prints it; INTERFACE §6.1).
+    marker = m.get("runtime", {}).get("readyMarker")
+    if marker:
+        local["runtime"]["readyMarker"] = marker
+    else:
+        local["runtime"].pop("readyMarker", None)
     # v8: the run-time tools, as absolute paths like every path in a local manifest,
     # so consumers (the Gradle plugin) need only the dist directory.
     if m.get("tools"):

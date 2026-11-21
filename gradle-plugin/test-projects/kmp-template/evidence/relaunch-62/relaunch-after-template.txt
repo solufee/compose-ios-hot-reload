@@ -1,0 +1,31 @@
+# #62 relaunch timing, AFTER: branch feat/relaunch-plugin-62 e94ba8a (published locally as 0.2.7-dev62b), toolchain .10 (official), wizard template + core, tools/relaunch-timing/relaunch-template.py (#60 method), simulator 67FC79E4, nothing else running
+## per run (ui1-3 = library edit, app1-3 = app edit)
+ui1 terminate=852 pkg_to_uninstall=na uninstall=na install=na install_to_launch=na launch_to_proc=428 orc_setup=13 port_ready_after_launch=441 to_bootstrap=0 bootstrap_register=385 bootstrap_load=2103 to_konan_start=0 konan_start_to_frame=na frame_to_detected=na kotlin_main_to_ready=3183 app_container=274 launch_to_frame=na uninstall_to_detected=na ms_relaunch=6482
+ui2 terminate=153 pkg_to_uninstall=na uninstall=na install=na install_to_launch=na launch_to_proc=383 orc_setup=14 port_ready_after_launch=397 to_bootstrap=0 bootstrap_register=375 bootstrap_load=2068 to_konan_start=0 konan_start_to_frame=na frame_to_detected=na kotlin_main_to_ready=3157 app_container=159 launch_to_frame=na uninstall_to_detected=na ms_relaunch=6228
+ui3 terminate=146 pkg_to_uninstall=na uninstall=na install=na install_to_launch=na launch_to_proc=385 orc_setup=15 port_ready_after_launch=400 to_bootstrap=0 bootstrap_register=353 bootstrap_load=2075 to_konan_start=0 konan_start_to_frame=na frame_to_detected=na kotlin_main_to_ready=3143 app_container=160 launch_to_frame=na uninstall_to_detected=na ms_relaunch=6210
+app1 terminate=146 pkg_to_uninstall=na uninstall=na install=na install_to_launch=na launch_to_proc=393 orc_setup=23 port_ready_after_launch=416 to_bootstrap=0 bootstrap_register=369 bootstrap_load=2123 to_konan_start=0 konan_start_to_frame=na frame_to_detected=na kotlin_main_to_ready=3208 app_container=132 launch_to_frame=na uninstall_to_detected=na ms_relaunch=6298
+app2 terminate=142 pkg_to_uninstall=na uninstall=na install=na install_to_launch=na launch_to_proc=380 orc_setup=23 port_ready_after_launch=403 to_bootstrap=0 bootstrap_register=355 bootstrap_load=2051 to_konan_start=12 konan_start_to_frame=na frame_to_detected=na kotlin_main_to_ready=3180 app_container=159 launch_to_frame=na uninstall_to_detected=na ms_relaunch=6199
+app3 terminate=140 pkg_to_uninstall=na uninstall=na install=na install_to_launch=na launch_to_proc=383 orc_setup=24 port_ready_after_launch=407 to_bootstrap=0 bootstrap_register=378 bootstrap_load=2028 to_konan_start=11 konan_start_to_frame=na frame_to_detected=na kotlin_main_to_ready=3143 app_container=131 launch_to_frame=na uninstall_to_detected=na ms_relaunch=6185
+
+## medians (6 runs)
+runs=6
+terminate                  median=     146 min=     140 max=     852
+pkg_to_uninstall           n/a
+uninstall                  n/a
+install                    n/a
+install_to_launch          n/a
+launch_to_proc             median=     384 min=     380 max=     428
+orc_setup                  median=      19 min=      13 max=      24
+port_ready_after_launch    median=     405 min=     397 max=     441
+to_bootstrap               median=       0 min=       0 max=       0
+bootstrap_register         median=     372 min=     353 max=     385
+bootstrap_load             median=    2072 min=    2028 max=    2123
+to_konan_start             median=       0 min=       0 max=      12
+konan_start_to_frame       n/a
+frame_to_detected          n/a
+kotlin_main_to_ready       median=    3168 min=    3143 max=    3208
+app_container              median=     159 min=     131 max=     274
+launch_to_frame            n/a
+uninstall_to_detected      n/a
+ms_relaunch                median=    6219 min=    6185 max=    6482
+

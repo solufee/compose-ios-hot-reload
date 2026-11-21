@@ -255,6 +255,17 @@ def tap_label(label, screen):
     return x, y
 
 
+AX_HELPER = os.path.join(HERE, "tools", "sim-ax-keys.sh")
+
+
+def ax_keys(cmd):
+    """Run tools/sim-ax-keys.sh save|restore for this simulator (Issue #60): `axe describe-ui` turns the accessibility
+    switch on, which makes every app start ~1.8 s slower; restore writes the saved values back. Returns (ok, line)."""
+    r = subprocess.run(["bash", AX_HELPER, cmd, UDID], capture_output=True, text=True)
+    line = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"sim-ax-keys.sh {cmd}: no output"]
+    return r.returncode == 0, line[0]
+
+
 def tap_round_trip(p_before):
     """After a warm restart (page 2, count 3): Back, +, Next, Back.
 
@@ -365,11 +376,17 @@ def main():
     warm("11-top-level-property", lambda: open(UI, "a").write('\nval extraProp: Int = 1\n'))
 
     # ---- real taps after the warm restart (fixed regression item) ----------
+    _, ax_saved = ax_keys("save")  # before the first describe-ui; written back whatever happens in the tap step
+    print(ax_saved, flush=True)
     try:
         good, detail = tap_round_trip(p0)
     except Exception as e:  # noqa: BLE001 - report any tap failure as FAIL
         good, detail = False, f"error: {e}"
+    finally:
+        ax_ok, ax_line = ax_keys("restore")
+        print(ax_line, flush=True)
     results.append(("12-tap-after-warm", "tap", "PASS" if good else "FAIL", detail))
+    results.append(("13-ax-restored", "ax", "PASS" if ax_ok else "FAIL", ax_line))
     shot("12-tap-after-warm")
 
     # ---- summary -----------------------------------------------------------

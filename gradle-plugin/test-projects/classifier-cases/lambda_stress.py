@@ -110,6 +110,21 @@ p0 = pid()
 log0 = len(open(LOG, errors="replace").read())
 failed = 0
 print(f"# lambda stress: {a.file}, pid {p0}, {len(plan)} reloads, a tap on {a.plus!r} after each", flush=True)
+# Issue #66: `axe describe-ui` turns on the simulator's accessibility switch (ApplicationAccessibilityEnabled,
+# AccessibilityEnabled; ~1.8 s more at every app start). The shared helper saves both keys before the first describe-ui
+# and writes them back when the script ends, also after a failure (absent keys are written back as NO).
+AX_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../example-gradle/tools/sim-ax-keys.sh")
+
+
+def ax_keys(cmd):
+    """Run example-gradle/tools/sim-ax-keys.sh save|restore for this simulator. Returns (ok, line)."""
+    r = subprocess.run(["bash", AX_HELPER, cmd, a.udid], capture_output=True, text=True)
+    line = (r.stdout.strip() or r.stderr.strip()).splitlines()[-1:] or [f"sim-ax-keys.sh {cmd}: no output"]
+    return r.returncode == 0, line[0]
+
+
+ax_ok = False
+print(ax_keys("save")[1], flush=True)
 try:
     for i, (op, tag) in enumerate(plan):
         src = with_lambda(tag) if tag else orig
@@ -138,5 +153,7 @@ try:
 finally:
     open(F, "w").write(orig)
     print("# file restored", flush=True)
+    ax_ok, ax_line = ax_keys("restore")
+    print(f"{'PASS' if ax_ok else 'FAIL'} simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | {ax_line}", flush=True)
 print(f"summary: {len(plan) - failed}/{len(plan)} reloads OK in one process")
-sys.exit(1 if failed else 0)
+sys.exit(1 if failed or not ax_ok else 0)

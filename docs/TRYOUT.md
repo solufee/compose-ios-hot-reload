@@ -1,4 +1,4 @@
-# 试用指南（0.2.6，实验性）
+# 试用指南（0.2.7，实验性）
 
 这份指南带你在自己的 Mac 上，把 Compose Multiplatform 的 iOS 模拟器热重载接进工程：改 Kotlin 代码、执行一条命令，
 正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。有两种接法：
@@ -32,16 +32,16 @@
 
 ## 2. 下载工具链
 
-工具链版本：**2.5.255-hotreload.10**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
+工具链版本：**2.5.255-hotreload.11**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
 
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.10/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.11/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.10/`（下文记作 `<TOOLCHAIN>`）：
+完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.11/`（下文记作 `<TOOLCHAIN>`）：
 
 | 目录 | 内容 |
 |---|---|
@@ -102,14 +102,14 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.6"
+    id("com.solufee.cmp.hotreload") version "0.2.7"
 }
 
 cmpHotReload {
     app(":app")          // 含 main.kt 和 Info.plist 的模块
     library(":ui")       // 被 app 依赖的模块；有多个时按依赖顺序依次写 library(...)
     simulator {
-        readyMarker = "RENDER_APP"   // app 首帧打印的一行字；出现它才算启动完成（可选，推荐）
+        readyMarker = "RENDER_APP"   // 可选：app 打印的一行字，出现它才算启动完成。工具链 .11 起插件自己认得首帧标记，不配也行
     }
 }
 ```
@@ -296,6 +296,13 @@ fun main(args: Array<String>) {
   `HrState.restore` 在 `main` 里读它，作为初始值。文件里有 `page`、`count` 时，插件还会用 `--hr-state=N,M` 传这两个值，
   并等到 `readyMarker` 那一行同时出现 `page=N` 和 `count=M` 才算恢复完成；
 - 不写这个文件也能温重启，只是回到初始状态。普通的 `hotReloadRun` 每次都重新安装，不会带上旧文件。
+- 插件 0.2.7 起，温重启一般不再卸载重装：新包和已安装的 app 只有可执行文件不同时，插件直接替换已安装 app 里的可执行文件
+  （逐字节核对；有其他任何不同就照旧卸载重装，日志 `install: …` 写明是哪种）。这时 app 的数据（Documents、偏好设置）原样保留，
+  和更新一个已安装的 app 一样。app 被卸载或数据容器被删掉时，温重启会自动重新安装。
+- 插件 0.2.7 + 工具链 .11 起，app 画完第一帧（日志里的 `HR READY first-frame`）就算启动完成，不再等 Kotlin main 之后的 3 s；
+  向导模板的温重启因此每次少 ~1.3 s。日志 `app started … ready: …` 写明按哪条规则判定。
+- 模拟器开着“应用辅助功能”（`ApplicationAccessibilityEnabled` = 1，Accessibility Inspector 这类工具会打开它）时，每次启动 app
+  多 ~1.7 s；`hotReloadRun` 和温重启会打印一行提示，附关闭命令。插件只读这个设置，不会去改。
 
 ## 4. 运行
 
@@ -390,7 +397,7 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 ## 5. 已知限制
 
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
-- 工具链版本固定，插件只认 2.5.255-hotreload.10。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
+- 工具链版本固定，插件只认 2.5.255-hotreload.11。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
 - 工具链 .10 起，热重载 `.app` 启动时从 `build/hotreload/app/merged-bootstrap.libs.o`（约 130 MB 的库对象）读取库代码，不再把它嵌进可执行文件，
   所以打包更快，但这个 `.app` 只能在打包它的这台 Mac 上运行，删掉 `build/hotreload` 后要重新打包（`hotReloadRun` 会提示）。
@@ -488,7 +495,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.6"
+    id("com.solufee.cmp.hotreload") version "0.2.7"
 }
 ```
 

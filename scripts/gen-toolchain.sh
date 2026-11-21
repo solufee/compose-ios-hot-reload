@@ -95,6 +95,22 @@ doc = {
         "mergeChangedObjectsWith": "ld -r",
     },
 }
+# First-frame ready marker (toolchain .11, INTERFACE §6.1): declared only when the Compose ui klib in KLIBLIST really
+# prints it, so a manifest regenerated for an older toolchain never claims a marker that its app will not print.
+READY_MARKER = "HR READY first-frame"
+def ui_klib_prints_marker():
+    for line in open(kliblist).read().splitlines():
+        p = line.strip().rstrip("/")
+        if not p or p.startswith("#") or os.path.basename(p) != "ui" or not os.path.isdir(p):
+            continue
+        for root, _, files in os.walk(p):
+            for f in files:
+                with open(os.path.join(root, f), "rb") as fh:
+                    if READY_MARKER.encode() in fh.read():
+                        return True
+    return False
+if ui_klib_prints_marker():
+    doc["runtime"]["readyMarker"] = READY_MARKER
 with open(out, "w") as f:
     json.dump(doc, f, indent=2, ensure_ascii=False)
     f.write("\n")

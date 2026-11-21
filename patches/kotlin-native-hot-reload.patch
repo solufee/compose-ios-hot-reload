@@ -4176,6 +4176,30 @@ index 00000000000..77142614bea
 +}
 +
 +#endif
+diff --git a/kotlin-native/runtime/src/main/cpp/CompilerConstants.cpp b/kotlin-native/runtime/src/main/cpp/CompilerConstants.cpp
+index 0440bc9aa6e..cc1cadfbff7 100644
+--- a/kotlin-native/runtime/src/main/cpp/CompilerConstants.cpp
++++ b/kotlin-native/runtime/src/main/cpp/CompilerConstants.cpp
+@@ -8,6 +8,7 @@
+ #include "Common.h"
+ #include "Logging.hpp"
+ #include "SourceInfo.h"
++#include "Types.h"
+ 
+ using namespace kotlin;
+ 
+@@ -114,3 +115,11 @@ ALWAYS_INLINE bool compiler::minidumpOnSIGTERM() noexcept {
+ ALWAYS_INLINE const int32_t* compiler::runtimeLogs() noexcept {
+     return Kotlin_runtimeLogs;
+ }
++
++// Hot reload (first-frame ready marker, Issue #60): lets Kotlin code (kotlin.native.runtime.isHotReloadBinary() and
++// HotReload.isEnabled) ask
++// whether this binary was compiled with the split (hot reload) scheme. Kotlin_hotReload is set by the compiler for every
++// binary, so this is always linkable; release and ordinary builds get false.
++extern "C" RUNTIME_NOTHROW KBoolean Kotlin_native_runtime_HotReload_isEnabled() {
++    return compiler::hotReloadEnabled();
++}
 diff --git a/kotlin-native/runtime/src/main/cpp/CompilerConstants.hpp b/kotlin-native/runtime/src/main/cpp/CompilerConstants.hpp
 index 6412e304cd6..d17adb69200 100644
 --- a/kotlin-native/runtime/src/main/cpp/CompilerConstants.hpp
@@ -4462,10 +4486,10 @@ index 7e941e97bf6..db5e7ba4a6c 100644
      // Lookup value in storage. Can only be called after `Commit`.
 diff --git a/kotlin-native/runtime/src/main/kotlin/kotlin/native/runtime/HotReload.kt b/kotlin-native/runtime/src/main/kotlin/kotlin/native/runtime/HotReload.kt
 new file mode 100644
-index 00000000000..2648b11889a
+index 00000000000..2e99ba90f7d
 --- /dev/null
 +++ b/kotlin-native/runtime/src/main/kotlin/kotlin/native/runtime/HotReload.kt
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,193 @@
 +/*
 + * Copyright 2010-2026 JetBrains s.r.o. and Kotlin Programming Language contributors.
 + * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
@@ -4635,7 +4659,30 @@ index 00000000000..2648b11889a
 +     * Collect statistics about the latest hot-code reload event.
 +     */
 +    public fun collectLatestStats(): Stats = HotReloadStatsBuilder().build()
++
++    /**
++     * `true` when this binary was compiled for hot reload (the split compilation scheme), `false` for every other
++     * binary (release, optimized and ordinary debug builds). The value is fixed by the compiler at build time.
++     *
++     * For hot reload tooling only, for example the first-frame ready marker printed by the Compose UI hot reload hook;
++     * it is not a general-purpose API.
++     */
++    @NativeRuntimeApi
++    public val isEnabled: Boolean
++        get() = isHotReloadBinary()
 +}
++
++/**
++ * Same value as [HotReload.isEnabled]: `true` only in binaries compiled for hot reload (the split compilation scheme).
++ *
++ * A top-level function that calls straight into the runtime, so reading it needs no object initialization: in optimized
++ * binaries the compiler-set constant behind it folds, and `if (isHotReloadBinary()) ...` leaves no code at all. Library
++ * hooks that must not change release binaries (the Compose UI ready marker) use this form.
++ * For hot reload tooling only; it is not a general-purpose API.
++ */
++@NativeRuntimeApi
++@GCUnsafeCall("Kotlin_native_runtime_HotReload_isEnabled")
++public external fun isHotReloadBinary(): Boolean
 diff --git a/kotlin-native/runtime/src/test_support/cpp/CompilerGenerated.cpp b/kotlin-native/runtime/src/test_support/cpp/CompilerGenerated.cpp
 index b14a2d52f75..06466068de0 100644
 --- a/kotlin-native/runtime/src/test_support/cpp/CompilerGenerated.cpp
@@ -4656,15 +4703,18 @@ index b14a2d52f75..06466068de0 100644
  extern const TypeInfo* theAnyTypeInfo = theAnyTypeInfoHolder.typeInfo();
  extern const TypeInfo* theArrayTypeInfo = theArrayTypeInfoHolder.typeInfo();
 diff --git a/libraries/tools/binary-compatibility-validator/klib-public-api/kotlin-stdlib.api b/libraries/tools/binary-compatibility-validator/klib-public-api/kotlin-stdlib.api
-index ba081f9d46e..bf21315cf05 100644
+index ba081f9d46e..1934006580d 100644
 --- a/libraries/tools/binary-compatibility-validator/klib-public-api/kotlin-stdlib.api
 +++ b/libraries/tools/binary-compatibility-validator/klib-public-api/kotlin-stdlib.api
-@@ -11990,6 +11990,57 @@ final object kotlin.native.runtime/GC { // kotlin.native.runtime/GC|null[0]
+@@ -11990,6 +11990,60 @@ final object kotlin.native.runtime/GC { // kotlin.native.runtime/GC|null[0]
      }
  }
  
 +// Targets: [native]
 +final object kotlin.native.runtime/HotReload { // kotlin.native.runtime/HotReload|null[0]
++    final val isEnabled // kotlin.native.runtime/HotReload.isEnabled|{}isEnabled[0]
++        final fun <get-isEnabled>(): kotlin/Boolean // kotlin.native.runtime/HotReload.isEnabled.<get-isEnabled>|<get-isEnabled>(){}[0]
++
 +    final fun addReloadSuccessHandler(kotlin/Function0<kotlin/Unit>) // kotlin.native.runtime/HotReload.addReloadSuccessHandler|addReloadSuccessHandler(kotlin.Function0<kotlin.Unit>){}[0]
 +    final fun collectLatestStats(): kotlin.native.runtime/HotReload.Stats // kotlin.native.runtime/HotReload.collectLatestStats|collectLatestStats(){}[0]
 +    final fun perform(kotlin/String) // kotlin.native.runtime/HotReload.perform|perform(kotlin.String){}[0]
@@ -4717,6 +4767,16 @@ index ba081f9d46e..bf21315cf05 100644
  // Targets: [native]
  final object kotlin.native/Platform { // kotlin.native/Platform|null[0]
      final val canAccessUnaligned // kotlin.native/Platform.canAccessUnaligned|{}canAccessUnaligned[0]
+@@ -13248,6 +13302,9 @@ final fun kotlin.native.internal/unboxULong(kotlin/ULong?): kotlin/ULong // kotl
+ // Targets: [native]
+ final fun kotlin.native.internal/unboxUShort(kotlin/UShort?): kotlin/UShort // kotlin.native.internal/unboxUShort|unboxUShort(kotlin.UShort?){}[0]
+ 
++// Targets: [native]
++final fun kotlin.native.runtime/isHotReloadBinary(): kotlin/Boolean // kotlin.native.runtime/isHotReloadBinary|isHotReloadBinary(){}[0]
++
+ // Targets: [native]
+ final fun kotlin.native/getUnhandledExceptionHook(): kotlin/Function1<kotlin/Throwable, kotlin/Unit>? // kotlin.native/getUnhandledExceptionHook|getUnhandledExceptionHook(){}[0]
+ 
 diff --git a/libraries/tools/kotlin-gradle-plugin/src/main/kotlin/org/jetbrains/kotlin/gradle/plugin/PluginWrappers.kt b/libraries/tools/kotlin-gradle-plugin/src/main/kotlin/org/jetbrains/kotlin/gradle/plugin/PluginWrappers.kt
 index e65a5b87ef6..ff2162cac84 100644
 --- a/libraries/tools/kotlin-gradle-plugin/src/main/kotlin/org/jetbrains/kotlin/gradle/plugin/PluginWrappers.kt

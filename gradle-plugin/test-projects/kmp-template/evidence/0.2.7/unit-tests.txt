@@ -1,0 +1,19 @@
+# gradlew test on the official toolchain 2.5.255-hotreload.11 (manifest sha256 1a669ba9...), branch feat/ready-marker-62 7b06c92
+CompatContractTest: tests=10 skipped=0 failures=0 errors=0
+CompositeBuildTest: tests=8 skipped=0 failures=0 errors=0
+ExpectActualCasesTest: tests=5 skipped=0 failures=0 errors=0
+KlibInputsTest: tests=2 skipped=0 failures=0 errors=0
+KmpTest: tests=12 skipped=0 failures=0 errors=0
+PackagerDutiesTest: tests=4 skipped=0 failures=0 errors=0
+PipelineTest: tests=7 skipped=0 failures=0 errors=0
+PluginFunctionalTest: tests=12 skipped=0 failures=0 errors=0
+ProjectDependenciesTest: tests=1 skipped=0 failures=0 errors=0
+ProtocolContractTest: tests=4 skipped=0 failures=0 errors=0
+ReadyStateTest: tests=7 skipped=0 failures=0 errors=0
+RelaunchTest: tests=7 skipped=0 failures=0 errors=0
+ReleaseDigestTest: tests=1 skipped=0 failures=0 errors=0
+ReloadOutcomeTest: tests=4 skipped=0 failures=0 errors=0
+StableKeysTest: tests=6 skipped=0 failures=0 errors=0
+ToolchainValidatorTest: tests=9 skipped=0 failures=0 errors=0
+WarmAdviceTest: tests=4 skipped=0 failures=0 errors=0
+total: 103 tests, 0 failed
