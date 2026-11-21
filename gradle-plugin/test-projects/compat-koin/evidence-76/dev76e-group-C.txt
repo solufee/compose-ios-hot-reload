@@ -1,0 +1,43 @@
+# #75 compat group C, 2026-11-21 22:37:39, project C, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 2s
+RESULT package: rc=0 133s
+  | klib core: compiling (no previous build)
+  | compile: daemon klib OK 1270 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon klib OK 121353 ms
+  | compile: daemon klib OK 902 ms
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | package timing ms=130020 compile=121388 merge=6862 embed+bundle=1770 embed=910 bundle=860 baseline-wait=0
+## run
+RESULT run: rc=0 11.2s verdict=- pid None->80512 (changed) new COMPAT lines=1
+  app: COMPAT ui=u1 greet=- gid=- extra=- json={"a":1}/Item(a=1, b=x)
+  | CMP hot reload: app started (attempt 1, pid 80512, 9.6 s, ready: first frame (toolchain marker), launch -> first frame 9543 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 11s
+## b) Compose UI text (UI_TAG u1 -> u2)
+RESULT b) Compose UI text (UI_TAG u1 -> u2): rc=0 8.3s verdict=HOT pid 80512->80512 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=- gid=- extra=- json={"a":1}/Item(a=1, b=x)
+  | compile: daemon klib OK 957 ms
+  | compile: daemon compile OK 6683 ms
+  | compat: HOT (classifier 1053 ms, waited 2 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (109 ms; on the main queue after 0 ms, applied in 35 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 8s
+## d) @Serializable field added (Item: + c: Int = 7)
+RESULT d) @Serializable field added (Item: + c: Int = 7): rc=0 14.3s verdict=WARM pid 80512->80924 (changed) new COMPAT lines=-1
+  app: COMPAT ui=u2 greet=- gid=- extra=- json={"a":1}/Item(a=1, b=x, c=7)  [expected state not reached]
+  | compile: daemon klib OK 770 ms
+  | compile: daemon compile OK 3495 ms
+  | compat: WARM (classifier 851 ms, patch built in 3706 ms; not sent)
+  | WARM field-layout org/example/kmphr/Item: constructor signature changed
+  | WARM field-layout org/example/kmphr/Item: fields added=['c'] removed=[]
+  | WARM class-shape org/example/kmphr/Item: unclassified class member changed
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 3997 ms
+  | compat: baseline written for shared,core (56 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 80924, 3.6 s, ready: first frame (toolchain marker), launch -> first frame 3521 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=9673 ms_package=5678 ms_relaunch=3995 page=- count=- ready=marker
+  | compat: 3 ABI changes, cannot hot-patch; warm restart took 9.7 s
+  | BUILD SUCCESSFUL in 14s
+# app and compile daemons stopped

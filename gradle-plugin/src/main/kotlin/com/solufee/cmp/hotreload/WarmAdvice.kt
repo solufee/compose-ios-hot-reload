@@ -30,6 +30,8 @@ object WarmAdvice {
         val d = p.detail
         return when (p.category) {
             "class-removed" -> "objects of this class may still be alive in the running app; keep the class until the next restart, or accept the restart"
+            "compiler-plugin-annotations" -> "a compiler plugin of the project generates code from these annotations; what that code registered at start (for example a dependency injection container) only changes after a fresh start"
+            "generated-declarations" -> "a code generator of the build added or removed declarations; what the app built from them at start (registries, dependency injection containers, ...) only picks them up after a fresh start"
             "field-layout" -> when {
                 d.startsWith("constructor") -> "a changed constructor changes how objects are built and laid out; to stay hot, add a top-level factory function instead of changing the constructor"
                 else -> "adding or removing a field changes the instance layout, and existing objects cannot be patched; keep new state in a new class or pass it as a parameter to stay hot"

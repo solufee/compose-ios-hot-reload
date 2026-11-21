@@ -7,6 +7,7 @@ and every cache archive into a single relocatable object with `ld -r`. The
 result is embedded as the only payload; reloads still send per-file user objects.
 
 Usage: merge-payloads.py <kexe> <out.o>
+       merge-payloads.py --rename-compact-unwind <object>...   (hot reload patch objects, Issue #80)
 """
 import hashlib
 import json
@@ -39,8 +40,9 @@ PAYLOAD_LIST = os.environ.get("KALDO_PAYLOAD_LIST", "")
 LIB_PAYLOAD_DIRS = [d.rstrip("/") + "/" for d in os.environ.get("KALDO_LIB_PAYLOAD_DIRS", "").split(":") if d]
 
 
-def rename_section(path, old_sect, new_sect, old_seg, new_seg):
-    """Rename a Mach-O section in place (llvm-objcopy cannot express the comma)."""
+def rename_section(path, old_sect, new_sect, old_seg, new_seg, missing_ok=False):
+    """Rename a Mach-O section in place (llvm-objcopy cannot express the comma).
+    missing_ok: return False instead of exiting when the section is not there."""
     d = bytearray(open(path, "rb").read())
     magic = struct.unpack_from("<I", d, 0)[0]
     if magic != 0xFEEDFACF:
@@ -63,9 +65,20 @@ def rename_section(path, old_sect, new_sect, old_seg, new_seg):
                 sect += 80
         off += cmdsize
     if not hits:
+        if missing_ok:
+            return False
         raise SystemExit(f"rename_section: {old_seg},{old_sect} not found")
     open(path, "wb").write(d)
     print(f"renamed {old_seg},{old_sect} -> {new_seg},{new_sect} ({hits})")
+    return True
+
+
+def rename_compact_unwind(path):
+    """Issue #80: a hot reload patch object (made with plain `ld -r`) keeps __LD,__compact_unwind; libKaldo synthesizes
+    and registers FDEs only from __KALDO,__kaldo_cu, so without this an exception unwinding through patch code ends the
+    app. Same rename as the bootstrap merge (KALDO_KEEP_COMPACT_UNWIND=1). Idempotent: an object that already has
+    __kaldo_cu, or has no compact unwind, is left as it is."""
+    return rename_section(path, b"__compact_unwind", b"__kaldo_cu", b"__LD", b"__KALDO", missing_ok=True)
 
 
 def run(cmd, **kw):
@@ -416,6 +429,13 @@ def link_and_fix(inputs, out):
 
 
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == "--rename-compact-unwind":
+        # merge-payloads.py --rename-compact-unwind <object>...: the patch path (hotreload.sh reload, the plugin's
+        # mergePatch, the device build-ios-patch.sh) calls this on the object it sends.
+        for path in sys.argv[2:]:
+            if not rename_compact_unwind(path):
+                print(f"compact unwind: nothing to rename in {path}")
+        return 0
     if len(sys.argv) != 3:
         print(__doc__)
         return 2

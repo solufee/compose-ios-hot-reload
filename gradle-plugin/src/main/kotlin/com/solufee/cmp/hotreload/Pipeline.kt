@@ -38,6 +38,9 @@ fun reloadOutcome(sinceSend: String): ReloadOutcome {
     return if (lines.any { it.contains("[kaldo] ::") }) ReloadOutcome.Loaded else ReloadOutcome.None
 }
 
+/** A direct compiler run failed; [output] is what it printed (already echoed to the build log). */
+class CompileFailed(message: String, val output: String) : GradleException(message)
+
 class NothingChanged(val modules: Int) :
     GradleException("CMP hot reload: nothing changed ($modules hot module${if (modules == 1) "" else "s"} checked); nothing sent")
 
@@ -124,6 +127,8 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     private fun markApplied(at: Long) {
         appliedSources.parentFile.mkdirs()
         appliedSources.writeText(sourcesDigest())
+        GeneratedDeclarations.record(s)
+        PluginAnnotations.record(s)
         pendingCaches.delete()
         appliedStamp.parentFile.mkdirs()
         appliedStamp.writeText("")
@@ -192,6 +197,10 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         if (s.stableKeys && composePluginKnows(File(s.composePlugin), STABLE_KEYS)) listOf("-P", STABLE_KEYS_OPTION) else emptyList()
     }
 
+    /** #76: the project's own compiler plugins of [m] (not Compose) and their options, as the normal build passes them. */
+    fun projectPluginArgs(m: HrModule): List<String> =
+        m.compilerPlugins.map { "-Xplugin=$it" } + m.pluginOptions.flatMap { listOf("-P", it) }
+
     /** "on", "off" or "unsupported" (the toolchain's Compose compiler does not know the flag), for messages and the package record. */
     val stableKeysState: String get() = when {
         composeOptions.isNotEmpty() -> "on"
@@ -202,7 +211,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     fun libraryArgs(m: HrModule, out: File = s.klibOf(m)): List<String> = listOf(
         "-target", s.target, "-p", "library", "-g",
         "-Xplugin=${s.composePlugin}",
-    ) + composeOptions + listOf("-opt-in=kotlinx.cinterop.ExperimentalForeignApi") + klibLinks(m) + sourceArgs(m) + listOf("-o", out.path.removeSuffix(".klib"))
+    ) + composeOptions + projectPluginArgs(m) + listOf("-opt-in=kotlinx.cinterop.ExperimentalForeignApi") + klibLinks(m) + sourceArgs(m) + listOf("-o", out.path.removeSuffix(".klib"))
 
     /**
      * #52 (#32, toolchain .9+): the package compile writes the bootstrap payload paths to a list instead of copying
@@ -222,6 +231,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             "-Xauto-cache-dir=${File(work, "auto-cache").path}",
             "-Xplugin=${s.composePlugin}",
             *composeOptions.toTypedArray(),
+            *projectPluginArgs(s.app).toTypedArray(),
             "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
         ) + s.linkerOptions.map { "-linker-option=$it" } +
             listOf("-linker-option=-force_load", "-linker-option=${s.objcUtilsLib}") +
@@ -239,6 +249,23 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     private fun compile(
         args: List<String>, daemonSocket: String?, kind: String, cacheOnly: Boolean, daemons: Daemons?,
         retryDirectOnError: Boolean = false,
+    ) {
+        try {
+            compileOnce(args, daemonSocket, kind, cacheOnly, daemons, retryDirectOnError)
+        } catch (e: GradleException) {
+            // #76: a project compiler plugin built for another compiler version fails inside the compiler; name it.
+            val jars = args.filter { it.startsWith("-Xplugin=") && it != "-Xplugin=${s.composePlugin}" }.map { File(it.removePrefix("-Xplugin=")) }
+            val hint = pluginIncompatibility((e.message ?: "") + "\n" + ((e as? CompileFailed)?.output ?: ""), jars, compilerVersion()) ?: throw e
+            throw GradleException(hint + "\n" + (e.message ?: ""), e)
+        }
+    }
+
+    private fun compilerVersion(): String =
+        File(s.dist, TOOLCHAIN_MANIFEST).takeIf { it.isFile }?.let { runCatching { Toolchain.parse(it).kotlinVersion }.getOrNull() } ?: "of the toolchain"
+
+    private fun compileOnce(
+        args: List<String>, daemonSocket: String?, kind: String, cacheOnly: Boolean, daemons: Daemons?,
+        retryDirectOnError: Boolean,
     ) {
         if (daemonSocket != null && daemons != null) {
             val offset = daemons.logSize(kind)
@@ -258,7 +285,10 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             }
         }
         logger.lifecycle("compile: kotlinc-native")
-        Proc.check(listOf(s.kotlinc) + args, env = compileEnvironment(cacheOnly), logger = logger)
+        // The output is echoed as before; it also travels with the failure so a plugin incompatibility can be named (#76).
+        val cmd = listOf(s.kotlinc) + args
+        val r = Proc.run(cmd, env = compileEnvironment(cacheOnly), logger = logger)
+        if (r.exit != 0) throw CompileFailed("CMP hot reload: `${cmd.joinToString(" ").take(300)}` failed (exit ${r.exit})", r.output)
     }
 
     /**
@@ -525,9 +555,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     // ---------------------------------------------------------------- reload
 
     /** Without a classifier baseline: compile and send; no rebuilt object is "nothing changed", not an error. */
-    fun reload(daemons: Daemons?) {
+    fun reload(daemons: Daemons?, tools: Tools? = null) {
         val patch = try {
-            preparePatch(daemons)
+            preparePatch(daemons, tools)
         } catch (e: NothingChanged) {
             logger.lifecycle(e.message!!.removePrefix("CMP hot reload: "))
             return
@@ -602,7 +632,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     /** The stable-keys state the running app was packaged with (#47); a patch must be compiled the same way. */
     val packagedStableKeys get() = File(work, "stable-keys.txt")
 
-    fun preparePatch(daemons: Daemons?): File {
+    fun preparePatch(daemons: Daemons?, tools: Tools? = null): File {
         writeGeneratedMain()
         packagedStableKeys.takeIf { it.isFile }?.readText()?.trim()?.let { packaged ->
             if (packaged != stableKeysState) throw GradleException(
@@ -663,7 +693,20 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
                 throw GradleException("CMP hot reload: symbol check failed for ${m.label} (defined=${defined.size}, kept=$kept); not sending")
             }
         }
+        if (tools != null && s.keepCompactUnwind) keepCompactUnwind(merged, tools)
         return merged
+    }
+
+    /**
+     * INTERFACE §3.3 #1 for the patch, as for the packaged object: the compact-unwind records move to
+     * `__KALDO,__kaldo_cu`, where the app's loader turns them into FDEs and registers them. Left in
+     * `__LD,__compact_unwind` (where `ld -r` and the compiler put them), no frame of the patch had unwind info: an
+     * exception thrown in patched code and caught in patched code ended the app (#80). The one call path is the bundled
+     * `merge-payloads.py --rename-compact-unwind` (idempotent; an object without the section stays as it is).
+     */
+    fun keepCompactUnwind(obj: File, tools: Tools) {
+        val out = Proc.check(listOf("python3", "-I", tools.mergePayloads.path, "--rename-compact-unwind", obj.path), echo = false).trim()
+        logger.lifecycle("patch unwind info: ${out.lines().lastOrNull().orEmpty()}")
     }
 
     private fun absoluteRpaths(binary: File): List<String> =
@@ -820,6 +863,32 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         const val STABLE_KEYS_OPTION = "plugin:androidx.compose.compiler.plugins.kotlin:featureFlag=$STABLE_KEYS"
 
         /** Whether this Compose compiler plugin jar knows [flag] (a FeatureFlag enum entry; toolchain .9+), as hotreload.sh checks. */
+        private val LINKAGE = Regex("""NoSuchMethodError|NoSuchFieldError|NoClassDefFoundError|AbstractMethodError|IncompatibleClassChangeError|ClassNotFoundException|LinkageError|is not compatible with|incompatible with""")
+
+        /** Classes a compiler plugin jar registers (META-INF/services of the Kotlin compiler), for naming it in errors. */
+        fun registeredClasses(jar: File): List<String> = try {
+            java.util.zip.ZipFile(jar).use { z ->
+                z.entries().toList().filter { it.name.startsWith("META-INF/services/org.jetbrains.kotlin.") }
+                    .flatMap { e -> z.getInputStream(e).bufferedReader().readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") } }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        /**
+         * #76: when a compile with project compiler plugins [jars] fails like a binary incompatibility (a plugin built for
+         * another Kotlin version), the message that names the plugin; null when it does not look like one.
+         */
+        fun pluginIncompatibility(output: String, jars: List<File>, compiler: String): String? {
+            if (jars.isEmpty() || !LINKAGE.containsMatchIn(output)) return null
+            val named = jars.filter { j ->
+                output.contains(j.name) || registeredClasses(j).any { c -> output.contains(c.substringBeforeLast('.')) }
+            }.ifEmpty { jars }
+            return "CMP hot reload: the project's compiler plugin ${named.joinToString { it.name }} does not work with the toolchain's " +
+                "Kotlin/Native compiler $compiler (the hot reload compiles pass the plugins your build applies). Use a version of " +
+                "this plugin built for Kotlin $compiler, or remove the plugin from the module."
+        }
+
         fun composePluginKnows(jar: File, flag: String): Boolean = try {
             java.util.zip.ZipFile(jar).use { z ->
                 val e = z.getEntry("androidx/compose/compiler/plugins/kotlin/FeatureFlag.class") ?: return false

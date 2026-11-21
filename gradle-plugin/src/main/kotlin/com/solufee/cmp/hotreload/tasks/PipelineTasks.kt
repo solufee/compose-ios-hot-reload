@@ -54,10 +54,27 @@ abstract class HotReloadTask : DefaultTask() {
     @get:Internal
     abstract val composeVersion: Property<String>
 
+    /** #76: the project's compiler plugin jars (task input) and, per module, which jars it uses ("modulePath|jar"). */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val compilerPluginFiles: ConfigurableFileCollection
+
+    @get:Internal
+    abstract val compilerPluginIds: ListProperty<String>
+
     /** Settings with the dependency klibs that are linked (the toolchain's own copies taken out). */
     /** [report]: print the dependency summary (only the package, reload and release tasks do; library compiles stay quiet). */
+    /** #76: each module gets its project compiler plugin jars (the Compose plugin excluded: the toolchain's own is used). */
+    private fun withCompilerPlugins(s: HrSettings): HrSettings {
+        val ids = compilerPluginIds.getOrElse(emptyList()).map { it.substringBefore('|') to File(it.substringAfter('|')) }
+        if (ids.isEmpty()) return s
+        return s.copy(modules = s.modules.map { m ->
+            m.copy(compilerPlugins = com.solufee.cmp.hotreload.Kmp.withoutComposeJars(ids.filter { it.first == m.path }.map { it.second }).map { it.path })
+        })
+    }
+
     protected fun effectiveSettings(report: Boolean = true): HrSettings {
-        val s = settings.get()
+        val s = withCompilerPlugins(settings.get())
         val ids = externalKlibIds.getOrElse(emptyList())
         if (ids.isEmpty()) return s
         val via = externalKlibVia.getOrElse(emptyList()).associate { it.substringBefore('|') to it.substringAfter('|') }
@@ -182,7 +199,7 @@ abstract class ReloadTask : HotReloadTask() {
         val compat = Compat(s, logger, pipeline, tools)
         if (!compat.hasBaseline()) {
             logger.warn("CMP hot reload: no classifier baseline in ${s.compatDir}; run ./gradlew hotReloadPackage (classifier skipped)")
-            pipeline.reload(daemons)
+            pipeline.reload(daemons, tools)
             return
         }
         // v8: classify in the background while the patch compiles; send only after a HOT verdict.
@@ -190,18 +207,22 @@ abstract class ReloadTask : HotReloadTask() {
         val t0 = System.currentTimeMillis()
         var patchError: Exception? = null
         val patch = try {
-            pipeline.preparePatch(daemons)
+            pipeline.preparePatch(daemons, tools)
         } catch (e: Exception) {
             patchError = e
             null
         }
         val tReady = System.currentTimeMillis()
         // A compile error in the app also breaks the classifier's app klib: report the compiler's message.
-        val r = try {
+        val r0 = try {
             compat.await(pending)
         } catch (e: GradleException) {
             throw patchError ?: e
         }
+        // #76: generated code that gains or loses declarations, or class annotations that project compiler plugins read,
+        // change what was built at start: a warm restart, whatever the classifier and the patch compile saw.
+        val extra = listOfNotNull(com.solufee.cmp.hotreload.GeneratedDeclarations.changed(s), com.solufee.cmp.hotreload.PluginAnnotations.changed(s))
+        val r = if (extra.isEmpty()) r0 else r0.copy(verdict = Compat.Verdict.WARM, reasons = r0.reasons + extra)
         val waited = System.currentTimeMillis() - tReady
         if (r.verdict == Compat.Verdict.HOT) {
             if (patchError is com.solufee.cmp.hotreload.NothingChanged) {

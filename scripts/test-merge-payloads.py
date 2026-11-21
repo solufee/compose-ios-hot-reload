@@ -11,6 +11,8 @@ no Kotlin build; needs Xcode's clang, nm and ar).
 3. The per-archive cache: the key changes with the archive bytes and with the
    flags; cache_put/cache_get round-trip; cache_prune removes only unused
    entries and leaves foreign files alone.
+4. --rename-compact-unwind (Issue #80): __LD,__compact_unwind -> __KALDO,__kaldo_cu,
+   a second run changes nothing, an object without the section is left alone.
 """
 import importlib.util
 import os
@@ -123,6 +125,34 @@ def main():
         left = sorted(os.listdir(cache))
         check("prune keeps used entries and foreign files only",
               left == sorted([k1 + ".a", k1 + ".json", "README.txt"]), left)
+    finally:
+        subprocess.run(["rm", "-rf", t])
+
+    # 4. Issue #80: --rename-compact-unwind on a patch object (idempotent; no section = no change).
+    t = tempfile.mkdtemp(prefix="merge-test-cu-")
+    try:
+        m = load({})
+        obj = cc(t, "patch", "extern void ext(void);\nint f(int x){ if (x) ext(); return x + 1; }\n")
+
+        def sections(p):
+            r = subprocess.run(["otool", "-l", p], capture_output=True, text=True).stdout.split("\n")
+            return [(r[i].split()[-1], r[i + 1].split()[-1]) for i in range(len(r) - 1)
+                    if r[i].strip().startswith("sectname")]
+
+        before = sections(obj)
+        check("clang object has __LD,__compact_unwind", ("__compact_unwind", "__LD") in before, before)
+        r1 = subprocess.run([sys.executable, TOOL, "--rename-compact-unwind", obj], capture_output=True, text=True)
+        after = sections(obj)
+        check("renamed to __KALDO,__kaldo_cu, exit 0", r1.returncode == 0 and ("__kaldo_cu", "__KALDO") in after
+              and ("__compact_unwind", "__LD") not in after, (r1.returncode, r1.stdout, after))
+        data1 = open(obj, "rb").read()
+        r2 = subprocess.run([sys.executable, TOOL, "--rename-compact-unwind", obj], capture_output=True, text=True)
+        check("second run: exit 0, object unchanged (idempotent)", r2.returncode == 0 and open(obj, "rb").read() == data1,
+              (r2.returncode, r2.stdout))
+        plain = cc(t, "nocu", "int g;\n")
+        data2 = open(plain, "rb").read()
+        check("object without compact unwind: rename_compact_unwind False, unchanged",
+              m.rename_compact_unwind(plain) is False and open(plain, "rb").read() == data2)
     finally:
         subprocess.run(["rm", "-rf", t])
     if fails == 0:

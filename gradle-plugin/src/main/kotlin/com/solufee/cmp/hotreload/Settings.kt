@@ -1,13 +1,12 @@
 package com.solufee.cmp.hotreload
 
 import java.io.File
-import java.io.Serializable
 
 /**
  * One source set of a module in a multiplatform compilation (`commonMain`, `iosMain`, ...): its Kotlin source
  * directories and the fragments it refines (dependsOn). A plain module has a single fragment.
  */
-data class HrFragment(val name: String, val dirs: List<String>, val refines: List<String> = emptyList()) : Serializable
+data class HrFragment(val name: String, val dirs: List<String>, val refines: List<String> = emptyList()) : java.io.Serializable
 
 /** One resolved module (configuration-cache safe: plain strings only). */
 data class HrModule(
@@ -20,9 +19,29 @@ data class HrModule(
     val deps: List<String>,
     /** Source sets; more than one means a multiplatform (-Xmulti-platform -Xfragments ...) compilation. */
     val fragments: List<HrFragment> = listOf(HrFragment("main", listOf(srcDir))),
-) : Serializable {
+    /**
+     * #76: the project's own Kotlin compiler plugins for this module (jars of its Kotlin/Native compile's plugin
+     * classpath, whatever plugins the build applies) and their `plugin:<id>:<key>=<value>` options,
+     * passed to every hot reload compile and the release check. The Compose plugin is not among them: the toolchain's
+     * own is used.
+     */
+    val compilerPlugins: List<String> = emptyList(),
+    val pluginOptions: List<String> = emptyList(),
+    /**
+     * #76: the module's build directory (absolute, from `project.layout.buildDirectory` at configuration); source
+     * directories under it are generated. Null when unknown (then nothing counts as generated).
+     */
+    val buildDir: String? = null,
+) : java.io.Serializable {
     /** Every Kotlin source directory of the module. */
     val sourceDirs: List<String> get() = fragments.flatMap { it.dirs }.distinct()
+
+    /** #76: whether [dir] is inside this module's build directory (generated source), by path, not by a name in it. */
+    fun isGenerated(dir: String): Boolean = buildDir != null && File(dir).absoluteFile.normalize().startsWith(File(buildDir).absoluteFile.normalize())
+
+    /** Source directories of generators (under the build directory) and the module's own ones. */
+    val generatedSourceDirs: List<String> get() = sourceDirs.filter(::isGenerated)
+    val ownSourceDirs: List<String> get() = sourceDirs.filterNot(::isGenerated)
 
     /** Short label used in logs and symbol checks: ":feature:ui" -> "feature-ui". */
     val label: String get() = path.trim(':').replace(':', '-').ifEmpty { "root" }
@@ -88,7 +107,7 @@ data class HrSettings(
     val infoPlistContent: String? = null,
     /** #62 (INTERFACE §6.1): the toolchain's first-frame ready marker (runtime.readyMarker, .11+); null on older toolchains. */
     val toolchainReadyMarker: String? = null,
-) : Serializable {
+) : java.io.Serializable {
     val app: HrModule get() = modules.single { it.kind == ModuleKind.APP }
     val libraries: List<HrModule> get() = modules.filter { it.kind == ModuleKind.LIBRARY }
     val compileSocket: String get() = File(socketDir, "hr-compile.sock").path

@@ -1,0 +1,27 @@
+[versions]
+androidx-lifecycle = "2.11.0"
+composeMultiplatform = "1.12.2"
+kotlin = "2.4.21"
+koin = "4.2.2"
+koinCompilerPlugin = "1.2.3"
+kotlinxSerialization = "1.13.0"
+kotlinxRpc = "0.10.4"
+material3 = "1.12.0-alpha03"
+
+[libraries]
+androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
+koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
+koin-annotations = { module = "io.insert-koin:koin-annotations", version.ref = "koin" }
+kotlinx-rpc-core = { module = "org.jetbrains.kotlinx:kotlinx-rpc-core", version.ref = "kotlinxRpc" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+# Gradle plugins, as build-logic dependencies
+kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlin-serializationPlugin = { module = "org.jetbrains.kotlin:kotlin-serialization", version.ref = "kotlin" }
+compose-compilerGradlePlugin = { module = "org.jetbrains.kotlin:compose-compiler-gradle-plugin", version.ref = "kotlin" }
+compose-gradlePlugin = { module = "org.jetbrains.compose:compose-gradle-plugin", version.ref = "composeMultiplatform" }
+kotlinx-rpcGradlePlugin = { module = "org.jetbrains.kotlinx:kotlinx-rpc-gradle-plugin", version.ref = "kotlinxRpc" }
+koin-compilerGradlePlugin = { module = "io.insert-koin:koin-compiler-gradle-plugin", version.ref = "koinCompilerPlugin" }

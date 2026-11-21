@@ -46,6 +46,33 @@ object Kmp {
         return ordered.values.toList()
     }
 
+    /** The Compose compiler plugin: the toolchain's own is used, never the project's (KGP's) copy. */
+    private val COMPOSE_JAR = Regex("""(^|[-_])compose-compiler-plugin""")
+    const val COMPOSE_PLUGIN_ID = "androidx.compose.compiler.plugins.kotlin"
+
+    /**
+     * #76: compiler plugins of a module as its Kotlin/Native compile for the hot reload target gets them: the plugin
+     * classpath (not resolved here: Gradle resolves it for the tasks that consume it) and the options without Compose's.
+     */
+    class CompilerPlugins(val classpath: org.gradle.api.file.FileCollection?, val options: List<String>)
+
+    /**
+     * #76: the compiler plugin classpath and `plugin:<id>:<key>=<value>` options of [p]'s `compileKotlinIosSimulatorArm64`
+     * (whatever the normal build passes to the Kotlin/Native compiler; only Compose is replaced by the toolchain's own).
+     * Null when [p] has no such task; read through reflection (any KGP).
+     */
+    fun compilerPlugins(p: Project): CompilerPlugins? {
+        val task = p.tasks.findByName(COMPILE_TASK) ?: return null
+        val cp = call(task, "getCompilerPluginClasspath") as? org.gradle.api.file.FileCollection
+        val opts = call(task, "getCompilerPluginOptions")?.let { call(it, "getArguments") } as? List<*>
+        return CompilerPlugins(cp, withoutComposeOptions(opts?.map { it.toString() } ?: emptyList()))
+    }
+
+    fun withoutComposeJars(jars: List<File>): List<File> = jars.filter { !COMPOSE_JAR.containsMatchIn(it.name) }
+    fun withoutComposeOptions(options: List<String>): List<String> = options.filter { !it.startsWith("plugin:$COMPOSE_PLUGIN_ID:") }
+
+    const val COMPILE_TASK = "compileKotlinIosSimulatorArm64"
+
     private fun call(target: Any, method: String): Any? =
         target.javaClass.methods.firstOrNull { it.name == method && it.parameterCount == 0 }?.invoke(target)
 

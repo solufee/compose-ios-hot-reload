@@ -1,11 +1,11 @@
 {
   "comment": "The one toolchain this plugin version supports: public base commit + patch sha256 (docs/INTERFACE.md). Bump together with interfaceVersion.",
   "interfaceVersion": 8,
-  "toolchainVersion": "2.5.255-hotreload.11",
+  "toolchainVersion": "2.5.255-hotreload.11.1",
   "kotlin": {
     "version": "2.5.255-SNAPSHOT",
     "baseCommit": "8e53ee99fbc08e264828ab082aee3e448194eca8",
-    "patchSha256": "1ccbcca1cdc93dc38b5188f7d3dbb4db89a5d9c23a92318e71db26d762c81d11"
+    "patchSha256": "3310574899248b64a4c5cd5c9672311bf86152cfc0605e093e50e6b67e58f2a4"
   },
   "compose": {
     "version": "1.13.0-rc01",

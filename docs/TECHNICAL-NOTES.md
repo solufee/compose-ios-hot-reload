@@ -239,8 +239,9 @@ Compose runtime 用的是 Google 发布的 `androidx.compose.runtime:runtime` kl
 - 每次 reload，Kaldo 把补丁装进一个新的 JITDylib（`reload<N>`，`llvm/tools/kaldo/Kaldo.cpp` 的 `reloadObjects`）。
   补丁里的定义（函数、`TypeInfo`、`object` 的实例槽）都是新的一份；函数经 stub 重定向，所有调用方都走新代码。
 - runtime 停住所有线程后执行 `ReloadClassesAndInstances`（Kotlin 补丁里的 `runtime/src/hot_reload/impl/cpp/HotReload.cpp`、
-  `StateTransfer.cpp`）：对补丁里的每个类取旧、新 `TypeInfo`（Kaldo `collectTypeInfoPatchesFromLatestUnit`），从全局变量、TLS、
-  shadow stack 遍历堆找出旧实例，按新 `TypeInfo` 分配新对象（新的实例大小），同名同类型的字段复制过去，新字段为零（null），
+  `StateTransfer.cpp`）：对补丁里的每个类取旧、新 `TypeInfo`（Kaldo `collectTypeInfoPatchesFromLatestUnit`），从全局变量、外部引用
+  （StableRef、ObjC 持有的 Kotlin 对象）、TLS、shadow stack 遍历堆找出旧实例（遍历前先发布各线程还没交给注册表的全局变量和外部引用，
+  它们平时要等下一次 GC 才发布，Issue #78），按新 `TypeInfo` 分配新对象（新的实例大小），同名同类型的字段复制过去，新字段为零（null），
   再把堆、全局、TLS、栈里的引用全部改到新对象。所以不会出现“用新布局读旧对象”。
 - `object`（包括 Compose 生成的 `ComposableSingletons$<File>Kt`）：实例槽 `_kvar:<Obj>.$instance#internal` 是文件私有的
   （non-external、`__bss`），补丁带一份新的、值为零的槽和新的 `<get-$instance>#static`，所以 reload 之后第一次访问会用**新构造函数**

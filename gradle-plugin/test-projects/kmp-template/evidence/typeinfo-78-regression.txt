@@ -1,0 +1,26 @@
+# #78 simulator full regression on 2.5.255-hotreload.11-dev78 (dev77 + hot_reload.bc f6ce8226), plugin 0.2.7 published from this branch, simulator iPhone 18 Pro, 2026-11-22
+02:05:35 start bda780c fix/typeinfo-78 udid=0B879832-98D9-49A5-AC00-8BAB579AFBB2
+02:05:38 publish 0.2.7 rc=0
+02:06:03 unit rc=0 summary: 103/103 passed (skipped 0)
+02:09:38 watch rc=0 summary: 17/17 PASS
+02:21:33 kmp rc=0 summary: 65/65 PASS
+02:36:13 composite rc=0 summary: 51/51 PASS
+02:36:13 end
+02:39:18 busy rc=0 summary: 12/12 PASS
+02:42:28 warm rc=0 summary: 17/17 PASS
+02:45:43 typeinfo rc=0 summary: 14/14 PASS
+02:49:18 relaunch rc=0 summary: 28/28 checks passed
+02:49:18 all end
+
+# release zero-change: example-gradle/accept-release-11.sh, A = toolchain .11, B = .11-dev78
+A: kexe 20895320 bytes, symbols 61916, __text digest f6537d9525cdce82
+B: kexe 20895320 bytes, symbols 61916, __text digest f6537d9525cdce82
+__text digest: identical (f6537d9525cdce82)
+defined symbols: A 61916, B 61916; identical after normalizing the per-build hash prefix and LLVM local .N suffixes
+section sizes: identical
+A: nm hotReloadFrameCommitted=0 HotReload_isEnabled=0 utf16 marker=0
+B: nm hotReloadFrameCommitted=0 HotReload_isEnabled=0 utf16 marker=0
+RESULT: PASS (same __text digest, section sizes and normalized symbols)
+rc=0
+
+# plugin line on dev78 (dev repo 45a3f67): convention-plugins run.py --stress 10 111/111 PASS (6b HOT, 20 body edits in :core and :shared, one PID); group E c4 HOT (crashed on .11 and dev77)

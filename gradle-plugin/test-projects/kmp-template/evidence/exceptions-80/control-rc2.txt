@@ -1,0 +1,16 @@
+# #80 acceptance (exceptions thrown and caught in patched code), plugin 0.2.8-rc2, 2026-11-22 03:04:08, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+## 1. package, run
+PASS package | 134s
+PASS run: the three exceptions are caught in the packaged code | EXC v1 cce,npe,app:custom1-1
+## 2. thrower and catcher patched, three rounds
+  | compat: HOT (classifier 959 ms, waited 1 ms after the patch was ready)
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (109 ms; on the main queue after 0 ms, applied in 33 ms); it shows on the next recomposition
+FAIL round 1: HOT, same process, all three exceptions thrown and caught in patched code | EXC v1 cce,npe,app:custom1-1 | pid 57686 -> None | 9.1s
+  | compat: HOT (classifier 883 ms, waited 1 ms after the patch was ready)
+FAIL round 2: HOT, same process, all three exceptions thrown and caught in patched code | EXC v1 cce,npe,app:custom1-1 | pid 57686 -> None | 4.8s
+  | compat: HOT (classifier 883 ms, waited 1 ms after the patch was ready)
+FAIL round 3: HOT, same process, all three exceptions thrown and caught in patched code | EXC v1 cce,npe,app:custom1-1 | pid 57686 -> None | 4.4s
+FAIL no crash in launch.log; one app process throughout | Uncaught Kotlin exception: kotlin.ClassCastException: class kotlin.String cannot be cast to class kotlin.Int
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+summary: 2/6 PASS; FAILED: ['round 1: HOT, same process, all three exceptions thrown and caught in patched code', 'round 2: HOT, same process, all three exceptions thrown and caught in patched code', 'round 3: HOT, same process, all three exceptions thrown and caught in patched code', 'no crash in launch.log; one app process throughout']

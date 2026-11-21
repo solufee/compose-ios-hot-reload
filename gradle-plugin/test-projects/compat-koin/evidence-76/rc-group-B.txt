@@ -1,0 +1,93 @@
+# #75 compat group B, 2026-11-21 22:54:41, project B, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 4s
+RESULT package: rc=0 140s
+  | > Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+  | klib core: compiling (no previous build)
+  | compile: daemon klib OK 1786 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon klib OK 125681 ms
+  | compile: daemon klib OK 828 ms
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | package timing ms=135653 compile=125727 merge=8140 embed+bundle=1786 embed=892 bundle=894 baseline-wait=0
+## run
+RESULT run: rc=0 6.2s verdict=- pid None->3979 (changed) new COMPAT lines=1
+  app: COMPAT ui=u1 greet=g1 gid=12885168 extra=none json=-
+  | CMP hot reload: app started (attempt 1, pid 3979, 4.2 s, ready: first frame (toolchain marker), launch -> first frame 4141 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 6s
+## b) Compose UI text (UI_TAG u1 -> u2)
+RESULT b) Compose UI text (UI_TAG u1 -> u2): rc=0 9.7s verdict=HOT pid 3979->3979 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=g1 gid=12884378 extra=none json=-
+  | compile: daemon klib OK 829 ms
+  | compile: daemon compile OK 7694 ms
+  | compat: HOT (classifier 920 ms, waited 3 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (112 ms; on the main queue after 0 ms, applied in 39 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 9s
+## c1) Koin factory implementation body (greet g1 -> g2)
+RESULT c1) Koin factory implementation body (greet g1 -> g2): rc=0 5.0s verdict=HOT pid 3979->3979 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=g2 gid=12884948 extra=none json=-
+  | compile: daemon klib OK 904 ms
+  | compile: daemon compile OK 3625 ms
+  | compat: HOT (classifier 996 ms, waited 2 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (110 ms; on the main queue after 0 ms, applied in 39 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+## c2) add a single (@Single on Extra), hotReload (KSP reruns through the source set dependency)
+RESULT c2) add a single (@Single on Extra), hotReload (KSP reruns through the source set dependency): rc=0 17.1s verdict=WARM pid 3979->4738 (changed) new COMPAT lines=-2
+  app: COMPAT ui=u2 greet=g2 gid=7e8d178 extra=x1 json=-
+  | compile: daemon klib OK 640 ms
+  | compile: daemon compile OK 3638 ms
+  | compat: WARM (classifier 724 ms, patch built in 4375 ms; not sent)
+  | WARM generated-declarations: generated declarations changed (added 1: _KSP_OrgExampleKmphrDiExtra)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (Extra: no annotations -> @Single)
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 4768 ms
+  | compat: baseline written for shared,core (63 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 4738, 3.8 s, ready: first frame (toolchain marker), launch -> first frame 3659 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=11746 ms_package=7512 ms_relaunch=4234 page=- count=- ready=marker
+  | compat: 2 ABI changes, cannot hot-patch; warm restart took 11.7 s
+  | BUILD SUCCESSFUL in 17s
+## e1) KSP rerun (kspKotlinIosSimulatorArm64) then hotReload
+RESULT e1) KSP rerun (kspKotlinIosSimulatorArm64) then hotReload: rc=0 1.2s verdict=- pid 4738->4738 (same) new COMPAT lines=0
+  app: COMPAT ui=u2 greet=g2 gid=7e8d178 extra=x1 json=-
+  | BUILD SUCCESSFUL in 1s
+  generated: <PROJECT>/shared/build/generated/ksp/iosSimulatorArm64/iosSimulatorArm64Main/kotlin/org/koin/ksp/generated/AppModuleGenorg$example$kmphr$di.kt:8:	single() { _ -> org.example.kmphr.di.Extra()} 
+<PROJECT>/shared/build/generated/ksp/iosSimulatorArm64/iosSim
+## c3) fresh start (hotReloadPackage + hotReloadRun) after the new single
+RESULT c3) fresh start (hotReloadPackage + hotReloadRun) after the new single: rc=0 9.9s verdict=- pid 4738->4960 (changed) new COMPAT lines=0
+  app: COMPAT ui=u2 greet=g2 gid=3f09178 extra=x1 json=-
+  | compile: daemon klib OK 2384 ms
+  | compat: baseline written for shared,core (59 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 4960, 4.2 s, ready: first frame (toolchain marker), launch -> first frame 4146 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 9s
+## c4) Extra body x1 -> x2 (existing single instance, new code?)
+RESULT c4) Extra body x1 -> x2 (existing single instance, new code?): rc=0 4.7s verdict=HOT pid 4960->None (changed) new COMPAT lines=0
+  app: COMPAT ui=u2 greet=g2 gid=3f09178 extra=x1 json=-  [expected state not reached]
+  | compile: daemon klib OK 705 ms
+  | compile: daemon compile OK 3163 ms
+  | compat: HOT (classifier 798 ms, waited 3 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (103 ms; on the main queue after 0 ms, applied in 35 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+## e2) remove the single (@Single off) + KSP rerun + hotReload
+RESULT e2) remove the single (@Single off) + KSP rerun + hotReload: rc=0 17.6s verdict=WARM pid None->5627 (changed) new COMPAT lines=0
+  app: COMPAT ui=u2 greet=g2 gid=73f9168 extra=none json=-
+  | compile: daemon klib OK 977 ms
+  | compile: daemon compile OK 3921 ms
+  | compat: WARM (classifier 1153 ms, patch built in 4353 ms; not sent)
+  | WARM class-removed org/koin/ksp/generated/_KSP_OrgExampleKmphrDiExtra: class removed
+  | WARM generated-declarations: generated declarations changed (removed 1: _KSP_OrgExampleKmphrDiExtra)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (Extra: @Single -> no annotations)
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 4222 ms
+  | compat: baseline written for shared,core (101 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 5627, 3.9 s, ready: first frame (toolchain marker), launch -> first frame 3756 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=11904 ms_package=7331 ms_relaunch=4573 page=- count=- ready=marker
+  | compat: 3 ABI changes, cannot hot-patch; warm restart took 11.9 s
+  | BUILD SUCCESSFUL in 17s
+# app and compile daemons stopped

@@ -1,0 +1,62 @@
+Calculating task graph as no cached configuration is available for tasks: hotReloadPackage
+> Task :shared:convertXmlValueResourcesForIosMain NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForNativeMain NO-SOURCE
+> Task :shared:convertXmlValueResourcesForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForAppleMain NO-SOURCE
+> Task :shared:convertXmlValueResourcesForCommonMain NO-SOURCE
+> Task :shared:convertXmlValueResourcesForAppleMain NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForIosMain NO-SOURCE
+> Task :shared:convertXmlValueResourcesForNativeMain NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForAppleMain NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForIosMain NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForNativeMain NO-SOURCE
+> Task :shared:generateResourceAccessorsForIosMain NO-SOURCE
+> Task :shared:generateResourceAccessorsForAppleMain NO-SOURCE
+> Task :shared:generateResourceAccessorsForNativeMain NO-SOURCE
+> Task :shared:generateResourceAccessorsForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:generateComposeResClass UP-TO-DATE
+> Task :shared:generateExpectResourceCollectorsForCommonMain UP-TO-DATE
+> Task :shared:copyNonXmlValueResourcesForCommonMain UP-TO-DATE
+> Task :shared:prepareComposeResourcesTaskForCommonMain UP-TO-DATE
+> Task :shared:generateResourceAccessorsForCommonMain UP-TO-DATE
+> Task :shared:generateActualResourceCollectorsForIosSimulatorArm64Main UP-TO-DATE
+> Task :shared:assembleIosSimulatorArm64MainResources
+
+> Task :shared:hotReloadCheckToolchain
+CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+
+> Task :shared:hotReloadCompileKlibCore
+CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=95702b001002, embed-merged.py=19c174720bc6, merge-payloads.py=c44e58281b90, release-text-digest.py=c2fa4df02310)
+CMP hot reload: compile daemons ready [45599, 45601]
+klib core: compiling (no previous build)
+compile: daemon klib OK 1311 ms
+klib core: <WS>/scratch/k76/Hcheck/shared/build/hotreload/klib/core/core.klib
+
+> Task :shared:hotReloadCompileKlibs
+
+> Task :shared:hotReloadPackage
+dependency klibs: 8 linked, 44 replaced by the toolchain's copies
+dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6; code that uses API added after those versions does not compile here
+CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=95702b001002, embed-merged.py=19c174720bc6, merge-payloads.py=c44e58281b90, release-text-digest.py=c2fa4df02310)
+CMP hot reload: reusing compile daemons [45599, 45601]
+stable keys (remember kept across signature changes, #29): on
+compile: daemon klib OK 118034 ms
+payload list (#32): on (68 payloads read from disk)
+app klib (classifier): compiling (no previous build)
+library payload (#56): loaded from its file by libKaldo (this .app needs <WS>/scratch/k76/Hcheck/shared/build/hotreload/app/merged-bootstrap.libs.o on this Mac; libsInExecutable = true embeds it); reserve full
+hot packages: kmphr.shared.generated.resources,org.example.core,org.example.kmphr; keep compact unwind: true
+compile: daemon klib OK 936 ms
+compat: baseline written for shared,core (1062 ms)
+hot symbols: 296
+embedded <WS>/scratch/k76/Hcheck/shared/build/hotreload/app/merged-bootstrap.o + @file:<WS>/scratch/k76/Hcheck/shared/build/hotreload/app/merged-bootstrap.libs.o -> <WS>/scratch/k76/Hcheck/shared/build/hotreload/app/KmpHr.kexe (257040928 bytes)
+compose resources: 1 files from 1 module(s) -> compose-resources/
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 296, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+package: <WS>/scratch/k76/Hcheck/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+package timing ms=127648 compile=118065 merge=7659 embed+bundle=1924 embed=884 bundle=1040 baseline-wait=0
+
+BUILD SUCCESSFUL in 2m 11s
+10 actionable tasks: 4 executed, 6 up-to-date
+Configuration cache entry stored.
+rc=0

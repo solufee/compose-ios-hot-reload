@@ -22,7 +22,7 @@
 
 本项目在它们之上的改动（原理见 `docs/TECHNICAL-NOTES.md`）：eh_frame 合成、
 `-Xhot-reload` 的 cache-only 分支、稳定的中间 klib 名、用户模块 per-file 缓存、
-ObjC selector 修复的 runtime 侧配合，以及首帧就绪标记用的 `kotlin.native.runtime.isHotReloadBinary()` / `HotReload.isEnabled`（工具链 .11，`CompilerConstants.cpp` 里的 `Kotlin_native_runtime_HotReload_isEnabled`）等。补丁共 106 个文件、约 3.1k 行新增。
+ObjC selector 修复的 runtime 侧配合，以及首帧就绪标记用的 `kotlin.native.runtime.isHotReloadBinary()` / `HotReload.isEnabled`（工具链 .11，`CompilerConstants.cpp` 里的 `Kotlin_native_runtime_HotReload_isEnabled`）等。补丁共 107 个文件、约 3.1k 行新增；逐文件缓存里非绝对路径（编译器插件生成的文件）的私有符号和缓存自身的构造函数带上模块名（#77，`perFileCachePrivateContainer`）。
 
 ## 应用
 
@@ -81,6 +81,10 @@ ee243c321ddff6b18fcf18916be1b96ef70e2363
 $ git -C /tmp/verify-compose apply --check patches/compose-multiplatform-core-build.patch
 （无输出，退出码 0）
 ```
+
+Issue #78（HOT 补丁后“X cannot be cast to X”，2026-11-22）：`kotlin-native-hot-reload.patch` sha256 `33105748…`。只改热重载 runtime `StateTransfer.cpp`（进 `hot_reload.bc`，release 链接 `noop_hot_reload`）：遍历旧实例之前 `ThreadRegistry::PublishAll()`，把各线程还没发布的全局变量和外部引用写进注册表；外部引用（StableRef、ObjC 持有的对象）也当作根，迁移后同步改写。验证见 `gradle-plugin/test-projects/kmp-template/accept-typeinfo.py` 和 REPORT §46。
+
+Issue #77（多模块同路径文件，2026-11-22）：`kotlin-native-hot-reload.patch` sha256 `1772fd13…`。改动是 `BinaryInterface.kt` 新增 `perFileCachePrivateContainer`（只在 `producePerFileCache` 时把非绝对路径加上被缓存库的 unique name），`LlvmDeclarations.kt` / `ContextUtils.kt` 的私有 typeinfo 名和 `IrToBitcode.kt` 里逐文件缓存自身的构造函数名一起用它；release 构建的 `__text` 摘要不变（f6537d95）。验证见 `example-gradle/accept-dup-private-77.txt`。
 
 Issue #60（工具链 .11 首帧就绪标记，2026-11-21）：`kotlin-native-hot-reload.patch` sha256 `1ccbcca1…`。改动是 `HotReload.kt` 新增 `isHotReloadBinary()` 和 `HotReload.isEnabled`，`CompilerConstants.cpp` 新增 `Kotlin_native_runtime_HotReload_isEnabled`，stdlib 的 API dump 同步更新；共 106 个文件，在 JetBrains/kotlin 基线 `8e53ee99` 上 `git apply --check` 通过。`compose-multiplatform-core-build.patch` sha256 `8f9229c0…`。改动是 `HotReloadRecompose.ios.kt` 的 `hotReloadFrameCommitted()`，以及 `MetalRedrawer.ios.kt`、`SurfaceMetalRedrawer.ios.kt` 的调用点；共 16 个文件，在 `f39822e6a77e` 上 `git apply --check` 通过。两次检查都是先用 `git archive` 取出基线里被改的文件，再在里面跑。`llvm-kaldo.patch` 不变。
 

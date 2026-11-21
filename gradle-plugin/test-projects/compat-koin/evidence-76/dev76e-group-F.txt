@@ -1,0 +1,34 @@
+# #75 compat group F, 2026-11-21 22:49:10, project F, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 3s
+RESULT package: rc=0 129s
+  | klib core: compiling (no previous build)
+  | compile: daemon klib OK 1356 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon klib OK 116864 ms
+  | compile: daemon klib OK 840 ms
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | package timing ms=125791 compile=116897 merge=7205 embed+bundle=1689 embed=802 bundle=887 baseline-wait=0
+## run
+RESULT run: rc=0 6.2s verdict=- pid None->91830 (changed) new COMPAT lines=1
+  app: COMPAT ui=u1 greet=- gid=- extra=- json=PA:Failed requirement.
+  | CMP hot reload: app started (attempt 1, pid 91830, 4.4 s, ready: first frame (toolchain marker), launch -> first frame 4217 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 6s
+## b) Compose UI text (UI_TAG u1 -> u2)
+RESULT b) Compose UI text (UI_TAG u1 -> u2): rc=0 8.8s verdict=HOT pid 91830->91830 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=- gid=- extra=- json=PA:Failed requirement.
+  | compile: daemon klib OK 1058 ms
+  | compile: daemon compile OK 7026 ms
+  | compat: HOT (classifier 1155 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (112 ms; on the main queue after 0 ms, applied in 37 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 8s
+## f) power-assert expression edited (x + 1 == 3 -> x + 2 == 4)
+RESULT f) power-assert expression edited (x + 1 == 3 -> x + 2 == 4): rc=0 4.6s verdict=HOT pid 91830->91830 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=- gid=- extra=- json=PA:Failed requirement.  [expected state not reached]
+  | compile: daemon klib OK 707 ms
+  | compile: daemon compile OK 3232 ms
+  | compat: HOT (classifier 788 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (104 ms; on the main queue after 0 ms, applied in 38 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+# app and compile daemons stopped

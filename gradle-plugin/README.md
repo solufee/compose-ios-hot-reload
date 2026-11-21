@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11**（插件 0.2.7）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.1**（插件 0.2.8）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -140,6 +140,8 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
   app 不写这个文件也能温重启，只是回到第 0 页；启动日志里出现 `EH FAIL` 时任务失败。
 - 0.2.7（#62）：温重启时，若新包和已安装的 app 除可执行文件外逐字节相同（Info.plist、签名资源、libKaldo、Compose 资源），就把新可执行文件写成已安装目录里的新文件、原子改名替换，再和打包出的逐字节核对，不卸载重装；数据容器保留，状态文件不再写回。已安装路径记在 `build/hotreload/installed-app.txt`（固定 UDID 时；目录还在才用，省一次 `simctl get_app_container`）。任何不一致、app 未安装、数据容器已被删掉或出错，都退回卸载 + 安装（回退时照旧把状态文件写进新安装）。`hotReloadRun` 仍是全新安装。就绪检测改成跟随日志（一个用 kqueue 等文件变化、不缓冲输出的小 python3 进程，事件驱动），不再每 0.2 s 读一次日志；没有就绪标记时的 3 s 规则保留。目标模拟器的 `com.apple.Accessibility ApplicationAccessibilityEnabled` 为 1 时（每次启动多 ~1.7 s），`hotReloadRun` 和温重启各打印一行提示和关闭命令；插件只读这个设置，读不到就不提示。
 - 0.2.7（#62 第 3 项，工具链 .11）：清单带 `runtime.readyMarker` 时，app 画完第一帧打印的 `HR READY first-frame epochMs=…`（只认行首，INTERFACE §6.1）就算就绪，不再等 Kotlin main 后的 3 s；旧规则先满足也算（纯 UIKit、首帧很慢的 app 不会更慢）。温重启的 page/count 在这一刻核对。你自己配的 `readyMarker` 优先；`SIMCTL_CHILD_KONAN_HR_READY_MARKER=0` 关掉标记（只用于测试回退）。`app started` 行写明按哪条判定和“launch -> first frame N ms”，`WARM OK` 行末尾加 `ready=marker|state|user-marker|rule`。向导模板的温重启里，重启这一步从 6.2 s 降到约 4.9 s。
+- 0.2.8（#76）：热重载的每次编译（klib、程序、补丁）和 release 检查都带上工程自己的 Kotlin 编译器插件：从模块的 `compileKotlinIosSimulatorArm64` 读插件 classpath 和 `plugin:<id>:<key>=<value>` 选项（Compose 的 jar 和选项去掉，仍用工具链的），classpath 交给 Gradle 解析。编译失败像二进制不兼容时，报错点名是哪个插件。KSP 生成代码里的顶层声明或类有增删 → 温重启（`WARM generated-declarations`）；有工程编译器插件的模块里，顶层类的注解有增删 → 温重启（`WARM compiler-plugin-annotations`）。`hotReloadRun`、`hotReload`、`hotReloadWatch` 排在 `hotReloadPackage` 之后（之前 `./gradlew hotReloadPackage hotReloadRun` 可能先启动旧包）。 哪类编译器插件能用、改动怎么判：docs/LIMITATIONS.md「编译器插件和代码生成：判定原则」。
+- 0.2.8（#80，工具链 .11.1）：补丁对象发送前，用随包的 `merge-payloads.py --rename-compact-unwind` 把 `__LD,__compact_unwind` 改成 `__KALDO,__kaldo_cu`，和打包时一样，app 的加载器据此注册补丁的 FDE。之前补丁里的栈帧没有 unwind 信息，在补丁代码里抛出、又在补丁代码里 catch 的异常会让 app 终止。用例 `test-projects/kmp-template/accept-exceptions.py`：没有修复时第一次补丁就终止（2/6），修复后 6/6。钉定工具链改为 2.5.255-hotreload.11.1：#77 修复多模块都挂会生成合成文件的编译器插件（如 Koin）时的重复符号，#78 修复启动或温重启后不久的补丁里旧实例的类型对不上（`X cannot be cast to X`）。
 - 原因按分类器的原样输出，每行 `WARM <类别> <符号>: <说明>`；0.2.4（#18）起每行下面跟一行缩进的建议 `    -> …`（`WarmAdvice`），
   最后打印 `compat: N ABI changes, cannot hot-patch; warm restart took X s`（不重启时是 `not restarted (--no-warm)`）。HOT 时分类器的 `NOTE …` 行（0.2.4：`remember-reset`）显示为
   `compat: note: …`。
@@ -265,12 +267,12 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 ../example-gradle/gradlew -p . test -Pcmp.hotreload.toolchainDir=<KOTLIN_NATIVE_DIST>
 ```
 
-共 103 个测试（0.2.7）；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
+共 114 个测试（0.2.8）；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
 
 | 测试类 | 数量 | 内容 |
 |---|---|---|
 | `ToolchainValidatorTest` | 9 | 版本、基线 commit、补丁哈希、libKaldo 实际哈希、Xcode、缺文件、bundle 布局拒绝 |
-| `PipelineTest` | 7 | 模块归类（最长包名匹配、根包）、源码 package 读取、内置工具哈希、工具位置的查找顺序（显式设置 → 清单 `tools` → 下载布局 → `tools/`） |
+| `PipelineTest` | 8 | 模块归类（最长包名匹配、根包）、源码 package 读取、内置工具哈希、工具位置的查找顺序（显式设置 → 清单 `tools` → 下载布局 → `tools/`）；补丁对象的 compact unwind 改到 `__KALDO,__kaldo_cu`，没有这个段的对象原样不动（#80） |
 | `PackagerDutiesTest` | 4 | INTERFACE §3.3 的打包方义务（合并开关、启动开关、`CACHE_ONLY` 不漏进完整构建）；0.2.4 起启动开关里有 `KONAN_HR_RELOAD_ON_MAIN=1` 和 `KONAN_HR_MAIN_WAIT_MS`（`mainWaitMs`） |
 | `ReloadOutcomeTest` | 4 | 0.2.4（#40）：从 app 日志读出补丁结果：`HR reload: NOT applied` 判失败（即使加载器已经链接了补丁），`HR reload: ran on the main queue` 判成功并读出等待和执行时间，只有 `[kaldo] ::` 时按旧工具链处理 |
 | `ProtocolContractTest` | 4 | 钉住的 `interfaceVersion`；守护进程回复解析；发送协议逐字节；连真实 `HrCompileDaemon` 编译成功和语法错误（要工具链） |
@@ -286,6 +288,7 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 | `CompositeBuildTest` | 8 | 复合构建（0.2.2）：included 模块的默认层级源码集和 Compose 生成目录；included 模块排在前、按声明顺序、依赖关系；声明顺序保留（容器按名字迭代）；外部 klib 改变判温重启；included build 自己编出的 klib 按坐标、位置、unique_name 排除（不重复链接）；included build 的 klib 同样过 ABI 预检；写错 build 名时的报错（TestKit，真实 includeBuild） |
 | `RelaunchTest` | 7 | 0.2.7（#62）：原地更新只在除可执行文件外逐字节相同时进行；记住的已安装路径只在仍是该设备的包时使用；app 未安装或数据容器被删时不原地更新；无障碍提示只在读到 1 时出现；就绪行要求标记和全部 token；日志跟随不缓冲 |
 | `ReadyStateTest` | 7 | 0.2.7（#62 第 3 项）：首帧标记只认行首（`^HR READY first-frame( |$)`）并取 `epochMs`；没有标记时旧的 3 s 规则照常；温重启的 page/count 在标记那一刻核对，标记之前单独一行状态不算就绪；用户的 `readyMarker` 优先；清单的 `runtime.readyMarker` |
+| `PassthroughTest` | 9 | 0.2.8（#76）：工程的 Compose 插件和选项被去掉、其他插件保留并进每次编译；不兼容的插件按注册的类名点名；KSP 输出的顶层声明解析，增删定义判 WARM；有编译器插件时类注解增删判 WARM，改函数体不判；工具失败时报错保留链接器和编译器的诊断行（Proc.failureText） |
 
 ## 验收脚本与证据
 

@@ -175,6 +175,21 @@ include("app", "ui")
     }
 
     @Test
+    fun `hotReloadRun runs after hotReloadPackage whatever the order on the command line (#76)`() {
+        setup(null)
+        File(project, "app/src/main/kotlin").mkdirs()
+        File(project, "app/src/main/kotlin/main.kt").writeText("fun main() {}\n")
+        File(project, "ui/src/main/kotlin").mkdirs()
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\n")
+        val r = runner("hotReloadRun", "hotReloadPackage", "hotReload", "--dry-run").build()
+        val order = r.output.lines().filter { it.startsWith(":hotReload") }.map { it.substringBefore(' ') }
+        val pkg = order.indexOf(":hotReloadPackage")
+        val run = order.indexOf(":hotReloadRun")
+        val reload = order.indexOf(":hotReload")
+        assertTrue(pkg in 0 until run && run < reload, order.toString())
+    }
+
+    @Test
     fun `editing a source file keeps the configuration cache (the entry detection is a ValueSource)`() {
         setup(null)
         File(project, "app/src/main/kotlin").mkdirs()

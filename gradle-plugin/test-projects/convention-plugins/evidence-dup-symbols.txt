@@ -1,0 +1,32 @@
+# convention-plugin project (build-logic: KMP + serialization + Koin compiler plugin 1.2.3 on :core and :shared), plugin 0.2.8-rc2, toolchain .11
+# hotReloadPackage fails in merge-payloads.py (ld -r of the per-file caches); ld output of the same command:
+
+duplicate symbol '_kfun:org/koin/plugin/hints/KoinHintsAnchor.kt.org.koin.plugin.hints#koin_hints_anchor(){}' in:
+    shared/build/hotreload/merge-cache/9070f5ab….a[2](liborg.koin.plugin.hints.l86r6r.a.o)     <- :core
+    shared/build/hotreload/merge-cache/1ce29467….a[2](liborg.koin.plugin.hints.l86r6r.a.o)     <- :shared
+duplicate symbol '__Konan_init_liborg.koin.plugin.hints.l86r6r.a' in: (same two archives)
+ld: 2 duplicate symbols
+
+== nm -g of the :core archive (9070f5ab) ==
+liborg.koin.plugin.hints.l86r6r.a.o:
+                 U _AllocInstance
+                 U _EnterFrame
+                 U _Kotlin_mm_safePointFunctionPrologue
+                 U _ThrowException
+                 U _UpdateStackRef
+0000000000000134 T __Konan_init_core:org.koin.plugin.hints.l86r6r
+0000000000000168 T __Konan_init_liborg.koin.plugin.hints.l86r6r.a
+                 U _kclass:kotlin.IllegalStateException
+                 U _kclass:kotlin.String
+                 U _kfun:kotlin.Any#toString(){}kotlin.String
+                 U _kfun:kotlin.IllegalStateException#<init>(kotlin.String?){}
+00000000000000f0 T _kfun:org.koin.plugin.hints#componentscan_org_example_core_CoreModule_single(org.example.core.ServerStore){}
+0000000000000000 T _kfun:org/koin/plugin/hints/KoinHintsAnchor.kt.org.koin.plugin.hints#koin_hints_anchor(){}
+
+== controls (same project, plain code added to :core, no compiler plugin involved) ==
+split package (org.example.kmphr, Split.kt, private fun): own archive liborg.example.kmphr.-65vpwe, no duplicate
+same package AND same file name as :shared (org/example/kmphr/di/Di.kt, private fun): no duplicate
+=> only the plugin-generated file with a fixed synthetic path (org/koin/plugin/hints/KoinHintsAnchor.kt, generated
+   once per module that applies the Koin compiler plugin) gets the same per-file cache name in two modules, and its
+   private top-level function is a global symbol in the hot reload caches.
+single-module group E (compat-koin) packages and runs: only one module generates the file.

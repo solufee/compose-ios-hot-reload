@@ -104,4 +104,35 @@ class PipelineTest {
         val e = runCatching { p.preparePatch(null) }.exceptionOrNull()
         assertTrue(e != null && e !is NothingChanged, e.toString())
     }
+
+    @Test
+    fun `a patch's compact-unwind records move to the section the app's loader registers (#80)`(@TempDir dir: File) {
+        fun obj(name: String, c: String): File {
+            val src = File(dir, "$name.c").apply { writeText(c) }
+            val o = File(dir, "$name.o")
+            Proc.check(listOf("xcrun", "--sdk", "iphonesimulator", "clang", "-target", "arm64-apple-ios15.0-simulator", "-O1", "-c", src.path, "-o", o.path), echo = false)
+            return o
+        }
+        fun sections(o: File) = Proc.check(listOf("otool", "-l", o.path), echo = false).lines()
+            .filter { it.trim().startsWith("sectname") || it.trim().startsWith("segname") }.joinToString(" ") { it.trim() }
+        val code = obj("code", "int callee(int x) { if (x < 0) return -x; return x * 3; }\nint caller(int x) { return callee(x) + callee(-x); }\n")
+        val data = obj("data", "int table[4] = {1, 2, 3, 4};\n")
+        assertTrue(sections(code).contains("sectname __compact_unwind segname __LD"), sections(code))
+        val st = HrSettings(
+            rootDir = dir.path, workDir = File(dir, "w").path, dist = "/nonexistent", kotlinc = "/nonexistent/kotlinc-native", compilerJar = "/c.jar",
+            composePlugin = "/p.jar", klibList = "/k.txt", kaldoDylib = "/l.dylib", kaldoSha256 = null, target = "ios_simulator_arm64",
+            orcRuntime = "/o.a", objcUtilsLib = "/u.a", llvmHome = null, useDaemon = false, socketDir = "/s", javaHome = "/j",
+            modules = emptyList(), infoPlist = "/p", linkerOptions = emptyList(), keepCompactUnwind = true, port = 5567, udid = "booted",
+            launchLog = "/l", readyMarker = null, launchTimeoutSec = 1, launchRetries = 1, reinstall = true, warmRestart = true,
+        )
+        val p = Pipeline(st, org.gradle.api.logging.Logging.getLogger("t"))
+        val tools = Tools.extract(File(dir, "work"), null)
+        p.keepCompactUnwind(code, tools)
+        val after = sections(code)
+        assertTrue(after.contains("sectname __kaldo_cu segname __KALDO"), after)
+        assertTrue(!after.contains("__compact_unwind"), after)
+        val dataBefore = data.readBytes()
+        p.keepCompactUnwind(data, tools)   // nothing to move: left as it is, no error
+        assertTrue(dataBefore.contentEquals(data.readBytes()))
+    }
 }

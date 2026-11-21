@@ -1,0 +1,449 @@
+# #76 convention-plugin project, 2026-11-22 02:03:42, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 3s
+  PASS normal KGP build through the conventions
+RESULT package: rc=0 136s
+  | > Task :build-logic:convention:checkKotlinGradlePluginConfigurationErrors SKIPPED
+  | klib core: compiling (no previous build)
+  | compile: daemon klib OK 1860 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon klib OK 121751 ms
+  | compile: daemon klib OK 1125 ms
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | package timing ms=131474 compile=121781 merge=7620 embed+bundle=2073 embed=836 bundle=1237 baseline-wait=0
+  PASS hotReloadPackage
+  PASS :core hot reload klib has the plugin-generated componentscan_org_example_core_CoreModule
+  PASS :core hot reload klib has the plugin-generated $rpcServiceStub
+  PASS :shared hot reload klib has the plugin-generated componentscan_org_example_kmphr_di_AppModule
+## 1) cold start
+RESULT 1) cold start: rc=0 6.4s verdict=- pid None->14086 (changed) new BOTAS lines=1
+  app: BOTAS ui=u1 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | CMP hot reload: app started (attempt 1, pid 14086, 4.2 s, ready: first frame (toolchain marker), launch -> first frame 4096 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 6s
+  PASS 1) cold start: gradle rc=0
+  PASS 1) cold start: app shows the expected state (BOTAS ui=u1 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3})
+## 2) UI edit (UI_TAG u1 -> u2)
+RESULT 2) UI edit (UI_TAG u1 -> u2): rc=0 9.3s verdict=HOT pid 14086->14086 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 904 ms
+  | compile: daemon compile OK 7457 ms
+  | compat: HOT (classifier 991 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (111 ms; on the main queue after 0 ms, applied in 38 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 9s
+  PASS 2) UI edit (UI_TAG u1 -> u2): gradle rc=0
+  PASS 2) UI edit (UI_TAG u1 -> u2): verdict HOT (got HOT)
+  PASS 2) UI edit (UI_TAG u1 -> u2): process kept (14086->14086)
+  PASS 2) UI edit (UI_TAG u1 -> u2): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3})
+## 3) @Serializable field added in :core (SavedServer + port: Int = 443)
+RESULT 3) @Serializable field added in :core (SavedServer + port: Int = 443): rc=0 16.6s verdict=WARM pid 14086->14602 (changed) new BOTAS lines=-1
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: SavedServer.kt)
+  | compile: daemon klib OK 367 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 4168 ms
+  | compat: WARM (classifier 64 ms, patch built in 4533 ms; not sent)
+  | WARM field-layout org/example/core/SavedServer: constructor signature changed
+  | WARM field-layout org/example/core/SavedServer: fields added=['port'] removed=[]
+  | WARM class-shape org/example/core/SavedServer: unclassified class member changed
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 4234 ms
+  | compile: daemon klib OK 709 ms
+  | compat: baseline written for shared,core (776 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 14602, 4.0 s, ready: first frame (toolchain marker), launch -> first frame 3768 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=10538 ms_package=6123 ms_relaunch=4415 page=- count=- ready=marker
+  | compat: 3 ABI changes, cannot hot-patch; warm restart took 10.5 s
+  | BUILD SUCCESSFUL in 16s
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): gradle rc=0
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): verdict WARM (got WARM)
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): process restarted (14086->14602)
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavK)
+## 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it)
+RESULT 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it): rc=0 14.0s verdict=WARM pid 14602->15005 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: ServerApi.kt)
+  | compile: daemon klib OK 259 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3840 ms
+  | compat: WARM (classifier 63 ms, patch built in 4111 ms; not sent)
+  | WARM suspend org/example/core/ServerApi.status: method added to existing class
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2579 ms
+  | compile: daemon klib OK 642 ms
+  | compat: baseline written for shared,core (705 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 15005, 3.8 s, ready: first frame (toolchain marker), launch -> first frame 3656 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=8465 ms_package=4339 ms_relaunch=4126 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 8.5 s
+  | BUILD SUCCESSFUL in 13s
+  PASS 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it): gradle rc=0
+  PASS 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmp)
+## 4) add @Single in :core (CoreExtra)
+RESULT 4) add @Single in :core (CoreExtra): rc=0 14.0s verdict=WARM pid 15005->15300 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 307 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3521 ms
+  | compat: WARM (classifier 66 ms, patch built in 3861 ms; not sent)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (CoreExtra: no annotations -> @Single)
+  |     -> a compiler plugin of the project generates code from these annotations; what that code registered at start (for example a dependency injection container) only changes after a fresh start
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2459 ms
+  | compile: daemon klib OK 673 ms
+  | compat: baseline written for shared,core (733 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 15300, 4.0 s, ready: first frame (toolchain marker), launch -> first frame 3863 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=8551 ms_package=4310 ms_relaunch=4241 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 8.6 s
+  | BUILD SUCCESSFUL in 13s
+  PASS 4) add @Single in :core (CoreExtra): gradle rc=0
+  PASS 4) add @Single in :core (CoreExtra): verdict WARM (got WARM)
+  PASS 4) add @Single in :core (CoreExtra): process restarted (15005->15300)
+  PASS 4) add @Single in :core (CoreExtra): app shows the expected state (BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 5) remove @Single in :core (CoreExtra)
+RESULT 5) remove @Single in :core (CoreExtra): rc=0 14.3s verdict=WARM pid 15300->15603 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 266 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3762 ms
+  | compat: WARM (classifier 53 ms, patch built in 4121 ms; not sent)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (CoreExtra: @Single -> no annotations)
+  |     -> a compiler plugin of the project generates code from these annotations; what that code registered at start (for example a dependency injection container) only changes after a fresh start
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2566 ms
+  | compile: daemon klib OK 611 ms
+  | compat: baseline written for shared,core (672 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 15603, 4.0 s, ready: first frame (toolchain marker), launch -> first frame 3762 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=8688 ms_package=4403 ms_relaunch=4285 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 8.7 s
+  | BUILD SUCCESSFUL in 14s
+  PASS 5) remove @Single in :core (CoreExtra): gradle rc=0
+  PASS 5) remove @Single in :core (CoreExtra): verdict WARM (got WARM)
+  PASS 5) remove @Single in :core (CoreExtra): process restarted (15300->15603)
+  PASS 5) remove @Single in :core (CoreExtra): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmp)
+## 6a) add @Single again
+RESULT 6a) add @Single again: rc=0 13.9s verdict=WARM pid 15603->15906 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 333 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3483 ms
+  | compat: WARM (classifier 51 ms, patch built in 3850 ms; not sent)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (CoreExtra: no annotations -> @Single)
+  |     -> a compiler plugin of the project generates code from these annotations; what that code registered at start (for example a dependency injection container) only changes after a fresh start
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2550 ms
+  | compile: daemon klib OK 556 ms
+  | compat: baseline written for shared,core (616 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 15906, 3.9 s, ready: first frame (toolchain marker), launch -> first frame 3775 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=8553 ms_package=4356 ms_relaunch=4197 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 8.6 s
+  | BUILD SUCCESSFUL in 13s
+  PASS 6a) add @Single again: gradle rc=0
+  PASS 6a) add @Single again: verdict WARM (got WARM)
+  PASS 6a) add @Single again: process restarted (15603->15906)
+  PASS 6a) add @Single again: app shows the expected state (BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 6b) CoreExtra body k1 -> k2
+RESULT 6b) CoreExtra body k1 -> k2: rc=0 5.7s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g1 extra=k2 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 312 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3778 ms
+  | compat: HOT (classifier 65 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (110 ms; on the main queue after 0 ms, applied in 37 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 6b) CoreExtra body k1 -> k2: gradle rc=0
+  PASS 6b) CoreExtra body k1 -> k2: app shows the expected state (BOTAS ui=u2 greet=g1 extra=k2 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.1a) :core CoreExtra body k2 -> k3
+RESULT 7.1a) :core CoreExtra body k2 -> k3: rc=0 5.2s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g1 extra=k3 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 263 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3368 ms
+  | compat: HOT (classifier 62 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (105 ms; on the main queue after 0 ms, applied in 41 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.1a) :core CoreExtra body k2 -> k3: gradle rc=0
+  PASS 7.1a) :core CoreExtra body k2 -> k3: verdict HOT (got HOT)
+  PASS 7.1a) :core CoreExtra body k2 -> k3: process kept (15906->15906)
+  PASS 7.1a) :core CoreExtra body k2 -> k3: app shows the expected state (BOTAS ui=u2 greet=g1 extra=k3 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.1b) :shared GreeterImpl body g1 -> g2
+RESULT 7.1b) :shared GreeterImpl body g1 -> g2: rc=0 4.4s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g2 extra=k3 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 583 ms
+  | compile: daemon compile OK 2933 ms
+  | compat: HOT (classifier 663 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (110 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.1b) :shared GreeterImpl body g1 -> g2: gradle rc=0
+  PASS 7.1b) :shared GreeterImpl body g1 -> g2: verdict HOT (got HOT)
+  PASS 7.1b) :shared GreeterImpl body g1 -> g2: process kept (15906->15906)
+  PASS 7.1b) :shared GreeterImpl body g1 -> g2: app shows the expected state (BOTAS ui=u2 greet=g2 extra=k3 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.2a) :core CoreExtra body k3 -> k4
+RESULT 7.2a) :core CoreExtra body k3 -> k4: rc=0 5.7s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g2 extra=k4 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 504 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3689 ms
+  | compat: HOT (classifier 60 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (108 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.2a) :core CoreExtra body k3 -> k4: gradle rc=0
+  PASS 7.2a) :core CoreExtra body k3 -> k4: verdict HOT (got HOT)
+  PASS 7.2a) :core CoreExtra body k3 -> k4: process kept (15906->15906)
+  PASS 7.2a) :core CoreExtra body k3 -> k4: app shows the expected state (BOTAS ui=u2 greet=g2 extra=k4 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.2b) :shared GreeterImpl body g2 -> g3
+RESULT 7.2b) :shared GreeterImpl body g2 -> g3: rc=0 4.3s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g3 extra=k4 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 579 ms
+  | compile: daemon compile OK 2896 ms
+  | compat: HOT (classifier 655 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (107 ms; on the main queue after 0 ms, applied in 42 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.2b) :shared GreeterImpl body g2 -> g3: gradle rc=0
+  PASS 7.2b) :shared GreeterImpl body g2 -> g3: verdict HOT (got HOT)
+  PASS 7.2b) :shared GreeterImpl body g2 -> g3: process kept (15906->15906)
+  PASS 7.2b) :shared GreeterImpl body g2 -> g3: app shows the expected state (BOTAS ui=u2 greet=g3 extra=k4 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.3a) :core CoreExtra body k4 -> k5
+RESULT 7.3a) :core CoreExtra body k4 -> k5: rc=0 5.1s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g3 extra=k5 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 294 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3272 ms
+  | compat: HOT (classifier 60 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (109 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.3a) :core CoreExtra body k4 -> k5: gradle rc=0
+  PASS 7.3a) :core CoreExtra body k4 -> k5: verdict HOT (got HOT)
+  PASS 7.3a) :core CoreExtra body k4 -> k5: process kept (15906->15906)
+  PASS 7.3a) :core CoreExtra body k4 -> k5: app shows the expected state (BOTAS ui=u2 greet=g3 extra=k5 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.3b) :shared GreeterImpl body g3 -> g4
+RESULT 7.3b) :shared GreeterImpl body g3 -> g4: rc=0 4.3s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g4 extra=k5 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 574 ms
+  | compile: daemon compile OK 2849 ms
+  | compat: HOT (classifier 654 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (110 ms; on the main queue after 0 ms, applied in 39 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.3b) :shared GreeterImpl body g3 -> g4: gradle rc=0
+  PASS 7.3b) :shared GreeterImpl body g3 -> g4: verdict HOT (got HOT)
+  PASS 7.3b) :shared GreeterImpl body g3 -> g4: process kept (15906->15906)
+  PASS 7.3b) :shared GreeterImpl body g3 -> g4: app shows the expected state (BOTAS ui=u2 greet=g4 extra=k5 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.4a) :core CoreExtra body k5 -> k6
+RESULT 7.4a) :core CoreExtra body k5 -> k6: rc=0 5.4s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g4 extra=k6 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 301 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3541 ms
+  | compat: HOT (classifier 60 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (102 ms; on the main queue after 0 ms, applied in 34 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.4a) :core CoreExtra body k5 -> k6: gradle rc=0
+  PASS 7.4a) :core CoreExtra body k5 -> k6: verdict HOT (got HOT)
+  PASS 7.4a) :core CoreExtra body k5 -> k6: process kept (15906->15906)
+  PASS 7.4a) :core CoreExtra body k5 -> k6: app shows the expected state (BOTAS ui=u2 greet=g4 extra=k6 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.4b) :shared GreeterImpl body g4 -> g5
+RESULT 7.4b) :shared GreeterImpl body g4 -> g5: rc=0 4.4s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g5 extra=k6 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 623 ms
+  | compile: daemon compile OK 2945 ms
+  | compat: HOT (classifier 736 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (105 ms; on the main queue after 0 ms, applied in 41 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.4b) :shared GreeterImpl body g4 -> g5: gradle rc=0
+  PASS 7.4b) :shared GreeterImpl body g4 -> g5: verdict HOT (got HOT)
+  PASS 7.4b) :shared GreeterImpl body g4 -> g5: process kept (15906->15906)
+  PASS 7.4b) :shared GreeterImpl body g4 -> g5: app shows the expected state (BOTAS ui=u2 greet=g5 extra=k6 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.5a) :core CoreExtra body k6 -> k7
+RESULT 7.5a) :core CoreExtra body k6 -> k7: rc=0 5.2s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g5 extra=k7 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 461 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3196 ms
+  | compat: HOT (classifier 59 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (111 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.5a) :core CoreExtra body k6 -> k7: gradle rc=0
+  PASS 7.5a) :core CoreExtra body k6 -> k7: verdict HOT (got HOT)
+  PASS 7.5a) :core CoreExtra body k6 -> k7: process kept (15906->15906)
+  PASS 7.5a) :core CoreExtra body k6 -> k7: app shows the expected state (BOTAS ui=u2 greet=g5 extra=k7 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.5b) :shared GreeterImpl body g5 -> g6
+RESULT 7.5b) :shared GreeterImpl body g5 -> g6: rc=0 4.4s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g6 extra=k7 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 562 ms
+  | compile: daemon compile OK 2770 ms
+  | compat: HOT (classifier 641 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (103 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.5b) :shared GreeterImpl body g5 -> g6: gradle rc=0
+  PASS 7.5b) :shared GreeterImpl body g5 -> g6: verdict HOT (got HOT)
+  PASS 7.5b) :shared GreeterImpl body g5 -> g6: process kept (15906->15906)
+  PASS 7.5b) :shared GreeterImpl body g5 -> g6: app shows the expected state (BOTAS ui=u2 greet=g6 extra=k7 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.6a) :core CoreExtra body k7 -> k8
+RESULT 7.6a) :core CoreExtra body k7 -> k8: rc=0 6.0s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g6 extra=k8 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 361 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3575 ms
+  | compat: HOT (classifier 63 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (110 ms; on the main queue after 0 ms, applied in 38 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.6a) :core CoreExtra body k7 -> k8: gradle rc=0
+  PASS 7.6a) :core CoreExtra body k7 -> k8: verdict HOT (got HOT)
+  PASS 7.6a) :core CoreExtra body k7 -> k8: process kept (15906->15906)
+  PASS 7.6a) :core CoreExtra body k7 -> k8: app shows the expected state (BOTAS ui=u2 greet=g6 extra=k8 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.6b) :shared GreeterImpl body g6 -> g7
+RESULT 7.6b) :shared GreeterImpl body g6 -> g7: rc=0 4.8s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g7 extra=k8 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 545 ms
+  | compile: daemon compile OK 2826 ms
+  | compat: HOT (classifier 704 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (106 ms; on the main queue after 0 ms, applied in 36 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.6b) :shared GreeterImpl body g6 -> g7: gradle rc=0
+  PASS 7.6b) :shared GreeterImpl body g6 -> g7: verdict HOT (got HOT)
+  PASS 7.6b) :shared GreeterImpl body g6 -> g7: process kept (15906->15906)
+  PASS 7.6b) :shared GreeterImpl body g6 -> g7: app shows the expected state (BOTAS ui=u2 greet=g7 extra=k8 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.7a) :core CoreExtra body k8 -> k9
+RESULT 7.7a) :core CoreExtra body k8 -> k9: rc=0 5.1s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g7 extra=k9 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 219 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3292 ms
+  | compat: HOT (classifier 59 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (101 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.7a) :core CoreExtra body k8 -> k9: gradle rc=0
+  PASS 7.7a) :core CoreExtra body k8 -> k9: verdict HOT (got HOT)
+  PASS 7.7a) :core CoreExtra body k8 -> k9: process kept (15906->15906)
+  PASS 7.7a) :core CoreExtra body k8 -> k9: app shows the expected state (BOTAS ui=u2 greet=g7 extra=k9 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.7b) :shared GreeterImpl body g7 -> g8
+RESULT 7.7b) :shared GreeterImpl body g7 -> g8: rc=0 4.4s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g8 extra=k9 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 640 ms
+  | compile: daemon compile OK 2904 ms
+  | compat: HOT (classifier 718 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (109 ms; on the main queue after 0 ms, applied in 38 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.7b) :shared GreeterImpl body g7 -> g8: gradle rc=0
+  PASS 7.7b) :shared GreeterImpl body g7 -> g8: verdict HOT (got HOT)
+  PASS 7.7b) :shared GreeterImpl body g7 -> g8: process kept (15906->15906)
+  PASS 7.7b) :shared GreeterImpl body g7 -> g8: app shows the expected state (BOTAS ui=u2 greet=g8 extra=k9 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 7.8a) :core CoreExtra body k9 -> k10
+RESULT 7.8a) :core CoreExtra body k9 -> k10: rc=0 5.7s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g8 extra=k10 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 221 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3679 ms
+  | compat: HOT (classifier 63 ms, waited 3 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (104 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.8a) :core CoreExtra body k9 -> k10: gradle rc=0
+  PASS 7.8a) :core CoreExtra body k9 -> k10: verdict HOT (got HOT)
+  PASS 7.8a) :core CoreExtra body k9 -> k10: process kept (15906->15906)
+  PASS 7.8a) :core CoreExtra body k9 -> k10: app shows the expected state (BOTAS ui=u2 greet=g8 extra=k10 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmph)
+## 7.8b) :shared GreeterImpl body g8 -> g9
+RESULT 7.8b) :shared GreeterImpl body g8 -> g9: rc=0 5.0s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g9 extra=k10 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 929 ms
+  | compile: daemon compile OK 2901 ms
+  | compat: HOT (classifier 1007 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (103 ms; on the main queue after 0 ms, applied in 51 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.8b) :shared GreeterImpl body g8 -> g9: gradle rc=0
+  PASS 7.8b) :shared GreeterImpl body g8 -> g9: verdict HOT (got HOT)
+  PASS 7.8b) :shared GreeterImpl body g8 -> g9: process kept (15906->15906)
+  PASS 7.8b) :shared GreeterImpl body g8 -> g9: app shows the expected state (BOTAS ui=u2 greet=g9 extra=k10 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmph)
+## 7.9a) :core CoreExtra body k10 -> k11
+RESULT 7.9a) :core CoreExtra body k10 -> k11: rc=0 5.1s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g9 extra=k11 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 246 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3303 ms
+  | compat: HOT (classifier 58 ms, waited 2 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (104 ms; on the main queue after 0 ms, applied in 39 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.9a) :core CoreExtra body k10 -> k11: gradle rc=0
+  PASS 7.9a) :core CoreExtra body k10 -> k11: verdict HOT (got HOT)
+  PASS 7.9a) :core CoreExtra body k10 -> k11: process kept (15906->15906)
+  PASS 7.9a) :core CoreExtra body k10 -> k11: app shows the expected state (BOTAS ui=u2 greet=g9 extra=k11 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmph)
+## 7.9b) :shared GreeterImpl body g9 -> g10
+RESULT 7.9b) :shared GreeterImpl body g9 -> g10: rc=0 4.4s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g10 extra=k11 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 664 ms
+  | compile: daemon compile OK 2883 ms
+  | compat: HOT (classifier 746 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (102 ms; on the main queue after 0 ms, applied in 38 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.9b) :shared GreeterImpl body g9 -> g10: gradle rc=0
+  PASS 7.9b) :shared GreeterImpl body g9 -> g10: verdict HOT (got HOT)
+  PASS 7.9b) :shared GreeterImpl body g9 -> g10: process kept (15906->15906)
+  PASS 7.9b) :shared GreeterImpl body g9 -> g10: app shows the expected state (BOTAS ui=u2 greet=g10 extra=k11 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmp)
+## 7.10a) :core CoreExtra body k11 -> k12
+RESULT 7.10a) :core CoreExtra body k11 -> k12: rc=0 5.5s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g10 extra=k12 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 208 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3611 ms
+  | compat: HOT (classifier 59 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (107 ms; on the main queue after 0 ms, applied in 47 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 7.10a) :core CoreExtra body k11 -> k12: gradle rc=0
+  PASS 7.10a) :core CoreExtra body k11 -> k12: verdict HOT (got HOT)
+  PASS 7.10a) :core CoreExtra body k11 -> k12: process kept (15906->15906)
+  PASS 7.10a) :core CoreExtra body k11 -> k12: app shows the expected state (BOTAS ui=u2 greet=g10 extra=k12 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmp)
+## 7.10b) :shared GreeterImpl body g10 -> g11
+RESULT 7.10b) :shared GreeterImpl body g10 -> g11: rc=0 4.6s verdict=HOT pid 15906->15906 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g11 extra=k12 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 701 ms
+  | compile: daemon compile OK 2965 ms
+  | compat: HOT (classifier 791 ms, waited 2 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (105 ms; on the main queue after 0 ms, applied in 44 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+  PASS 7.10b) :shared GreeterImpl body g10 -> g11: gradle rc=0
+  PASS 7.10b) :shared GreeterImpl body g10 -> g11: verdict HOT (got HOT)
+  PASS 7.10b) :shared GreeterImpl body g10 -> g11: process kept (15906->15906)
+  PASS 7.10b) :shared GreeterImpl body g10 -> g11: app shows the expected state (BOTAS ui=u2 greet=g11 extra=k12 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmp)
+# app and compile daemons stopped
+summary: 111/111 PASS

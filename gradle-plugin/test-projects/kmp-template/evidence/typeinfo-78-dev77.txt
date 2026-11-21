@@ -1,0 +1,12 @@
+# toolchain 2.5.255-hotreload.11-dev77 (.11 + #77 compiler, runtime before the #78 fix): expected FAIL
+# #78 acceptance (HOT patch of a file declaring a class with live instances), plugin 0.2.7, 2026-11-22 01:56:28, simulator C64AEF9B-3337-4817-B869-114EFA3021D4
+ax saved: App=0 AX=0
+## 1. package, run
+PASS package | 135s
+PASS run: the three instances answer V0 | pid 9896
+## 2. 2 body edits of Store78.label() (HOT)
+FAIL edit 1: HOT, same PID, all three show V1 | 9.0s; last R78 line: -
+FAIL no crash in launch.log; one app process throughout | Uncaught
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+PASS simulator accessibility switch written back | ax restored: App=0 AX=0 (before describe-ui: App=0 AX=0)
+summary: 3/5 PASS; FAILED: ['edit 1: HOT, same PID, all three show V1', 'no crash in launch.log; one app process throughout']

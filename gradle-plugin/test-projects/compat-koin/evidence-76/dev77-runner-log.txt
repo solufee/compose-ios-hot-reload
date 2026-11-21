@@ -1,0 +1,10 @@
+01:06:38 start tc-dev77 (accept-v7 168809c)
+01:10:12 E rc=0
+01:10:34 unit rc=0
+01:12:10 relaunch rc=0 (example-gradle uses its own toolchain setting)
+01:15:24 watch rc=0
+01:27:41 kmp rc=0
+01:30:48 busy rc=0
+01:33:54 warm rc=0
+01:48:24 composite rc=0
+01:48:24 end

@@ -258,9 +258,8 @@ class HotReloadPlugin : Plugin<Project> {
             val allIds: Provider<List<String>> = depIds.fold(extraIds) { acc, p -> acc.zip(p) { a, b -> a + b } }
             // #8: what hotReload / hotReloadWatch watch - Kotlin sources of every fragment (generated code excluded: it
             // follows the generator tasks) and src/<set>/composeResources of every hot module.
-            val generated = "${File.separator}build${File.separator}"
             val moduleDirs = modules.mapNotNull { m -> project.findProject(m.path)?.projectDir } + included.map { it.dir }
-            val watched = (modules.flatMap { it.sourceDirs }.filter { generated !in it } +
+            val watched = (modules.flatMap { it.ownSourceDirs } +
                 moduleDirs.flatMap { d -> File(d, "src").listFiles()?.map { File(it, "composeResources").path } ?: emptyList() }).distinct()
             val continuousBuild = project.gradle.startParameter.isContinuous
             project.tasks.withType(ReloadTask::class.java).configureEach {
@@ -273,6 +272,11 @@ class HotReloadPlugin : Plugin<Project> {
                     externalKlibIds.set(allIds)
                     fromSourceModules.set(included.map { it.fromSource })
                     externalKlibVia.set(depVia.fold(project.provider { emptyList<String>() }) { acc, p -> acc.zip(p) { a, b -> a + b } })
+                    // #76: the project's compiler plugin jars, resolved by Gradle for this task ("modulePath|jar").
+                    kmp.pluginClasspaths.values.forEach { compilerPluginFiles.from(it) }
+                    compilerPluginIds.set(kmp.pluginClasspaths.entries.fold(project.provider { emptyList<String>() }) { acc, (path, cp) ->
+                        acc.zip(cp.elements) { a, files -> a + files.map { "$path|${it.asFile.path}" } }
+                    })
                     composeVersion.set(PinnedToolchain.current.composeVersion)
                     // Generated KMP sources (Compose resource accessors, ...) are built before any compile.
                     kmp.dirSets.values.flatten().forEach { dependsOn(it) }
@@ -315,18 +319,23 @@ class HotReloadPlugin : Plugin<Project> {
                     "warm: rebuild and relaunch with the saved state (--no-warm: only report)"
                 this.settings.set(settings)
                 dependsOn(allKlibs)
+                mustRunAfter("hotReloadPackage", "hotReloadRun")
             }
             project.tasks.register("hotReloadWatch", ReloadTask::class.java) {
                 group = GROUP
                 description = "With -t (./gradlew hotReloadWatch -t): a hot reload on every saved change of the hot modules' sources and resources"
                 this.settings.set(settings)
                 dependsOn(allKlibs)
+                mustRunAfter("hotReloadPackage", "hotReloadRun")
                 doFirst(WatchAnnounce())
             }
             project.tasks.register("hotReloadRun", RunTask::class.java) {
                 group = GROUP
                 description = "Install and launch the app on the simulator; returns once it is up"
                 this.settings.set(settings)
+                // #76: `./gradlew hotReloadPackage hotReloadRun` (what the plugin's own messages recommend) must launch the
+                // new package; without an order Gradle may run hotReloadRun first and launch the previous .app.
+                mustRunAfter("hotReloadPackage")
             }
             project.tasks.register("hotReloadVerifyRelease", VerifyReleaseTask::class.java) {
                 group = GROUP
@@ -482,7 +491,8 @@ class HotReloadPlugin : Plugin<Project> {
                     ?: if (hasResources) COMPOSE_GENERATORS.map { "$path:$it" } else emptyList()
                 val srcDir = fragments.firstNotNullOfOrNull { f -> f.dirs.firstOrNull { File(it).isDirectory } } ?: dir.path
                 Included(
-                    module = HrModule(spec.name, ModuleKind.LIBRARY, srcDir, emptyList(), fragments),
+                    // Another build's project model is not visible here: its default build directory.
+                    module = HrModule(spec.name, ModuleKind.LIBRARY, srcDir, emptyList(), fragments, buildDir = File(dir, "build").absolutePath),
                     componentKey = "$buildName|$path",
                     generatorTasks = generators.map { ib.task(it) },
                     composeResources = if (hasResources) File(dir, "build/generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path else null,
@@ -511,6 +521,8 @@ class HotReloadPlugin : Plugin<Project> {
         /** Kotlin source directory sets of KMP modules (by project path): task inputs that carry generated sources. */
         class KmpModules {
             val dirSets = mutableMapOf<String, List<Any>>()
+            /** #76: each KMP module's compiler plugin classpath (unresolved), by project path. */
+            val pluginClasspaths = mutableMapOf<String, org.gradle.api.file.FileCollection>()
         }
 
         /**
@@ -602,7 +614,11 @@ class HotReloadPlugin : Plugin<Project> {
                     else -> listOf(HrFragment("main", listOf(File(dir, d.sourceDir).path)))
                 }
                 val srcDir = fragments.firstNotNullOfOrNull { f -> f.dirs.firstOrNull { File(it).isDirectory } } ?: File(dir, d.sourceDir).path
-                result += HrModule(d.path, d.kind, srcDir, deps.filter { dep -> libs.any { it.path == dep } }, fragments)
+                // #76: the module's own compiler plugins, as its normal Kotlin/Native compile has them (no plugin is special-cased).
+                val plugins = Kmp.compilerPlugins(p)
+                plugins?.classpath?.let { kmp.pluginClasspaths[d.path] = it }
+                result += HrModule(d.path, d.kind, srcDir, deps.filter { dep -> libs.any { it.path == dep } }, fragments,
+                    pluginOptions = plugins?.options ?: emptyList(), buildDir = p.layout.buildDirectory.get().asFile.absolutePath)
             }
             // App first, then libraries in declaration order.
             return result.sortedBy { if (it.kind == ModuleKind.APP) 0 else 1 }

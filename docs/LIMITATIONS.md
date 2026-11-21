@@ -25,6 +25,8 @@
 | Compose 1.13 的 `ComposeUIView`（嵌在 app 自己的 `UIViewController` 里） | ✅ 0.2.3 实测（工具链 .7，CMP 1.13.0-beta02）：插件生成的入口只调用 `MainViewController()`，和它不冲突；给定宽高时正常显示，热替换后不用点就刷新。⚠️ 两点：`ComposeUIView` 里的内容不进无障碍树；只设 `preferredSizeReportingStrategy = IntrinsicContentSize`、不给宽高时，这个视图在热重载 app 里没有得到尺寸（空白），是否 Compose 本身的行为没有核实，暂时请给定宽高 |
 | 复合构建（`includeBuild`） | ✅ 0.2.2：included build 的模块声明 `includedModule(...)` 后热重载；不声明时用那个构建编出的 klib，改动时温重启；插件也可以应用在 included build 里、从主构建运行（TRYOUT 第 8 节） |
 | 多个 KMP 模块互相依赖 | ✅ 0.2.1：间接依赖也一起热重载；库模块的 `expect`/`actual` 和 Compose 资源都支持（三模块工程验收） |
+| 项目自己的 Kotlin 编译器插件（kotlinx-serialization、Koin 编译器插件等） | ✅ 0.2.8（#76）：普通构建给 `iosSimulatorArm64` 编译用的插件 classpath 和选项，同样传给热重载的每次编译和 release 检查（Compose 插件仍用工具链自带的）。插件和工具链编译器不兼容时报错并点名插件。在模块里加减这些插件读的类注解（如 `@Single`、`@Serializable`）会温重启 |
+| KSP（如 koin-annotations / koin-ksp-compiler） | ✅ 0.2.8（#76）：生成的源码进编译，每次热重载前 KSP 先跑；生成代码里的顶层声明或类有增删（新增、删除一个 Koin 定义）时温重启（`generated declarations changed`），改实现体仍是热替换 |
 | Compose 资源（strings、drawables） | ➖ 不能热替换：打包时拷进 app；只改资源时 `hotReload` 自动温重启 |
 | 只编 `iosSimulatorArm64`；Android、iosArm64、桌面目标 | ➖ 不参与热重载，也不受影响 |
 | 多模块热替换（改 ui、改 app、同时改） | ✅ 20/20、20/20、3/3 |
@@ -32,6 +34,22 @@
 | 异常穿过 JIT 代码（EH） | ✅ 每次启动由 `EH OK` 探针检查 |
 | 预构建工具链（打包 → 发布 → 下载） | ✅ 本地 `file://` 全流程验证；0.1.0 起从 GitHub Release 下载 |
 | 真机 | ❌ 未做 |
+
+## 编译器插件和代码生成：判定原则（0.2.8 起，#76）
+
+不按插件逐个适配。热重载构建用工具链的 Kotlin/Native 编译器（2.5.255 fork）编你的代码，普通构建给 `iosSimulatorArm64` 编译挂的每个编译器插件和它的 `-P` 选项都原样转过去（只有 Compose 插件换成工具链自带的那份）；构建里登记到 Kotlin 源码集上的生成目录（KSP 这类代码生成器的输出）也一起编。一个插件能不能用、改动怎么判，只看下面三条：
+
+1. **插件能不能在工具链编译器里加载。** 插件 jar 要和编译器的内部接口对得上（为相近的 Kotlin 版本编译）。对不上时打包或热重载编译失败，报错写明是哪个插件 jar，并提示换一个为 Kotlin 2.5 编译的版本、或者从这个模块去掉。工具链本身不会因为某个插件改代码。
+   实测的规律（工具链 .11，编译器 2.5.255-SNAPSHOT）：
+   - **和 Kotlin 编译器同版本发布、直接调用编译器内部函数的插件，加载不了**，连同为 2.5.0-RC 发布的版本也不行。例子是 power-assert：2.4.21 版报 `NoClassDefFoundError: org/jetbrains/kotlin/fir/pipeline/ConstInlinerKt`，2.5.0-RC 版报 `NoClassDefFoundError: org/jetbrains/kotlin/ir/CommonIrAttributesKt`，两次都会看到点名的报错。kotlinx-serialization 也随 Kotlin 版本发布，但 2.4.21 版能用，说明能不能用要看插件实际碰到的接口，不只看版本号。
+   - **自带多个编译器版本适配器的第三方插件，能用。** 例子是 Koin 编译器插件 1.2.3：它在编译器版本比自己验证过的新时，退回 2.4.20 适配器，打印一行警告后继续，编译、启动、注入和热重载都正常。
+   - **只用插件公开扩展点（FIR/IR 生成接口）的插件，能用。** 例子是 Poko 0.23.2，之前从没测过，零改动跑通：生成的 `toString`/`equals` 生效，改 UI 和改用法都是热替换；给 `@Poko` 类加字段走温重启（`field-layout`：构造函数签名变了），重启后新的 `toString`/`equals` 已经包含新字段。
+   - **随 Kotlin 版本分开发布，不等于加载不了。** 例子是 kotlinx.rpc 0.10.4：KGP 按项目的 Kotlin 2.4.21 解析出 `kotlinx-rpc-compiler-plugin-{k2,backend,cli,common}-2.4.21-0.10.4`，在 2.5.255 上照样能加载。它的额外行为是在每个 `@Rpc` 接口里生成一个嵌套类 `$rpcServiceStub`（带 Companion）。实测结果：服务描述里能列出调用；改 UI 是热替换；给 `@Rpc` 接口加方法走温重启（`suspend …: method added to existing class`），重启后描述里有新方法。
+   拿不准的插件，直接跑一次 `hotReloadPackage`：加载不了时，打包会失败并点出插件名。
+2. **插件生成的是不是普通 Kotlin 代码。** 是的话，它和手写代码走同一套判定：函数体里的改动是热替换；改了类的结构（字段、构造函数、新增或删除类）按分类器原有规则温重启。热替换只换代码，不会重新执行启动时已经跑过的初始化。
+3. **生成的东西是不是在 app 启动时注册一次。** 依赖注入容器、注册表、启动时建好的表都属于这一类。插件读的注解有增删（模块里有工程自己的编译器插件时，顶层类的注解有增删），或者生成代码的顶层声明有增删，就一律温重启，原因分别是 `WARM compiler-plugin-annotations` 和 `WARM generated-declarations: generated declarations changed`。温重启后 app 从头启动，容器里就是新的定义。已经创建出来的单例在热替换后仍是原来那个对象，跑的是新代码；要换新实例，只能重新启动。
+
+注定不行的：只在 JVM 或 Android 上跑的插件和处理器（Kotlin/Native 的 iOS 编译本来就不挂它们）；要在运行时改写已经加载的代码的插件；和工具链编译器接口对不上的插件版本（第 1 条，会看到点名的报错）。
 
 ## 已知问题
 
@@ -139,6 +157,12 @@
    只改 `remember` 里的计算、或不碰 `remember` 的函数体改动不受影响。根治（Issue #29）：`remember` 的类型、个数或顺序一变，
    这个 composable 的状态安全重置，随工具链 .9 发布（热重载构建打开 `HotReloadStableKeys`，TECHNICAL-NOTES §1.9；同时改签名时
    `remember` 能保留，REPORT §36）。
+
+21. **（工具链 .11.1 已修复，#78）Koin：热替换一个声明了 Koin 创建的类的文件后，偶发 `ClassCastException`，app 退出。** 根因：启动或温重启后约 10 s 内到来的补丁，看不到还没写进全局注册表的对象（如 Koin 的 GlobalContext），里面的实例保留旧类型信息。.11.1 迁移前先发布各线程的队列，并把外部引用当作根。修复后，convention-plugins 工程连续 21 次改 DI 类的函数体，全部 HOT，始终是同一进程；E 组 c4 也是 HOT。以下是修复前的记录。 分类器判 HOT，补丁也已加载，崩在下一次重组的类型转换。属底层运行时问题，已报热重载线。
+   实测两种形态：
+   - 单模块（#75/#76）：同一个文件里有接口和它的实现，转换失败为“实现类转不成接口”，同一类改动 5 次里 3 次崩溃。
+   - 多模块（convention-plugins 工程，开发版工具链 .11-dev77）：`:core` 的 CoreDi.kt 里有两个 `@Single` 类。只改其中 `CoreExtra` 的函数体，崩溃信息是 `class org.example.core.ServerStore cannot be cast to class org.example.core.ServerStore`：同名的类转不成自己，说明已经创建的单例和补丁里的类对象对不上。
+   修复前的规避（.11 及以前）：这类文件改完后用 `hotReloadPackage hotReloadRun` 重启。把接口和实现分到不同文件不够，同一文件里任何一个由 Koin 创建的类都可能触发。
 
 20. **热重载构建的 `.app` 依赖这台 Mac 上的库对象文件（工具链 .10 起）**。为了让温重启打包快（Issue #32），缓存的库对象
    （`build/app/merged-bootstrap.libs.o`，约 130 MB）不再嵌进可执行文件，app 启动时由 libKaldo 按绝对路径读取。所以这个 `.app`

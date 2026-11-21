@@ -1,0 +1,25 @@
+# #75 compat group A, 2026-11-21 22:52:12, project A, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 3s
+RESULT package: rc=0 129s
+  | klib core: compiling (no previous build)
+  | compile: daemon klib OK 1429 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon klib OK 116875 ms
+  | compile: daemon klib OK 872 ms
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | package timing ms=126048 compile=116905 merge=7236 embed+bundle=1907 embed=879 bundle=1028 baseline-wait=0
+## run
+RESULT run: rc=0 6.0s verdict=- pid None->96035 (changed) new COMPAT lines=1
+  app: COMPAT ui=u1 greet=- gid=- extra=- json=-
+  | CMP hot reload: app started (attempt 1, pid 96035, 4.3 s, ready: first frame (toolchain marker), launch -> first frame 4090 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 5s
+## b) Compose UI text (UI_TAG u1 -> u2)
+RESULT b) Compose UI text (UI_TAG u1 -> u2): rc=0 8.6s verdict=HOT pid 96035->96035 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=- gid=- extra=- json=-
+  | compile: daemon klib OK 1171 ms
+  | compile: daemon compile OK 6838 ms
+  | compat: HOT (classifier 1258 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (111 ms; on the main queue after 0 ms, applied in 35 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 8s
+# app and compile daemons stopped

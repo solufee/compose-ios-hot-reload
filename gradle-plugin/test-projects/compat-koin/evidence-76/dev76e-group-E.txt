@@ -1,0 +1,67 @@
+# #75 compat group E, 2026-11-21 22:45:33, project E, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 3s
+RESULT package: rc=0 132s
+  | klib core: compiling (no previous build)
+  | compile: daemon klib OK 1491 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon klib OK 119014 ms
+  | compile: daemon klib OK 913 ms
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | package timing ms=128598 compile=119044 merge=7662 embed+bundle=1892 embed=927 bundle=965 baseline-wait=0
+## run
+RESULT run: rc=0 11.0s verdict=- pid None->87862 (changed) new COMPAT lines=1
+  app: COMPAT ui=u1 greet=g1 gid=10839168 extra=none json=-
+  | CMP hot reload: app started (attempt 1, pid 87862, 9.4 s, ready: first frame (toolchain marker), launch -> first frame 9312 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 10s
+## b) Compose UI text (UI_TAG u1 -> u2)
+RESULT b) Compose UI text (UI_TAG u1 -> u2): rc=0 8.8s verdict=HOT pid 87862->87862 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=g1 gid=10838378 extra=none json=-
+  | compile: daemon klib OK 1161 ms
+  | compile: daemon compile OK 7000 ms
+  | compat: HOT (classifier 1361 ms, waited 2 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (109 ms; on the main queue after 0 ms, applied in 38 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 8s
+## c1) Koin factory implementation body (greet g1 -> g2)
+RESULT c1) Koin factory implementation body (greet g1 -> g2): rc=0 5.1s verdict=HOT pid 87862->87862 (same) new COMPAT lines=1
+  app: COMPAT ui=u2 greet=g2 gid=10838458 extra=none json=-
+  | compile: daemon klib OK 893 ms
+  | compile: daemon compile OK 3756 ms
+  | compat: HOT (classifier 993 ms, waited 2 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (110 ms; on the main queue after 0 ms, applied in 40 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+## c2) add a single (@Single on Extra), hotReload (Koin compiler plugin)
+RESULT c2) add a single (@Single on Extra), hotReload (Koin compiler plugin): rc=0 14.6s verdict=WARM pid 87862->88534 (changed) new COMPAT lines=-2
+  app: COMPAT ui=u2 greet=g2 gid=428d178 extra=x1 json=-
+  | compile: daemon klib OK 795 ms
+  | compile: daemon compile OK 3141 ms
+  | compat: WARM (classifier 882 ms, patch built in 3477 ms; not sent)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (Extra: no annotations -> @Single)
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 4085 ms
+  | compat: baseline written for shared,core (59 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 88534, 3.7 s, ready: first frame (toolchain marker), launch -> first frame 3605 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=10181 ms_package=6093 ms_relaunch=4088 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 10.2 s
+  | BUILD SUCCESSFUL in 14s
+## c3) fresh start (hotReloadPackage + hotReloadRun) after the new single
+RESULT c3) fresh start (hotReloadPackage + hotReloadRun) after the new single: rc=0 9.3s verdict=- pid 88534->88682 (changed) new COMPAT lines=0
+  app: COMPAT ui=u2 greet=g2 gid=7545178 extra=x1 json=-
+  | compile: daemon klib OK 2356 ms
+  | compat: baseline written for shared,core (60 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 88682, 4.0 s, ready: first frame (toolchain marker), launch -> first frame 3894 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 9s
+## c4) Extra body x1 -> x2 (existing single instance, new code?)
+RESULT c4) Extra body x1 -> x2 (existing single instance, new code?): rc=0 4.4s verdict=HOT pid 88682->None (changed) new COMPAT lines=0
+  app: COMPAT ui=u2 greet=g2 gid=7545178 extra=x1 json=-  [expected state not reached]
+  | compile: daemon klib OK 707 ms
+  | compile: daemon compile OK 3061 ms
+  | compat: HOT (classifier 789 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (109 ms; on the main queue after 0 ms, applied in 34 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 4s
+# app and compile daemons stopped

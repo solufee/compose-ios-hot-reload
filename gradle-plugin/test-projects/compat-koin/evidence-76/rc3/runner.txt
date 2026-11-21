@@ -1,0 +1,16 @@
+03:53:34 start rc3 (accept-v7 78d82b5, jar 553b6b530e59)
+convention-plugins project ready in PF (plugin 0.2.8-rc3)
+03:59:50 convention rc=0 summary: 111/111 PASS
+group E: koin=True ksp=False serialization=False koin-compiler-plugin=True
+1
+04:03:00 E rc=0
+04:05:38 exceptions rc=0
+04:08:54 watch rc=0
+04:21:00 kmp rc=0
+04:24:00 busy rc=0
+04:27:10 warm rc=0
+04:41:40 composite rc=0
+04:43:15 relaunch rc=0 (toolchain 2.5.255-hotreload.11.1/kotlin-native)
+04:45:23 release baseline (rc2, .11) rc=0
+04:47:30 release verify (rc3, .11.1 vs .11) rc=0
+04:47:31 end

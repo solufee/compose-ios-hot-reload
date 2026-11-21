@@ -1,0 +1,39 @@
+Calculating task graph as configuration cache cannot be reused because file 'shared/build.gradle.kts' has changed.
+> Task :shared:convertXmlValueResourcesForNativeMain NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForAppleMain NO-SOURCE
+> Task :shared:convertXmlValueResourcesForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:convertXmlValueResourcesForIosMain NO-SOURCE
+> Task :shared:generateExpectResourceCollectorsForCommonMain UP-TO-DATE
+> Task :shared:generateComposeResClass UP-TO-DATE
+> Task :shared:convertXmlValueResourcesForAppleMain NO-SOURCE
+> Task :shared:convertXmlValueResourcesForCommonMain NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForNativeMain NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForIosMain NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForNativeMain NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForIosMain NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:prepareComposeResourcesTaskForAppleMain NO-SOURCE
+> Task :shared:generateResourceAccessorsForNativeMain NO-SOURCE
+> Task :shared:generateResourceAccessorsForIosMain NO-SOURCE
+> Task :shared:generateResourceAccessorsForIosSimulatorArm64Main NO-SOURCE
+> Task :shared:generateResourceAccessorsForAppleMain NO-SOURCE
+> Task :shared:copyNonXmlValueResourcesForCommonMain UP-TO-DATE
+> Task :shared:prepareComposeResourcesTaskForCommonMain UP-TO-DATE
+> Task :shared:generateResourceAccessorsForCommonMain UP-TO-DATE
+> Task :shared:generateActualResourceCollectorsForIosSimulatorArm64Main UP-TO-DATE
+> Task :shared:assembleIosSimulatorArm64MainResources UP-TO-DATE
+
+> Task :shared:hotReloadCheckToolchain
+CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+
+> Task :shared:hotReloadVerifyRelease
+dependency klibs: 7 linked, 44 replaced by the toolchain's copies
+dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6; code that uses API added after those versions does not compile here
+release: compiling shared
+CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=95702b001002, embed-merged.py=19c174720bc6, merge-payloads.py=c44e58281b90, release-text-digest.py=c2fa4df02310)
+release unchanged: 70245 symbols, 42 section sizes and the __text digest 2ff7600b9825 identical to the baseline (raw __text b1a94a4456b2 -> c25bc0159b4f, recorded only)
+
+BUILD SUCCESSFUL in 2m 6s
+9 actionable tasks: 2 executed, 7 up-to-date
+Configuration cache entry stored.

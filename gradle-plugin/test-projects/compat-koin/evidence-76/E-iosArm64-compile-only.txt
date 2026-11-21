@@ -1,0 +1,33 @@
+# Group E, iosArm64 compile only (2026-11-22 00:15 CST)
+# COMPILE SUCCESS != STARTS ON A DEVICE. Nothing was linked, signed, installed or run on an iPhone.
+# The device pipeline (device/b1 scripts, device/b4 tasks) does not pass the project's compiler plugins yet; this check stops at compilation.
+
+compiler: device dist kotlin-native (exp/kn-device), compilerVersion=2.5.255-SNAPSHOT
+plugin:   io.insert-koin:koin-compiler-plugin:1.2.3 (jar from the Gradle cache, the one KGP resolves for group E)
+klibs:    iosArm64CompileKlibraries of group E :shared (koin-core/koin-annotations/koin-core-annotations 4.2.2, stately 2.1.0, kotlinx-coroutines-core 1.9.0, atomicfu 0.28.0)
+sources:  group E shared/.../di/Di.kt (@Factory(binds=[Greeter::class]) GreeterImpl, @Single Extra, @Module @ComponentScan AppModule, @KoinApplication KoinApp), Probe.kt, Start.kt (startKoin<KoinApp>())
+
+command:
+  kotlinc-native -target ios_arm64 -p library -o out/koinmod -Xplugin=koin-compiler-plugin-1.2.3.jar -l <9 klibs above> src/Di.kt src/Probe.kt src/Start.kt
+
+== output, with the plugin (verbatim, paths removed) ==
+warning: koin compiler plugin: Kotlin 2.5.255-SNAPSHOT is newer than the newest verified version (2.4.20) — proceeding with the 2.4.20 adapter. If compilation fails, check for a koin-compiler-plugin update. Verified versions: 2.3.20, 2.4.0, 2.4.10, 2.4.20.
+real 1.86
+user 2.04
+sys 0.23
+exit=0
+
+== control, same command without -Xplugin ==
+noplugin exit=0
+
+== result ==
+with plugin:    exit 0, koinmod.klib 14902 bytes; the 2.4.20 adapter did not crash
+without plugin: exit 0, koinmod-noplugin.klib 11666 bytes
+declarations only in the plugin klib (strings diff of the unpacked klibs):
+  KoinModuleFirGenerator
+  buildFactory@org.koin.core.module.Module
+  buildSingle@org.koin.core.module.Module
+  componentscan_org_example_kmphr_di_AppModule_factory(org.example.kmphr.di.GreeterImpl;org.example.kmphr.di.Greeter)
+  componentscan_org_example_kmphr_di_AppModule_single(org.example.kmphr.di.Extra)
+  orgExampleKmphrDiAppModuleModule.kt
+  startKoinWith(kotlin.collections.List<org.koin.core.module.Module>;kotlin.Function1<org.koin.core.KoinApplication,kotlin.Unit>?)

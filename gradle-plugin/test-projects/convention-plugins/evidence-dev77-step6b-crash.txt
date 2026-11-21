@@ -1,0 +1,9 @@
+Uncaught Kotlin exception: kotlin.ClassCastException: class org.example.core.ServerStore cannot be cast to class org.example.core.ServerStore
+    at 0   KmpHr                               0x1025518c3        kfun:kotlin.Throwable#<init>(kotlin.String?){} + 99 
+    at 1   KmpHr                               0x10261255b        kfun:kotlin.Exception#<init>(kotlin.String?){} + 95 
+    at 2   KmpHr                               0x10261273f        kfun:kotlin.RuntimeException#<init>(kotlin.String?){} + 95 
+    at 3   KmpHr                               0x10261336b        kfun:kotlin.ClassCastException#<init>(kotlin.String?){} + 95 
+    at 4   KmpHr                               0x1025ac7bf        ThrowClassCastException + 619 
+    at 5   KmpHr                               0x10259bdbf        kfun:kotlin.native.internal#downcast(0:0?;kotlin.native.internal.NativePtr;kotlin.Boolean){0§<kotlin.Any>}0:0? + 291 
+    at 6   ???                                 0x112523e07        0x0 + 4602347015 
+    at 7   ???                                 0x11252233f        0x0 + 4602340159 

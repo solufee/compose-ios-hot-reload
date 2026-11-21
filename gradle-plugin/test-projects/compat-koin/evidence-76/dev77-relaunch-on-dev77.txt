@@ -1,0 +1,38 @@
+# accept-relaunch on toolchain 2.5.255-hotreload.11-dev77 (example-gradle local.properties pointed at tc-dev77 for this run, restored afterwards), plugin 0.2.7 (example-gradle), simulator 67FC79E4, 2026-11-22 01:50
+# #62 acceptance (install paths and state), 2026-11-22 01:50:04, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+PASS package | 13s
+PASS run with --hr-state=2,3 | install: uninstall + install (460 ms; not a warm restart) / CMP hot reload: app started (attempt 1, pid 3603, 3.9 s, ready: your readyMarker, port 5568, log <REPO>/example-gradle/launch.log)
+PASS the app saved its state | Documents/hr-state.json = {"page":2,"count":3}
+## 2. in-place update
+PASS warm restart OK | WARM OK ms=10015 ms_package=5889 ms_relaunch=4126 page=2 count=3 ready=user-marker
+PASS executable replaced in the installed app | install: executable replaced in the installed app (188 ms; every other file identical, the installed executable checked byte for byte)
+PASS state carried: the app's data container kept (same path, state file not rewritten by the plugin) | data container unchanged=True, Documents/hr-state.json = {"page":2,"count":3}
+PASS the new app is on page 2, count 3 | warm: restoring page=2 count=3 (Documents/hr-state.json, 21 bytes)
+PASS installed executable == packaged executable | installed ComposeHR sha256 792811e4b8a35f82 packaged 792811e4b8a35f82
+## 3. forced reinstall (installed Info.plist changed by hand)
+PASS warm restart OK | WARM OK ms=10038 ms_package=5542 ms_relaunch=4496 page=2 count=3 ready=user-marker
+PASS uninstall + install because Info.plist changed | install: uninstall + install (451 ms; Info.plist changed)
+PASS state carried: the plugin wrote hr-state.json into the new install | CMP hot reload: restored Documents/hr-state.json (21 bytes) into the new install; Documents/hr-state.json = {"page":2,"count":3}
+PASS the new app is on page 2, count 3 | warm: restoring page=2 count=3 (Documents/hr-state.json, 21 bytes)
+PASS installed executable == packaged executable | installed ComposeHR sha256 6c105dc49ba2d8a4 packaged 6c105dc49ba2d8a4
+PASS installed Info.plist == packaged Info.plist | installed Info.plist sha256 72a495e66477c918 packaged 72a495e66477c918
+## 4. data container deleted
+PASS data container removed | <HOME>/Library/Developer/CoreSimulator/Devices/67FC79E4-473A-47C9-87C0-1ADEA85CBBBB/data/Containers/Data/Application/24235C5C-5DA1-4C22-A7FF-2C2DE7646C23
+PASS warm restart OK, no error | WARM OK ms=10252 ms_package=5489 ms_relaunch=4763 page=- count=- ready=user-marker
+PASS installed afresh (data container gone) | install: uninstall + install (439 ms; the app's data container is gone)
+PASS the app runs (no saved state: first page) | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+PASS installed executable == packaged executable | installed ComposeHR sha256 3f483e9cbce713ca packaged 3f483e9cbce713ca
+## 5. app uninstalled by hand
+PASS uninstalled
+PASS warm restart OK, no error | WARM OK ms=11634 ms_package=7257 ms_relaunch=4377 page=- count=- ready=user-marker
+PASS installed afresh (app not installed) | install: uninstall + install (404 ms; the app is not installed)
+PASS the app runs
+PASS installed executable == packaged executable | installed ComposeHR sha256 e268297f14e8d75e packaged e268297f14e8d75e
+## 6. back to the in-place update
+PASS warm restart OK | WARM OK ms=9919 ms_package=5660 ms_relaunch=4259 page=0 count=0 ready=user-marker
+PASS executable replaced in the installed app | install: executable replaced in the installed app (208 ms; every other file identical, the installed executable checked byte for byte)
+PASS installed executable == packaged executable | installed ComposeHR sha256 1f262849d92262ff packaged 1f262849d92262ff
+## 7. accessibility note
+PASS simulator reads ApplicationAccessibilityEnabled = 0 (exit 0): the note never per run | hotReloadRun: 0, warm restart 1: 0, warm restart 2: 0, warm restart 3: 0, warm restart 4: 0, warm restart 5: 0
+# app/src/main/kotlin/main.kt restored; app and compile daemons stopped
+summary: 28/28 checks passed

@@ -480,6 +480,9 @@ reload)
   OBJS=("${APP_OBJS[@]}" "${UI_OBJS[@]}")
   OUT_OBJ=$BUILD/patch/both.o
   if [ ${#OBJS[@]} -eq 1 ]; then OUT_OBJ=${OBJS[0]}; else ld -r "${OBJS[@]}" -o "$OUT_OBJ"; fi
+  # Issue #80: same compact-unwind rename as the bootstrap merge, so libKaldo registers FDEs for the patch code
+  # (without it an exception unwinding through patched code ends the app). The object is our extracted copy.
+  python3 "$ROOT/tools/merge-payloads.py" --rename-compact-unwind "$OUT_OBJ" || exit 1
   echo "changed objects: app=${#APP_OBJS[@]} ui=${#UI_OBJS[@]}"
   nm -g -U "$OUT_OBJ" | awk '$2!="U"{print $3}' | sort -u > "$BUILD/patch/merged.syms"
   check_module() {

@@ -1,0 +1,21 @@
+# toolchain 2.5.255-hotreload.11-dev78 (dev77 + hot_reload.bc f6ce8226, the #78 fix)
+# #78 acceptance (HOT patch of a file declaring a class with live instances), plugin 0.2.7, 2026-11-22 01:59:49, simulator C64AEF9B-3337-4817-B869-114EFA3021D4
+ax saved: App=0 AX=0
+## 1. package, run
+PASS package | 135s
+PASS run: the three instances answer V0 | pid 11472
+## 2. 10 body edits of Store78.label() (HOT)
+PASS edit 1: HOT, same PID, all three show V1 | 9.0s; last R78 line: R78 comp=V1-comp objc=V1-objc fresh=V1-fresh
+PASS edit 2: HOT, same PID, all three show V2 | 5.0s; last R78 line: R78 comp=V2-comp objc=V2-objc fresh=V2-fresh
+PASS edit 3: HOT, same PID, all three show V3 | 4.5s; last R78 line: R78 comp=V3-comp objc=V3-objc fresh=V3-fresh
+PASS edit 4: HOT, same PID, all three show V4 | 4.3s; last R78 line: R78 comp=V4-comp objc=V4-objc fresh=V4-fresh
+PASS edit 5: HOT, same PID, all three show V5 | 4.2s; last R78 line: R78 comp=V5-comp objc=V5-objc fresh=V5-fresh
+PASS edit 6: HOT, same PID, all three show V6 | 4.2s; last R78 line: R78 comp=V6-comp objc=V6-objc fresh=V6-fresh
+PASS edit 7: HOT, same PID, all three show V7 | 4.2s; last R78 line: R78 comp=V7-comp objc=V7-objc fresh=V7-fresh
+PASS edit 8: HOT, same PID, all three show V8 | 4.1s; last R78 line: R78 comp=V8-comp objc=V8-objc fresh=V8-fresh
+PASS edit 9: HOT, same PID, all three show V9 | 4.1s; last R78 line: R78 comp=V9-comp objc=V9-objc fresh=V9-fresh
+PASS edit 10: HOT, same PID, all three show V10 | 4.1s; last R78 line: R78 comp=V10-comp objc=V10-objc fresh=V10-fresh
+PASS no crash in launch.log; one app process throughout | pid 11472
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+PASS simulator accessibility switch written back | ax restored: App=0 AX=0 (before describe-ui: App=0 AX=0)
+summary: 14/14 PASS

@@ -1,0 +1,12 @@
+# launch.log of the control run (plugin 0.2.8-rc2, no unwind info for the patch): the first throw in patched code
+Uncaught Kotlin exception: kotlin.ClassCastException: class kotlin.String cannot be cast to class kotlin.Int
+    at 0   KmpHr                               0x1025798c3        kfun:kotlin.Throwable#<init>(kotlin.String?){} + 99 
+    at 1   KmpHr                               0x10263a55b        kfun:kotlin.Exception#<init>(kotlin.String?){} + 95 
+    at 2   KmpHr                               0x10263a73f        kfun:kotlin.RuntimeException#<init>(kotlin.String?){} + 95 
+    at 3   KmpHr                               0x10263b36b        kfun:kotlin.ClassCastException#<init>(kotlin.String?){} + 95 
+    at 4   KmpHr                               0x1025d47bf        ThrowClassCastException + 619 
+    at 5   KmpHr                               0x1025c3dbf        kfun:kotlin.native.internal#downcast(0:0?;kotlin.native.internal.NativePtr;kotlin.Boolean){0§<kotlin.Any>}0:0? + 291 
+    at 6   ???                                 0x11e8bc8c3        0x0 + 4807444675 
+    at 7   ???                                 0x11e8bcc0b        0x0 + 4807445515 
+    at 8   ???                                 0x11e8bce93        0x0 + 4807446163 
+    at 9   KmpHr                               0x10295d3b7        kfun:kotlin.Function1#invoke(1:0){}1:1 + 99 

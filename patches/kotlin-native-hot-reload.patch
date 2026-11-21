@@ -1728,7 +1728,7 @@ index 5884a58d40c..a831aef41b3 100644
  )
 \ No newline at end of file
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/ContextUtils.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/ContextUtils.kt
-index 0d188820e8a..2fdb610323f 100644
+index 0d188820e8a..ddaa0e0740f 100644
 --- a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/ContextUtils.kt
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/ContextUtils.kt
 @@ -167,7 +167,9 @@ internal interface ContextUtils : RuntimeAware {
@@ -1742,6 +1742,15 @@ index 0d188820e8a..2fdb610323f 100644
              return LLVMLinkage.LLVMExternalLinkage
          if (context.config.producePerFileCache) {
              val originalFunction = irFunction.originalConstructor ?: irFunction
+@@ -213,7 +215,7 @@ internal interface ContextUtils : RuntimeAware {
+                 val typeInfoSymbolName = if (KonanBinaryInterface.isExported(this)) {
+                     this.computeTypeInfoSymbolName()
+                 } else {
+-                    this.computePrivateTypeInfoSymbolName(file.path)
++                    this.computePrivateTypeInfoSymbolName(perFileCachePrivateContainer(context, file.path))
+                 }
+ 
+                 constPointer(importGlobal(typeInfoSymbolName, runtime.typeInfoType, this))
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/IntrinsicGenerator.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/IntrinsicGenerator.kt
 index 07ef1250e50..d03f9dd434e 100644
 --- a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/IntrinsicGenerator.kt
@@ -1828,7 +1837,7 @@ index 07ef1250e50..d03f9dd434e 100644
          } else {
              val const0 = makeConstOfType(destTy, 0)
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/IrToBitcode.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/IrToBitcode.kt
-index 5cab5e5ec48..fa41c50dd2c 100644
+index 5cab5e5ec48..bb9198e8851 100644
 --- a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/IrToBitcode.kt
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/IrToBitcode.kt
 @@ -6,7 +6,6 @@
@@ -1848,7 +1857,18 @@ index 5cab5e5ec48..fa41c50dd2c 100644
                      // LLVM does not distinguish between signed/unsigned integers, so we must check
                      // the parameter type.
                      val shouldUseUnsignedComparison = function.parameters[0].type.isChar()
-@@ -2904,6 +2903,7 @@ internal fun NativeGenerationState.generateRuntimeConstantsModule(): LLVMModuleR
+@@ -2740,6 +2739,10 @@ internal class CodeGeneratorVisitor(
+ 
+             val ctorName = when {
+                 // TODO: Try to not use moduleId.
++                // A per-file cache's own constructor is named after the cache file, which two modules can share (a file a
++                // compiler plugin generates with the same path in both); qualify it with the cached library like the line below.
++                library == null && context.config.producePerFileCache && context.config.libraryToCache != null ->
++                    fileCtorName(context.config.libraryToCache!!.klib.uniqueName, generationState.outputFiles.cacheFileName)
+                 library == null -> (if (context.config.produce.isCache) generationState.outputFiles.cacheFileName else context.config.moduleId).moduleConstructorName
+                 library == context.config.libraryToCache?.klib
+                         && context.config.producePerFileCache ->
+@@ -2904,6 +2907,7 @@ internal fun NativeGenerationState.generateRuntimeConstantsModule(): LLVMModuleR
          setRuntimeConstGlobal(NativeRuntimeConstants.GC_MARK_SINGLE_THREADED, config.gcMarkSingleThreaded.toLlvmConstInt32())
          setRuntimeConstGlobal(NativeRuntimeConstants.FIXED_BLOCK_PAGE_SIZE, config.fixedBlockPageSize.toInt().toLlvmConstInt32())
          setRuntimeConstGlobal(NativeRuntimeConstants.PAGED_ALLOCATOR, config.pagedAllocator.toLlvmConstInt32())
@@ -1885,7 +1905,7 @@ index a367966e8f9..78a86f34f14 100644
  
  /**
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/LlvmDeclarations.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/LlvmDeclarations.kt
-index 7913ad2e59e..06d10f5818d 100644
+index 7913ad2e59e..d7274bcb75d 100644
 --- a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/LlvmDeclarations.kt
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/LlvmDeclarations.kt
 @@ -186,6 +186,14 @@ private class DeclarationsGeneratorVisitor(override val generationState: NativeG
@@ -1903,6 +1923,15 @@ index 7913ad2e59e..06d10f5818d 100644
          if (declaration.requiresRtti()) {
              val classLlvmDeclarations = createClassDeclarations(declaration)
              declaration.metadata = KonanMetadata.Class(declaration, classLlvmDeclarations, context.getLayoutBuilder(declaration))
+@@ -280,7 +288,7 @@ private class DeclarationsGeneratorVisitor(override val generationState: NativeG
+                 "${KonanBinaryInterface.MANGLE_CLASS_PREFIX}:$internalName"
+             else {
+                 val containerName = (generationState.cacheDeserializationStrategy as CacheDeserializationStrategy.SingleFile).filePath
+-                declaration.computePrivateTypeInfoSymbolName(containerName)
++                declaration.computePrivateTypeInfoSymbolName(perFileCachePrivateContainer(context, containerName))
+             }
+         }
+ 
 @@ -392,6 +400,7 @@ private class DeclarationsGeneratorVisitor(override val generationState: NativeG
  
          val containingClass = declaration.parent as? IrClass
@@ -3656,10 +3685,10 @@ index 00000000000..e84ae1df110
 +#endif // HOTRELOADUTILITY_HPP
 diff --git a/kotlin-native/runtime/src/hot_reload/impl/cpp/StateTransfer.cpp b/kotlin-native/runtime/src/hot_reload/impl/cpp/StateTransfer.cpp
 new file mode 100644
-index 00000000000..99b731f4736
+index 00000000000..ffc3865e7b1
 --- /dev/null
 +++ b/kotlin-native/runtime/src/hot_reload/impl/cpp/StateTransfer.cpp
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,230 @@
 +/*
 +* Copyright 2010-2026 JetBrains s.r.o. and Kotlin Programming Language contributors.
 +* Use of this source code is governed by the Apache 2.0 license
@@ -3723,11 +3752,26 @@ index 00000000000..99b731f4736
 +    // So, Kotlin/Native runtime has three roots: Global, TLS and Shadow Stack
 +    // Let's start collecting the root set
 +
++    // Issue #78: globals and external (stable, ObjC) references registered by a thread sit in that thread's queue until
++    // the next GC publishes them, so right after a start (before the first GC) the registries miss them, and so would
++    // this walk: their objects keep the old TypeInfo. All threads are suspended here, so publish them, as the memory
++    // dump does (PrepareForMemoryDump).
++    mm::GlobalData::Instance().threadRegistry().PublishAll();
++
 +    // Collect roots from global variables
 +    auto globalsRegistry = mm::GlobalData::Instance().globalsRegistry().LockForIter();
 +    for (const auto& slot : globalsRegistry) {
 +        if (slot == nullptr) continue;
 +        enqueue(*slot);
++    }
++
++    // External references (StableRef, references held by ObjC/Swift objects, weak references) are roots too: objects
++    // reachable only from UIKit (a view controller holding a composition) must be migrated as well.
++    {
++        auto externalRefs = mm::GlobalData::Instance().externalRCRefRegistry().lockForIter();
++        for (auto ref : externalRefs) {
++            enqueue(ref.load(std::memory_order_relaxed));
++        }
 +    }
 +
 +    auto threadRegistry = mm::ThreadRegistry::Instance().LockForIter();
@@ -3846,6 +3890,16 @@ index 00000000000..99b731f4736
 +        if (slot == nullptr) continue;
 +        if (const auto* replacement = remapField(*slot)) {
 +            UpdateHeapRef(slot, replacement);
++        }
++    }
++
++    // Issue #78: external references to a migrated object now point to its replacement (published in WalkHeapAndBucket).
++    {
++        auto externalRefs = mm::GlobalData::Instance().externalRCRefRegistry().lockForIter();
++        for (auto ref : externalRefs) {
++            if (auto* replacement = remapField(ref.load(std::memory_order_relaxed))) {
++                ref.store(replacement, std::memory_order_relaxed);
++            }
 +        }
 +    }
 +
@@ -5458,3 +5512,33 @@ index 74c9ba2310f..513ce9218e9 100644
      val objcExportExpandEntryPoints by booleanOption()
  
      val objcExportExplicitMethodFamily by booleanOption()
+diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt
+index 79293309497..f85c903f665 100644
+--- a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt
++++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt
+@@ -165,7 +165,7 @@ internal fun IrSimpleFunction.computeSymbolName(
+     else {
+         internalSymbolNameBuilder() ?: run {
+             val containerName = parentClassOrNull?.fqNameForIrSerialization?.asString()
+-                ?: this@computeSymbolName.file.path
++                ?: perFileCachePrivateContainer(context, this@computeSymbolName.file.path)
+             computePrivateSymbolName(containerName)
+         }
+     }
+@@ -187,5 +187,16 @@ internal val IrClass.typeInfoHasVtableAttached: Boolean
+ internal val String.moduleConstructorName
+     get() = "_Konan_init_${this}"
+ 
++/**
++ * Per-file caches name file-private symbols after the source file's path. A path that is not absolute belongs to a file
++ * that a compiler plugin generates, with the same path in every module that applies the plugin, so the caches of two
++ * modules would define the same symbol and cannot be linked together (hot reload merges them). Such paths are qualified
++ * with the cached library's unique name. Only per-file caches are affected; other builds keep their names.
++ */
++internal fun perFileCachePrivateContainer(context: NativeBackendContext, path: String): String {
++    val uniqueName = context.config.libraryToCache?.klib?.uniqueName
++    return if (context.config.producePerFileCache && uniqueName != null && !path.startsWith("/")) "$uniqueName:$path" else path
++}
++
+ internal val KotlinLibrary.moduleConstructorName
+     get() = uniqueName.moduleConstructorName

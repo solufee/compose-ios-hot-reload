@@ -5,7 +5,7 @@ import org.gradle.api.logging.Logger
 import java.io.File
 
 /**
- * Warm restart (INTERFACE §10.2 `warm`, §10.3 state contract): keep the app's serializable state, rebuild the
+ * Warm restart (INTERFACE §10.2 `warm`, §10.3 state contract): keep the app's saved state, rebuild the
  * app and relaunch it with `--hr-state=PAGE,COUNT`.
  *
  * The state is whatever the app last wrote to `<Documents>/hr-state.json` (`{"page":N,"count":M}`). An app

@@ -1,0 +1,50 @@
+# #75 compat group G, 2026-11-22 00:17:52, project G, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 3s
+RESULT package: rc=1 7s
+  | klib core: compiling (no previous build)
+  | compile: daemon klib OK 1322 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | CMP hot reload: compile via the klib daemon failed (COMPILATION_ERROR, 1158 ms); retrying with kotlinc-native
+  | compile: kotlinc-native
+  | Caused by: java.lang.NoClassDefFoundError: org/jetbrains/kotlin/ir/CommonIrAttributesKt
+rElementTransformerVoidWithContext.kt:83)
+	at org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid.visitSimpleFunction(IrElementTransformerVoid.kt:128)
+	at org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid.visitSimpleFunction(IrElementTransformerVoid.kt:131)
+	at org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid.visitSimpleFunction(IrElementTransformerVoid.kt:19)
+	at org.jetbrains.kotlin.ir.declarations.IrSimpleFunction.accept(IrSimpleFunction.kt:42)
+	at org.jetbrains.kotlin.ir.IrElementBase.transform(IrElementBase.kt:33)
+	at org.jetbrains.kotlin.ir.util.TransformKt.transformInPlace(transform.kt:35)
+	at org.jetbrains.kotlin.ir.declarations.IrPackageFragment.transformChildren(IrPackageFragment.kt:33)
+	at org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid.visitPackageFragment(IrElementTransformerVoid.kt:146)
+	at org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid.visitFile(IrElementTransformerVoid.kt:160)
+	at org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext.visitFileNew(IrElementTransformerVoidWithContext.kt:122)
+	at org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext.visitFile(IrElementTransformerVoidWithContext.kt:55)
+	at org.jetbrains.kotlin.powerassert.PowerAssertIrGenerationExtension.generate(PowerAssertIrGenerationExtension.kt:44)
+	at org.jetbrains.kotlin.fir.pipeline.Fir2IrPipeline.applyIrGenerationExtensions(convertToIr.kt:583)
+	... 37 more
+Caused by: java.lang.ClassNotFoundException: org.jetbrains.kotlin.ir.CommonIrAttributesKt
+	at java.base/java.net.URLClassLoader.findClass(URLClassLoader.java:445)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:592)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
+	... 157 more
+
+
+> Task :shared:hotReloadPackage FAILED
+10 actionable tasks: 4 executed, 6 up-to-date
+Configuration cache entry stored.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':shared:hotReloadPackage' (registered by plugin 'com.solufee.cmp.hotreload').
+> CMP hot reload: the project's compiler plugin kotlin-power-assert-compiler-plugin-embeddable-2.5.0-RC.jar does not work with the toolchain's Kotlin/Native compiler 2.5.255-SNAPSHOT (the hot reload compiles pass the plugins your build applies). Use a version of this plugin built for Kotlin 2.5.255-SNAPSHOT, or remove the plugin from the module.
+  CMP hot reload: `<W>/scratch/release-smoke/toolchains/2.5.255-hotreload.11/kotlin-native/bin/kotlinc-native -target ios_simulator_arm64 -p program -g -Xcompilation-scheme=split -Xenable-incremental-compilation -Xic-cache-dir=<REPO>/a` failed (exit 1)
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 6s
+

@@ -1,0 +1,164 @@
+# #76 convention-plugin project, 2026-11-22 01:04:27, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+RESULT normal build (KGP :shared:compileKotlinIosSimulatorArm64): rc=0 3s
+  PASS normal KGP build through the conventions
+RESULT package: rc=0 6s
+  | > Task :build-logic:convention:checkKotlinGradlePluginConfigurationErrors SKIPPED
+  | compile: daemon klib OK 2918 ms
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | package timing ms=4238 compile=2970 merge=621 embed+bundle=647 embed=317 bundle=330 baseline-wait=0
+  PASS hotReloadPackage
+  FAIL :core hot reload klib compiled with the Koin compiler plugin (its version warning in daemon-klib.log) (no daemon-klib.log)
+  PASS :shared hot reload klib compiled with the Koin compiler plugin (its version warning in daemon-klib.log) (log present)
+## 1) cold start
+RESULT 1) cold start: rc=0 6.2s verdict=- pid None->55412 (changed) new BOTAS lines=1
+  app: BOTAS ui=u1 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | CMP hot reload: app started (attempt 1, pid 55412, 4.3 s, ready: first frame (toolchain marker), launch -> first frame 4272 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | BUILD SUCCESSFUL in 6s
+  PASS 1) cold start: gradle rc=0
+  PASS 1) cold start: app shows the expected state (BOTAS ui=u1 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3})
+## 2) UI edit (UI_TAG u1 -> u2)
+RESULT 2) UI edit (UI_TAG u1 -> u2): rc=0 8.3s verdict=HOT pid 55412->55412 (same) new BOTAS lines=1
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | compile: daemon klib OK 759 ms
+  | compile: daemon compile OK 6589 ms
+  | compat: HOT (classifier 841 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (108 ms; on the main queue after 0 ms, applied in 34 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 8s
+  PASS 2) UI edit (UI_TAG u1 -> u2): gradle rc=0
+  PASS 2) UI edit (UI_TAG u1 -> u2): verdict HOT (got HOT)
+  PASS 2) UI edit (UI_TAG u1 -> u2): process kept (55412->55412)
+  PASS 2) UI edit (UI_TAG u1 -> u2): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3})
+## 3) @Serializable field added in :core (SavedServer + port: Int = 443)
+RESULT 3) @Serializable field added in :core (SavedServer + port: Int = 443): rc=0 15.7s verdict=WARM pid 55412->56047 (changed) new BOTAS lines=-1
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: SavedServer.kt)
+  | compile: daemon klib OK 269 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3924 ms
+  | compat: WARM (classifier 64 ms, patch built in 4269 ms; not sent)
+  | WARM field-layout org/example/core/SavedServer: constructor signature changed
+  | WARM field-layout org/example/core/SavedServer: fields added=['port'] removed=[]
+  | WARM class-shape org/example/core/SavedServer: unclassified class member changed
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 4012 ms
+  | compile: daemon klib OK 654 ms
+  | compat: baseline written for shared,core (727 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 56047, 3.8 s, ready: first frame (toolchain marker), launch -> first frame 3560 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=10071 ms_package=5864 ms_relaunch=4207 page=- count=- ready=marker
+  | compat: 3 ABI changes, cannot hot-patch; warm restart took 10.1 s
+  | BUILD SUCCESSFUL in 15s
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): gradle rc=0
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): verdict WARM (got WARM)
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): process restarted (55412->56047)
+  PASS 3) @Serializable field added in :core (SavedServer + port: Int = 443): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavK)
+## 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it)
+RESULT 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it): rc=0 13.2s verdict=WARM pid 56047->56438 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: ServerApi.kt)
+  | compile: daemon klib OK 510 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3377 ms
+  | compat: WARM (classifier 63 ms, patch built in 3639 ms; not sent)
+  | WARM suspend org/example/core/ServerApi.status: method added to existing class
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2239 ms
+  | compile: daemon klib OK 689 ms
+  | compat: baseline written for shared,core (751 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 56438, 3.7 s, ready: first frame (toolchain marker), launch -> first frame 3512 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=7897 ms_package=3960 ms_relaunch=3937 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 7.9 s
+  | BUILD SUCCESSFUL in 13s
+  PASS 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it): gradle rc=0
+  PASS 3b) @Rpc interface in :core gets a method (kotlinx.rpc generates a stub class inside it): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmp)
+## 4) add @Single in :core (CoreExtra)
+RESULT 4) add @Single in :core (CoreExtra): rc=0 14.0s verdict=WARM pid 56438->56845 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 274 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3906 ms
+  | compat: WARM (classifier 67 ms, patch built in 4255 ms; not sent)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (CoreExtra: no annotations -> @Single)
+  |     -> a compiler plugin of the project generates code from these annotations; what that code registered at start (for example a dependency injection container) only changes after a fresh start
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2456 ms
+  | compile: daemon klib OK 614 ms
+  | compat: baseline written for shared,core (677 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 56845, 3.7 s, ready: first frame (toolchain marker), launch -> first frame 3619 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=8248 ms_package=4302 ms_relaunch=3946 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 8.2 s
+  | BUILD SUCCESSFUL in 13s
+  PASS 4) add @Single in :core (CoreExtra): gradle rc=0
+  PASS 4) add @Single in :core (CoreExtra): verdict WARM (got WARM)
+  PASS 4) add @Single in :core (CoreExtra): process restarted (56438->56845)
+  PASS 4) add @Single in :core (CoreExtra): app shows the expected state (BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 5) remove @Single in :core (CoreExtra)
+RESULT 5) remove @Single in :core (CoreExtra): rc=0 13.5s verdict=WARM pid 56845->57368 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 281 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3439 ms
+  | compat: WARM (classifier 46 ms, patch built in 3820 ms; not sent)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (CoreExtra: @Single -> no annotations)
+  |     -> a compiler plugin of the project generates code from these annotations; what that code registered at start (for example a dependency injection container) only changes after a fresh start
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2291 ms
+  | compile: daemon klib OK 659 ms
+  | compat: baseline written for shared,core (723 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 57368, 3.7 s, ready: first frame (toolchain marker), launch -> first frame 3660 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=8270 ms_package=4248 ms_relaunch=4022 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 8.3 s
+  | BUILD SUCCESSFUL in 13s
+  PASS 5) remove @Single in :core (CoreExtra): gradle rc=0
+  PASS 5) remove @Single in :core (CoreExtra): verdict WARM (got WARM)
+  PASS 5) remove @Single in :core (CoreExtra): process restarted (56845->57368)
+  PASS 5) remove @Single in :core (CoreExtra): app shows the expected state (BOTAS ui=u2 greet=g1 extra=none rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmp)
+## 6a) add @Single again
+RESULT 6a) add @Single again: rc=0 13.8s verdict=WARM pid 57368->57831 (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 247 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3702 ms
+  | compat: WARM (classifier 54 ms, patch built in 4057 ms; not sent)
+  | WARM compiler-plugin-annotations: annotations a compiler plugin reads changed (CoreExtra: no annotations -> @Single)
+  |     -> a compiler plugin of the project generates code from these annotations; what that code registered at start (for example a dependency injection container) only changes after a fresh start
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 2311 ms
+  | compile: daemon klib OK 883 ms
+  | compat: baseline written for shared,core (947 ms)
+  | package: <PROJECT>/shared/build/hotreload/KmpHr.app (ad-hoc signed)
+  | CMP hot reload: app started (attempt 1, pid 57831, 3.9 s, ready: first frame (toolchain marker), launch -> first frame 3746 ms, port 5568, log <PROJECT>/shared/launch.log)
+  | WARM OK ms=8351 ms_package=4193 ms_relaunch=4158 page=- count=- ready=marker
+  | compat: 1 ABI change, cannot hot-patch; warm restart took 8.4 s
+  | BUILD SUCCESSFUL in 13s
+  PASS 6a) add @Single again: gradle rc=0
+  PASS 6a) add @Single again: verdict WARM (got WARM)
+  PASS 6a) add @Single again: process restarted (57368->57831)
+  PASS 6a) add @Single again: app shows the expected state (BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+## 6b) CoreExtra body k1 -> k2
+RESULT 6b) CoreExtra body k1 -> k2: rc=0 5.1s verdict=HOT pid 57831->None (changed) new BOTAS lines=0
+  app: BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr.NavKey.Detail","id":3}
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 267 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon compile OK 3344 ms
+  | compat: HOT (classifier 61 ms, waited 1 ms after the patch was ready)
+  | sent <PROJECT>/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (110 ms; on the main queue after 0 ms, applied in 24 ms); it shows on the next recomposition
+  | BUILD SUCCESSFUL in 5s
+  PASS 6b) CoreExtra body k1 -> k2: gradle rc=0
+  FAIL 6b) CoreExtra body k1 -> k2: app shows the expected state (BOTAS ui=u2 greet=g1 extra=k1 rpc=ping,status server={"host":"h1","name":"n1","port":443}/SavedServer(host=h1, name=n1, port=443) nav={"type":"org.example.kmphr)
+# app and compile daemons stopped
+summary: 28/30 PASS
