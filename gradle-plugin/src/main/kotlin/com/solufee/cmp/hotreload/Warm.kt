@@ -41,7 +41,7 @@ class WarmRestart(private val s: HrSettings, private val logger: Logger) {
             },
         )
         Proc.run(listOf("xcrun", "simctl", "terminate", s.udid, info.bundleId), echo = false)
-        pipeline.packageApp(tools, daemons) { compat.baseline(daemons) }
+        pipeline.packageApp(tools, daemons, beside = { compat.baseline(daemons) })
         val tPkg = System.currentTimeMillis()
         val launcher = Launcher(s, logger)
         val args = state?.let { listOf("--hr-state=${it.page},${it.count}") } ?: emptyList()

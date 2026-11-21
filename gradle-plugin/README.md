@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.9**（插件 0.2.5）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.10**（插件 0.2.6）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -79,7 +79,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 |---|---|
 | `hotReloadCheckToolchain` | 读 `toolchain.json`，与插件钉死的版本逐项比对，检查 Xcode、模拟器 runtime 和所需文件；通过结果按清单、Xcode、klib 列表缓存 |
 | `hotReloadCompileKlib<Module>` | 每个库模块一个任务，编成 klib；源码和依赖 klib 不变时 UP-TO-DATE。0.2.4（#21）：klib 旁边的 `inputs.txt` 记下上次编译用的输入（编译参数、模块每个 Kotlin 源文件的 sha256、链接的模块 klib 的 sha256、依赖 klib 的大小和时间）；Gradle 因为别的原因重跑这个任务、而这些输入没变时，打印 `klib <模块>: inputs unchanged …; not recompiled`，klib 不动（分类器按 sha256 认出它没变，也不再 dump）；要编译时先打印一行原因，例如 `klib ui: compiling (sources changed: ui.kt)` 或 `(module klibs changed: base)` |
-| `hotReloadPackage` | split 编译 app（走 klib 守护进程；它不可用或编译失败时改用 `kotlinc-native` 重跑，并打印一行提示）→ `merge-payloads.py`（热符号集按各模块源码里的 package 自动生成；不变的库 archive 的处理结果缓存在 `build/hotreload/merge-cache/`）→ `embed-merged.py` → 组装 `.app`（可执行文件用 `cp -c` 克隆进去）。工具链 .9 起（#32/#52）：编译器认得 `-Xbinary=splitPayloadList` 时（看编译器 jar 里的 `BinaryOptions`），打包编译带上它，payload 路径写进 `build/hotreload/app/payloads.txt`，merge 用 `KALDO_PAYLOAD_LIST` 从磁盘读，不再经过可执行文件；补丁编译和 release 编译不带。分类器基线和 merge/embed/组装并行。日志：`payload list (#32): on (N payloads read from disk)`，最后一行 `package timing ms=… compile=… merge=… embed+bundle=… embed=… bundle=… baseline-wait=…`（前四项含义不变） |
+| `hotReloadPackage` | split 编译 app（走 klib 守护进程；它不可用或编译失败时改用 `kotlinc-native` 重跑，并打印一行提示）→ `merge-payloads.py`（热符号集按各模块源码里的 package 自动生成；不变的库 archive 的处理结果缓存在 `build/hotreload/merge-cache/`）→ `embed-merged.py` → 组装 `.app`（可执行文件用 `cp -c` 克隆进去）。工具链 .9 起（#32/#52）：编译器认得 `-Xbinary=splitPayloadList` 时（看编译器 jar 里的 `BinaryOptions`），打包编译带上它，payload 路径写进 `build/hotreload/app/payloads.txt`，merge 用 `KALDO_PAYLOAD_LIST` 从磁盘读，不再经过可执行文件；补丁编译和 release 编译不带。分类器基线和 merge/embed/组装并行。工具链 .10 起（#56）：编译器认得 `splitPayloadReserve` 时，库对象另成一条 payload（`KALDO_LIB_PAYLOAD_DIRS` = 自动缓存目录，缓存在 merge-cache 里），预留按上次合并的大小给（库对象 + 4×用户对象 + 16 MB；放不下时自动用全量预留重打一次）；libKaldo 认得清单种类 2 且 `libsInExecutable` 关着时，库对象以 `@file:` 写进清单、启动时从文件读；去掉绝对 rpath 改在基础可执行文件的克隆上做，和合并并行。日志：`payload list (#32): on (N payloads read from disk)`、`library payload (#56): …; reserve …`，最后一行 `package timing ms=… compile=… merge=… embed+bundle=… embed=… bundle=… baseline-wait=…`（前四项含义不变） |
 | `hotReload` | 先分类（见下文“分类器与温重启”）；可热替换时：守护进程 cache-only 编译 → 按 mtime 取本次重建的对象 → 按 `_kfun:<package>` 归到模块 → `ld -r` → 逐模块符号检查 → 发送。`--no-warm`：需要温重启时只报原因并失败 |
 | `hotReloadRun` | 安装并启动；首帧标记（`readyMarker`）出现或 Kotlin main 运行 3 s 即算启动成功，失败最多重试 3 次。`--args="..."` 传给 app（如 `--hr-state=2,3`） |
 | `hotReloadWatch` | 和 `hotReload` 相同，配合 `-t` 使用：Gradle 监视热模块的源码和 composeResources（下文“输入与 up-to-date”），每次保存重跑；某次失败不结束监视；不加 `-t` 时只跑一次并提示 |
@@ -98,6 +98,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `orcRuntime` / `objcUtilsLib` | 清单的 `tools.orcRuntime` / `tools.uikitUtils`；没有时看 dist 旁边的 `orc-runtime/`、`cmp-uikit-utils/`；再没有用工程 `tools/` 下同名文件 | 自己构建的工具链才需要设 |
 | `llvmHome` | 清单的 `tools.llvmTools`；没有时看 dist 旁边的 `llvm-tools/`；再没有就不设（工具自己的默认值） | 传给打包工具的 `KONAN_LLVM_HOME` |
 | `keepCompactUnwind` | `true` | 打包时导出 `KALDO_KEEP_COMPACT_UNWIND=1`（INTERFACE §3.3 第 1 条） |
+| `libsInExecutable` | `false`（`cmp.hotreload.libsInExecutable`） | 工具链 .10 起（#56）：默认热重载 `.app` 不再把约 130 MB 的库对象嵌进可执行文件，app 启动时由 libKaldo 从 `build/hotreload/app/merged-bootstrap.libs.o` 读取（打包快约 3 s，可执行文件 255 → 49 MB）；这样的 `.app` 只能在打包它的这台 Mac 上运行，删掉 `build/hotreload` 后要重新打包（`hotReloadRun` 发现文件不在时会报错）。`true` 把它嵌回可执行文件，得到可以拷走的 `.app`。只影响热重载构建，release 不受影响 |
 | `stableKeys` | `true`（`cmp.hotreload.stableKeys`） | 0.2.5 / 工具链 .9 起（#29/#47）：热重载构建的每一次编译（库 klib、打包、补丁、分类器的 app klib）都给 Compose 编译器加 `-P plugin:androidx.compose.compiler.plugins.kotlin:featureFlag=HotReloadStableKeys`，composable 改参数时 `remember` 保留，`remember` 形状变了安全重置。只有工具链的 Compose 编译器认得这个 flag 时才加（看插件 jar 里的 `FeatureFlag`；.8 及以前不加）；release 构建永远不加。打包时记下当时的状态，`hotReload` 发现和打包时不一致就拒绝并提示重新打包。打包日志有一行 `stable keys …: on/off/unsupported` |
 | `mainWaitMs` | `2000`（`cmp.hotreload.mainWaitMs`） | 工具链 .8 起（#27/#40）：每次 reload 在 app 主线程上执行（插件传 `KONAN_HR_RELOAD_ON_MAIN=1`）；主线程在这么多毫秒内没接手，补丁不应用（`KONAN_HR_MAIN_WAIT_MS`），`hotReload` 以非零退出并提示 “the app was busy, patch not applied”，这次的改动留到下一次重发；`hotReloadWatch -t` 里只有这一次失败，继续监听。下次启动 app 时生效 |
 | `forceRecompose` | `true`（`cmp.hotreload.forceRecompose`） | 工具链 .6 起：每次热替换成功后整个界面完整重组一次，参数没变的调用点也显示新代码，`remember` 状态保留。`false` 时传 `KONAN_HR_FORCE_RECOMPOSE=0`（.5 的行为）；下次启动 app 时生效 |
@@ -262,7 +263,7 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 ../example-gradle/gradlew -p . test -Pcmp.hotreload.toolchainDir=<KOTLIN_NATIVE_DIST>
 ```
 
-共 88 个测试（0.2.5）；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
+共 89 个测试（0.2.6）；不给工具链时，需要真实编译器的两项跳过，没有 Xcode 时 `ReleaseDigestTest` 跳过，其余照常运行。
 
 | 测试类 | 数量 | 内容 |
 |---|---|---|
@@ -275,7 +276,7 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 | `PluginFunctionalTest` | 9 | TestKit：版本不匹配和下载版旧工具链的报错、没配工具链、DSL 配错时其它任务照常、debug 开关、应用插件前后 `tasks --all` 一致、`warmRestart` 与 `--no-warm`、加在单个模块上并声明源码片段、任务都在自己的组里 |
 | `KmpTest` | 10 | 版本比较；每个 Compose 模块和工具链里同名那份比版本（写出拉进它的依赖）；cinterop klib 警告；依赖 klib 按 `unique_name` 和 Maven 组件替换、去重、比工具链新时提示；klib ABI 高于 2.5.0 / 低于 1.6.0、metadata 高于 2.6.0 的报错；`MainViewController` 入口识别；多片段编译参数；按符号归模块 |
 | `ExpectActualCasesTest` | 5 | 增删一对 expect/actual 的用例表（0.2.4 起：类、object、接口、属性 4 例 WARM，`expect fun` 增删、改名和其余 9 例不报）；Compose 资源改动判温重启；回归：只含初始化桩的目标文件、生成的 UIKit 入口（根包）在多模块时归 app、失败编译后的待发送列表 |
-| `StableKeysTest` | 4 | 0.2.5（#47）：从 Compose 插件 jar 认出 `HotReloadStableKeys`；开着且认得时库 klib、分类器的 app klib、程序编译的参数里都有它，关掉或工具链不认得（.8）时没有；release 的编译命令里永远没有；HOT 提示随设置变化 |
+| `StableKeysTest` | 6 | 0.2.5（#47）：从 Compose 插件 jar 认出 `HotReloadStableKeys`；开着且认得时库 klib、分类器的 app klib、程序编译的参数里都有它，关掉或工具链不认得（.8）时没有；release 的编译命令里永远没有；HOT 提示随设置变化；0.2.5（#52）：编译器 jar 认得 `splitPayloadList` 时只有打包编译带它；0.2.6（#56）：认出 `splitPayloadReserve` 和 libKaldo 的清单种类 2，`libsInExecutable` 关掉文件加载，.9 编译器走原路径；release 命令里都没有 |
 | `KlibInputsTest` | 2 | 0.2.4（#21）：库 klib 的输入只随本模块源码、上游模块 klib 的字节、依赖 klib 变化；只改 app、原样保存文件、上游同样字节的重编都不算；重编原因写出变了的文件、模块或依赖 klib |
 | `WarmAdviceTest` | 4 | 0.2.4（#18）：每类 WARM 原因（27 行真实输出，覆盖分类器和插件输出的 10 个类别）各有一句建议；原因行保持原样、下面缩进一行建议；总结行 `N ABI changes, cannot hot-patch; warm restart took X s` |
 | `ProjectDependenciesTest` | 1 | 同工程 KMP 模块依赖按传递关系、依赖在前的顺序找出，环路不死循环 |

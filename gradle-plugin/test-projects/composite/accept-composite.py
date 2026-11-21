@@ -37,6 +37,7 @@ ap.add_argument("--plugin-version", default="0.2.2")
 ap.add_argument("--toolchain", required=True, help="<TOOLCHAIN>/kotlin-native")
 ap.add_argument("--udid", required=True)
 ap.add_argument("--port", default="5568")
+ap.add_argument("--prop", action="append", default=[], help="extra key=value for local.properties (e.g. tools of a local toolchain view)")
 ap.add_argument("--demo-port", default="5569")
 a = ap.parse_args()
 
@@ -233,7 +234,7 @@ for s in ["settings.gradle.kts", "lib-build/settings.gradle.kts"]:
 for b in ["app/build.gradle.kts", "lib-build/demo/build.gradle.kts"]:
     t = open(os.path.join(P, b)).read().replace("HR_PLUGIN_VERSION", a.plugin_version)
     open(os.path.join(P, b), "w").write(t)
-props = f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\n"
+props = f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\n" + "".join(f"{p}\n" for p in a.prop)
 open(os.path.join(P, "local.properties"), "w").write(props + f"cmp.hotreload.port={a.port}\n")
 open(os.path.join(P, "lib-build/local.properties"), "w").write(props + f"cmp.hotreload.port={a.demo_port}\n")
 deps_before = deps_listing()

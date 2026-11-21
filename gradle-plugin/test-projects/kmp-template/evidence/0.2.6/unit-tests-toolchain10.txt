@@ -1,0 +1,17 @@
+# gradlew test on the official toolchain 2.5.255-hotreload.10 (manifest sha256 2eea4615...), branch feat/056-lib-payload
+CompatContractTest: tests=10 skipped=0 failures=0 errors=0
+CompositeBuildTest: tests=8 skipped=0 failures=0 errors=0
+ExpectActualCasesTest: tests=5 skipped=0 failures=0 errors=0
+KlibInputsTest: tests=2 skipped=0 failures=0 errors=0
+KmpTest: tests=12 skipped=0 failures=0 errors=0
+PackagerDutiesTest: tests=4 skipped=0 failures=0 errors=0
+PipelineTest: tests=7 skipped=0 failures=0 errors=0
+PluginFunctionalTest: tests=12 skipped=0 failures=0 errors=0
+ProjectDependenciesTest: tests=1 skipped=0 failures=0 errors=0
+ProtocolContractTest: tests=4 skipped=0 failures=0 errors=0
+ReleaseDigestTest: tests=1 skipped=0 failures=0 errors=0
+ReloadOutcomeTest: tests=4 skipped=0 failures=0 errors=0
+StableKeysTest: tests=6 skipped=0 failures=0 errors=0
+ToolchainValidatorTest: tests=9 skipped=0 failures=0 errors=0
+WarmAdviceTest: tests=4 skipped=0 failures=0 errors=0
+summary: 89 tests, 0 skipped, 0 failed

@@ -1,0 +1,9 @@
+# warm-restart timing SMOKE: libsInExecutable=true on the .10 dev view, example app, 2026-11-21 12:00:47, project example-gradle, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 9s payload list (#32): on (50 payloads read from disk); package timing ms=7869 compile=5462 merge=771 embed+bundle=1636 embed=787 bundle=849 baseline-wait=0
+ui[1] OK warm=12683 package=5703 relaunch=6980 | compile=3063 merge=687 embed+bundle=1597 embed=760 bundle=837 baseline-wait=0 | package timing ms=5347 compile=3063 merge=687 embed+bundle=1597 embed=760 bundle=837 baseline-wait=0
+app[1] OK warm=14972 package=8012 relaunch=6960 | compile=5183 merge=732 embed+bundle=1773 embed=888 bundle=885 baseline-wait=0 | package timing ms=7688 compile=5183 merge=732 embed+bundle=1773 embed=888 bundle=885 baseline-wait=0
+# sources restored; app and compile daemons stopped
+median ui (1/1 ok): warm 12.7 s, package 5.7 s (compile 3.1, merge 0.7, embed+bundle 1.6, embed 0.8, bundle 0.8, baseline-wait 0.0), relaunch 7.0 s
+median app (1/1 ok): warm 15.0 s, package 8.0 s (compile 5.2, merge 0.7, embed+bundle 1.8, embed 0.9, bundle 0.9, baseline-wait 0.0), relaunch 7.0 s
+summary: 2/2 warm restarts measured
+app executable bytes: 181641392

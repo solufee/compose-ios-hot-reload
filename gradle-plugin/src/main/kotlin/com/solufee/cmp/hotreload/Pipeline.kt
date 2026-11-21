@@ -389,7 +389,23 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * [beside] runs in the background after the compile, next to merge/embed/bundle (the classifier baseline needs only
      * the module klibs and the app sources, #32/#52); its failure fails the package.
      */
-    fun packageApp(tools: Tools, daemons: Daemons? = null, beside: (() -> Unit)? = null) {
+    /**
+     * #56 (#32 step 2, toolchain .10+): the cached library object is a second payload ([libsSplit], when the compiler
+     * knows `splitPayloadReserve`), loaded by libKaldo from its file when libKaldo knows manifest kind 2 and
+     * `libsInExecutable` is off ([libsFromFile]); the reserve in the executable is sized from the last merge.
+     */
+    val reserveSupported: Boolean by lazy { compilerKnowsBinaryOption(File(s.compilerJar), "splitPayloadReserve") }
+    val libsSplit: Boolean get() = splitPayloads && reserveSupported
+    val libsFromFileSupported: Boolean by lazy { kaldoLoadsPayloadFiles(File(s.kaldoDylib)) }
+    val libsFromFile: Boolean get() = libsSplit && libsFromFileSupported && !s.libsInExecutable
+
+    /** The cached library object merge-payloads writes next to the merged user object (#32 step 2). */
+    fun libsObject(merged: File): File = File(merged.parentFile, merged.nameWithoutExtension + ".libs.o")
+
+    /** #56: the payload file the packaged .app loads at start (absent when everything is embedded). */
+    val packagedPayloadFile get() = File(work, "payload-file.txt")
+
+    fun packageApp(tools: Tools, daemons: Daemons? = null, beside: (() -> Unit)? = null, fullReserve: Boolean = false) {
         s.sourceSetWarnings.forEach { logger.warn(it) }
         val t0 = System.currentTimeMillis()
         writeGeneratedMain()
@@ -402,14 +418,27 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         base.delete()
         logger.lifecycle("stable keys (remember kept across signature changes, #29): $stableKeysState")
         val payloadList = File(app, "payloads.txt").apply { delete() }
-        val splitArgs = if (splitPayloads) listOf("-Xbinary=splitPayloadList=${payloadList.path}") else emptyList()
+        val merged = File(app, "merged-bootstrap.o")
+        val libsObj = libsObject(merged)
+        // #56: reserve = library object (4 KB when it is loaded from its file) + 4x the last user object + 16 MB, as
+        // hotreload.sh; without a previous merge, or after a payload outgrew it ([fullReserve]), the compiler's full reserve.
+        val reserve = if (libsSplit && !fullReserve && merged.isFile && libsObj.isFile) {
+            (if (libsFromFile) 4096L else libsObj.length()) + 4 * merged.length() + 16L * 1024 * 1024
+        } else null
+        val splitArgs = (if (splitPayloads) listOf("-Xbinary=splitPayloadList=${payloadList.path}") else emptyList()) +
+            (reserve?.let { listOf("-Xbinary=splitPayloadReserve=$it") } ?: emptyList())
         compile(programArgs(base, null, splitArgs), if (daemons != null) s.klibSocket else null, "klib", cacheOnly = false, daemons = daemons,
             retryDirectOnError = true)
         if (!base.isFile) throw GradleException("CMP hot reload: the package compile reported success but ${base.path} is missing")
         val tCompile = System.currentTimeMillis()
         val pending = beside?.let { java.util.concurrent.CompletableFuture.runAsync(it) }
+        // #56: drop the absolute rpaths (see below) on a clone of the base executable while the merge runs; embed uses it.
+        val embedBase = File(app, "${info.executable}-base.norpath.kexe").apply { delete() }
+        if (Proc.run(listOf("cp", "-c", base.path, embedBase.path), echo = false).exit != 0) base.copyTo(embedBase, overwrite = true)
+        val rpathJob = java.util.concurrent.CompletableFuture.runAsync {
+            absoluteRpaths(embedBase).forEach { rp -> Proc.check(listOf("install_name_tool", "-delete_rpath", rp, embedBase.path), echo = false) }
+        }
 
-        val merged = File(app, "merged-bootstrap.o")
         val packages = hotPackages()
         val usePayloadList = payloadList.isFile && payloadList.length() > 0
         logger.lifecycle("payload list (#32): " + when {
@@ -417,17 +446,35 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             splitPayloads -> "requested but not written; payloads embedded"
             else -> "not supported by this toolchain; payloads embedded"
         })
-        val env = mergeEnvironment(packages) + (if (usePayloadList) mapOf("KALDO_PAYLOAD_LIST" to payloadList.path) else emptyMap())
+        logger.lifecycle("library payload (#56): " + when {
+            !(usePayloadList && libsSplit) -> "in the merged object (toolchain before .10)"
+            libsFromFile -> "loaded from its file by libKaldo (this .app needs ${libsObj.path} on this Mac; libsInExecutable = true embeds it)"
+            s.libsInExecutable -> "embedded in the executable (libsInExecutable)"
+            else -> "embedded in the executable (libKaldo cannot load payload files)"
+        } + "; reserve " + (reserve?.let { "${it / (1024 * 1024)} MB from the last merge" } ?: "full"))
+        val env = mergeEnvironment(packages) + (if (usePayloadList) mapOf("KALDO_PAYLOAD_LIST" to payloadList.path) else emptyMap()) +
+            (if (usePayloadList && libsSplit) mapOf("KALDO_LIB_PAYLOAD_DIRS" to File(work, "auto-cache").path) else emptyMap())
         logger.lifecycle("hot packages: ${packages.joinToString(",").ifEmpty { "<none>" }}; keep compact unwind: ${s.keepCompactUnwind}")
         Proc.check(listOf("python3", "-I", tools.mergePayloads.path, base.path, merged.path), env, logger = logger, echo = false)
         val tMerge = System.currentTimeMillis()
         logger.lifecycle("hot symbols: ${s.hotSymbols.readLines().count { it.isNotBlank() }}")
         val exe = File(app, "${info.executable}.kexe")
         exe.delete()
-        Proc.check(
-            listOf("python3", "-I", tools.embedMerged.path, base.path, merged.path, exe.path),
-            s.llvmHome?.let { mapOf("KONAN_LLVM_HOME" to it) } ?: emptyMap(), logger = logger,
+        rpathJob.get()
+        val libsEntry = if (usePayloadList && libsSplit && libsObj.isFile) listOf(if (libsFromFile) "@file:${libsObj.path}" else libsObj.path) else emptyList()
+        val embed = Proc.run(
+            listOf("python3", "-I", tools.embedMerged.path, embedBase.path, merged.path) + libsEntry + exe.path,
+            s.llvmHome?.let { mapOf("KONAN_LLVM_HOME" to it) } ?: emptyMap(), echo = false,
         )
+        if (embed.exit != 0) {
+            if (reserve != null) {
+                logger.lifecycle("package: the merged payload outgrew the reserve; packaging again with the full reserve")
+                runCatching { pending?.get() }
+                return packageApp(tools, daemons, beside, fullReserve = true)
+            }
+            throw GradleException("CMP hot reload: embed-merged.py failed (exit ${embed.exit}):\n${embed.output.trim().takeLast(3000)}")
+        }
+        logger.lifecycle(embed.output.trim().lines().lastOrNull { it.isNotBlank() } ?: "embedded")
         val tEmbed = System.currentTimeMillis()
 
         val bundle = appBundle(info)
@@ -458,7 +505,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             logger.lifecycle("dropped rpath $rp")
         }
         Proc.check(listOf("codesign", "--force", "--deep", "--sign", "-", bundle.path), echo = false)
-        verifyBundle(bundle, info, merged)
+        verifyBundle(bundle, info, merged, if (libsFromFile && libsEntry.isNotEmpty()) libsObj else null)
         val tBundle = System.currentTimeMillis()
         try {
             pending?.get()
@@ -472,6 +519,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         logger.lifecycle("package timing ms=${tEnd - t0} compile=${tCompile - t0} merge=${tMerge - tCompile} embed+bundle=${tBundle - tMerge} " +
             "embed=${tEmbed - tMerge} bundle=${tBundle - tEmbed} baseline-wait=${tEnd - tBundle}")
         packagedStableKeys.writeText(stableKeysState)
+        if (libsFromFile && libsEntry.isNotEmpty()) packagedPayloadFile.writeText(libsObj.path) else packagedPayloadFile.delete()
     }
 
     // ---------------------------------------------------------------- reload
@@ -626,8 +674,10 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * #1 compact unwind kept (merged object has __KALDO,__kaldo_cu), #3 a non-empty hot-symbol list,
      * #5 libKaldo inside Frameworks with the manifest's sha256 and no absolute rpath, #6 a valid signature.
      */
-    fun verifyBundle(bundle: File, info: AppInfo, merged: File) {
+    fun verifyBundle(bundle: File, info: AppInfo, merged: File, payloadFile: File? = null) {
         val problems = mutableListOf<String>()
+        // #56: the library object the app loads from its file at start must exist.
+        if (payloadFile != null && !payloadFile.isFile) problems += "#56 library payload file ${payloadFile.path} missing"
         if (s.keepCompactUnwind) {
             val sections = Proc.check(listOf("otool", "-l", merged.path), echo = false)
             if (!sections.contains("sectname __kaldo_cu")) problems += "#1 merged object has no __kaldo_cu (compact unwind not kept)"
@@ -747,11 +797,21 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         }
 
         /** Whether this Kotlin/Native compiler jar knows `-Xbinary=splitPayloadList` (toolchain .9+, #32). */
-        fun compilerKnowsSplitPayloadList(jar: File): Boolean = try {
+        fun compilerKnowsSplitPayloadList(jar: File): Boolean = compilerKnowsBinaryOption(jar, "splitPayloadList")
+
+        /** Whether this Kotlin/Native compiler jar knows the binary option [name] (e.g. splitPayloadReserve, toolchain .10+). */
+        fun compilerKnowsBinaryOption(jar: File, name: String): Boolean = try {
             java.util.zip.ZipFile(jar).use { z ->
                 val e = z.getEntry("org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.class") ?: return false
-                String(z.getInputStream(e).readBytes(), Charsets.ISO_8859_1).contains("splitPayloadList")
+                String(z.getInputStream(e).readBytes(), Charsets.ISO_8859_1).contains(name)
             }
+        } catch (e: java.io.IOException) {
+            false
+        }
+
+        /** Whether this libKaldo loads a payload from its file (manifest kind 2, toolchain .10+), as hotreload.sh checks. */
+        fun kaldoLoadsPayloadFiles(dylib: File): Boolean = try {
+            String(dylib.readBytes(), Charsets.ISO_8859_1).contains("bootstrap payload file")
         } catch (e: java.io.IOException) {
             false
         }

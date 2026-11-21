@@ -1,0 +1,12 @@
+# warm-restart timing BEFORE: plugin 0.2.5 (release commit 654abcf) + toolchain .9 (official), example app, 2026-11-21 11:26:18, project example-gradle, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 127s payload list (#32): on (50 payloads read from disk); package timing ms=121897 compile=112678 merge=6573 embed+bundle=2646 embed=903 bundle=1743 baseline-wait=0
+ui[1] OK warm=14818 package=8105 relaunch=6713 | compile=3018 merge=2109 embed+bundle=2662 embed=881 bundle=1781 baseline-wait=0 | package timing ms=7789 compile=3018 merge=2109 embed+bundle=2662 embed=881 bundle=1781 baseline-wait=0
+ui[2] OK warm=15390 package=8223 relaunch=7167 | compile=3188 merge=2145 embed+bundle=2520 embed=888 bundle=1632 baseline-wait=0 | package timing ms=7853 compile=3188 merge=2145 embed+bundle=2520 embed=888 bundle=1632 baseline-wait=0
+ui[3] OK warm=14749 package=7979 relaunch=6770 | compile=3049 merge=2079 embed+bundle=2518 embed=874 bundle=1644 baseline-wait=0 | package timing ms=7646 compile=3049 merge=2079 embed+bundle=2518 embed=874 bundle=1644 baseline-wait=0
+app[1] OK warm=15627 package=8698 relaunch=6929 | compile=4202 merge=1853 embed+bundle=2313 embed=865 bundle=1448 baseline-wait=0 | package timing ms=8368 compile=4202 merge=1853 embed+bundle=2313 embed=865 bundle=1448 baseline-wait=0
+app[2] OK warm=17040 package=8669 relaunch=8371 | compile=4185 merge=1732 embed+bundle=2414 embed=828 bundle=1586 baseline-wait=0 | package timing ms=8331 compile=4185 merge=1732 embed+bundle=2414 embed=828 bundle=1586 baseline-wait=0
+app[3] OK warm=15189 package=8447 relaunch=6742 | compile=3975 merge=1671 embed+bundle=2436 embed=844 bundle=1592 baseline-wait=0 | package timing ms=8082 compile=3975 merge=1671 embed+bundle=2436 embed=844 bundle=1592 baseline-wait=0
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 14.8 s, package 8.1 s (compile 3.0, merge 2.1, embed+bundle 2.5, embed 0.9, bundle 1.6, baseline-wait 0.0), relaunch 6.8 s
+median app (3/3 ok): warm 15.6 s, package 8.7 s (compile 4.2, merge 1.7, embed+bundle 2.4, embed 0.8, bundle 1.6, baseline-wait 0.0), relaunch 6.9 s
+summary: 6/6 warm restarts measured

@@ -321,8 +321,24 @@ package)
   # base executable (merge-payloads reads them from disk). A compiler without the option ignores it, writes no list,
   # and merge-payloads falls back to the embedded payloads.
   PAYLOAD_LIST="$BUILD/app/payloads.txt"; rm -f "$PAYLOAD_LIST"
+  # #32 step 2: reserve only what the payload needs (last library object + 4x the last user object + 16 MB) instead
+  # of the size of all payloads, so the executable carries less padding to embed and sign. If a merge outgrows it,
+  # the package is redone once with the full reserve (HR_NO_RESERVE_HINT=1).
+  # The cached library object is loaded by libKaldo from its file (manifest kind 2) when the bundled libKaldo knows
+  # that kind (toolchain .10 on); then it is not embedded at all and the reserve only has to hold the user object.
+  # HR_LIBS_IN_EXECUTABLE=1 embeds it as before.
+  # A separate library payload needs a libKaldo that loads several object entries (toolchain .10 on, same build as
+  # manifest kind 2); with an older libKaldo two entries collide (duplicate __inits symbol), so merge into one as before.
+  KALDO_MULTI=0; LC_ALL=C grep -aq "bootstrap payload file" "$KALDO_DYLIB" && KALDO_MULTI=1
+  LIBS_FROM_FILE=0
+  if [ "${HR_LIBS_IN_EXECUTABLE:-0}" != 1 ] && [ "$KALDO_MULTI" = 1 ]; then LIBS_FROM_FILE=1; fi
+  RESERVE_ARGS=()
+  if [ -z "${HR_NO_RESERVE_HINT:-}" ] && [ -f "$BUILD/app/merged-bootstrap.o" ] && [ -f "$BUILD/app/merged-bootstrap.libs.o" ]; then
+    LIBS_RESERVE=$(stat -f%z "$BUILD/app/merged-bootstrap.libs.o"); [ "$LIBS_FROM_FILE" = 1 ] && LIBS_RESERVE=4096
+    RESERVE_ARGS=(-Xbinary=splitPayloadReserve=$(( LIBS_RESERVE + 4 * $(stat -f%z "$BUILD/app/merged-bootstrap.o") + 16777216 )))
+  fi
   PKG_ARGS=($(common_args) "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" \
-    -Xbinary=splitPayloadList="$PAYLOAD_LIST" \
+    -Xbinary=splitPayloadList="$PAYLOAD_LIST" ${RESERVE_ARGS[@]+"${RESERVE_ARGS[@]}"} \
     -o "$BUILD/app/ComposeHR-base.kexe" "${APP_SRC_ARGS[@]}")
   # The ordinary compile daemon (hr-klib.sock, never cache-only) saves the JVM
   # start and warm-up (~3 s). It cannot see per-call environment, so
@@ -342,16 +358,39 @@ package)
   BASELINE_LOG="$BUILD/app/baseline.out"
   compat_baseline > "$BASELINE_LOG" 2>&1 &
   BASELINE_PID=$!
+  # #32 step 2: drop the absolute rpaths (see below) on a clone of the base executable while the merge runs, so the
+  # rewrite of the large executable is off the critical path; embed uses the clone.
+  BASE_KEXE="$BUILD/app/ComposeHR-base.kexe"; EMBED_BASE="$BUILD/app/ComposeHR-base.norpath.kexe"
+  rm -f "$EMBED_BASE"; cp -c "$BASE_KEXE" "$EMBED_BASE" 2>/dev/null || cp "$BASE_KEXE" "$EMBED_BASE"
+  ( otool -l "$EMBED_BASE" | awk '/LC_RPATH/{f=1;next} f&&/path /{print $2; f=0}' | while IFS= read -r rp; do
+      case "$rp" in /?*) install_name_tool -delete_rpath "$rp" "$EMBED_BASE" 2>/dev/null || true ;; esac
+    done ) &
+  RPATH_PID=$!
   # merge-cache keeps the processed library archives between packages (they
   # do not change), which takes the merge from ~6 s to ~2 s.
   KALDO_MERGE_CACHE_DIR=${KALDO_MERGE_CACHE_DIR:-$BUILD/merge-cache} \
   KALDO_HOT_PACKAGES=${KALDO_HOT_PACKAGES:-expui} \
   KALDO_HOT_SYMBOLS_OUT="$BUILD/app/hot-symbols.txt" \
   KALDO_PAYLOAD_LIST=$([ -s "$PAYLOAD_LIST" ] && echo "$PAYLOAD_LIST") \
+  KALDO_LIB_PAYLOAD_DIRS=$([ "$KALDO_MULTI" = 1 ] && echo "${KALDO_LIB_PAYLOAD_DIRS-$AUTO_CACHE}") \
     python3 "$ROOT/tools/merge-payloads.py" "$BUILD/app/ComposeHR-base.kexe" "$BUILD/app/merged-bootstrap.o"
   echo "hot symbols: $(wc -l < "$BUILD/app/hot-symbols.txt" | tr -d ' ')"
   pkg_step merge
-  python3 "$ROOT/tools/embed-merged.py" "$BUILD/app/ComposeHR-base.kexe" "$BUILD/app/merged-bootstrap.o" "$OUT.kexe"
+  # #32 step 2: the cached library object (merged-bootstrap.libs.o) is the second payload when merge-payloads wrote one.
+  LIBS_PAYLOAD=()
+  if [ -f "$BUILD/app/merged-bootstrap.libs.o" ]; then
+    if [ "$LIBS_FROM_FILE" = 1 ]; then LIBS_PAYLOAD=("@file:$BUILD/app/merged-bootstrap.libs.o"); else LIBS_PAYLOAD=("$BUILD/app/merged-bootstrap.libs.o"); fi
+  fi
+  wait "$RPATH_PID" || true
+  if ! python3 "$ROOT/tools/embed-merged.py" "$EMBED_BASE" "$BUILD/app/merged-bootstrap.o" \
+      ${LIBS_PAYLOAD[@]+"${LIBS_PAYLOAD[@]}"} "$OUT.kexe"; then
+    if [ ${#RESERVE_ARGS[@]} -gt 0 ]; then
+      echo "package: the merged payload outgrew the reserve; packaging again with the full reserve" >&2
+      wait "$BASELINE_PID" 2>/dev/null || true
+      HR_NO_RESERVE_HINT=1 exec "$ROOT/hotreload.sh" package
+    fi
+    exit 1
+  fi
   pkg_step embed
   APP="$OUT.app"
   mkdir -p "$APP/Frameworks"

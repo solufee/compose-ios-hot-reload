@@ -1,0 +1,110 @@
+# warm restart acceptance (#18, #21), plugin 0.2.6-rc, 2026-11-21 12:37:47, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+## 1. package, run
+PASS package | 113s package timing ms=109278 compile=101624 merge=6053 embed+bundle=1601 embed=773 bundle=828 baseline-wait=0
+PASS run
+## 2. app body only
+  | > Task :shared:hotReloadCheckToolchain
+  | > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+  | > Task :shared:hotReloadCompileKlibs UP-TO-DATE
+  | > Task :shared:hotReload
+  | app klib (classifier): compiling (sources changed: App.kt)
+  | compile: daemon klib OK 682 ms
+  | compile: daemon compile OK 6518 ms
+  | changed objects: shared=12 core=0
+  | compat: HOT (classifier 764 ms, waited 0 ms after the patch was ready)
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (106 ms; on the main queue after 0 ms, applied in 30 ms); it shows on the next recomposition
+PASS app body -> HOT; core's klib task up to date, core not compiled | 7.8s; > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+## 3. a field in a data class and a composable parameter (the botas-app change) -> warm restart
+  | > Task :shared:hotReloadCheckToolchain
+  | > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+  | > Task :shared:hotReloadCompileKlibs UP-TO-DATE
+  | > Task :shared:hotReload
+  | app klib (classifier): compiling (sources changed: App.kt, Shape.kt)
+  | compile: daemon klib OK 896 ms
+  | compile: daemon compile OK 3127 ms
+  | changed objects: shared=4 core=0
+  | compat: WARM (classifier 976 ms, patch built in 3318 ms; not sent)
+  | WARM field-layout org/example/kmphr/Uniforms: constructor signature changed
+  |     -> a changed constructor changes how objects are built and laid out; to stay hot, add a top-level factory function instead of changing the constructor
+  | WARM field-layout org/example/kmphr/Uniforms: fields added=['rimColor'] removed=[]
+  |     -> adding or removing a field changes the instance layout, and existing objects cannot be patched; keep new state in a new class or pass it as a parameter to stay hot
+  | WARM class-shape org/example/kmphr/Uniforms: unclassified class member changed
+  |     -> this declaration changed in a way the classifier does not analyse (for example an enum entry, the generated members of a data class whose fields changed, or a property without a backing field), so it is not patched
+  | compat: warm restart required; rebuilding and relaunching
+  | warm: the app saved no state (Documents/hr-state.json); restarting from its first page (to come back where you were, write that file: README, "State across a warm restart")
+  | compile: daemon klib OK 3745 ms
+  | app klib (classifier): inputs unchanged (11 source files, 3 ms to check); not recompiled
+  | compat: baseline written for shared,core (56 ms)
+  | package timing ms=5006 compile=3784 merge=656 embed+bundle=566 embed=279 bundle=287 baseline-wait=0
+  | WARM OK ms=12319 ms_package=5383 ms_relaunch=6936 page=- count=-
+  | compat: 3 ABI changes, cannot hot-patch; warm restart took 12.3 s
+PASS WARM, restarted (WARM OK) | 16.4s, 3 reasons
+PASS #18: every WARM reason is followed by one advice line
+PASS #18: summary line with the reason count and the measured warm restart time | compat: 3 ABI changes, cannot hot-patch; warm restart took 12.3 s; WARM OK ms=12319; last line ['10 actionable tasks: 2 executed, 8 up-to-date']
+PASS #18: 'the app saved no state' points to the README section
+PASS #21: the baseline reuses the classifier's app klib (inputs unchanged) | app klib (classifier): compiling (sources changed: App.kt, Shape.kt); compile: daemon klib OK 896 ms; compile: daemon klib OK 3745 ms; app klib (classifier): inputs unchanged (11 source files, 3 ms to check); not recompiled
+PASS #21: core's klib is not compiled during the reload or the warm restart | > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+PASS after the warm restart the app shows the new code
+## 3b. signature changes only (#28): hot, no warm advice
+  | > Task :shared:hotReloadCheckToolchain
+  | > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+  | > Task :shared:hotReloadCompileKlibs UP-TO-DATE
+  | > Task :shared:hotReload
+  | app klib (classifier): compiling (sources changed: App.kt, Shape.kt)
+  | compile: daemon klib OK 644 ms
+  | compile: daemon compile OK 2849 ms
+  | changed objects: shared=4 core=0
+  | compat: HOT (classifier 725 ms, waited 0 ms after the patch was ready)
+  | compat: note: Shell changed its signature; its remember state is kept (stable keys), unless its remember calls changed too, then it starts over
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (101 ms; on the main queue after 0 ms, applied in 36 ms); it shows on the next recomposition
+PASS #18/#28: composable parameter -> HOT with the remember-reset note, no WARM line, advice or summary | 3.9s
+  | > Task :shared:hotReloadCheckToolchain
+  | > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+  | > Task :shared:hotReloadCompileKlibs UP-TO-DATE
+  | > Task :shared:hotReload
+  | app klib (classifier): compiling (sources changed: Shape.kt)
+  | compile: daemon klib OK 614 ms
+  | compile: daemon compile OK 2728 ms
+  | changed objects: shared=4 core=0
+  | compat: HOT (classifier 699 ms, waited 0 ms after the patch was ready)
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (106 ms; on the main queue after 0 ms, applied in 45 ms); it shows on the next recomposition
+PASS #18/#28: top-level function parameter -> HOT, no note, no WARM line, advice or summary | 3.7s
+PASS the signature changes are on screen in the same app
+## 4. core body
+  | > Task :shared:hotReloadCheckToolchain
+  | > Task :shared:hotReloadCompileKlibCore
+  | klib core: compiling (sources changed: Core.kt)
+  | compile: daemon klib OK 170 ms
+  | klib core: <WORK>/KmpHr/shared/build/hotreload/klib/core/core.klib
+  | > Task :shared:hotReloadCompileKlibs
+  | > Task :shared:hotReload
+  | compile: daemon compile OK 2814 ms
+  | changed objects: shared=3 core=1
+  | compat: HOT (classifier 48 ms, waited 0 ms after the patch was ready)
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (103 ms; on the main queue after 0 ms, applied in 30 ms); it shows on the next recomposition
+PASS core body -> HOT | 4.0s
+PASS #21: the log says why core's klib is compiled | klib core: compiling (sources changed: Core.kt); klib core: <WORK>/KmpHr/shared/build/hotreload/klib/core/core.klib
+## 5. --no-warm
+  | > Task :shared:hotReloadCheckToolchain
+  | > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+  | > Task :shared:hotReloadCompileKlibs UP-TO-DATE
+  | > Task :shared:hotReload
+  | app klib (classifier): compiling (sources changed: Shape.kt; module klibs changed: core)
+  | compile: daemon klib OK 576 ms
+  | compile: daemon compile OK 2558 ms
+  | changed objects: shared=4 core=0
+  | compat: WARM (classifier 657 ms, patch built in 2750 ms; not sent)
+  | WARM field-layout org/example/kmphr/Uniforms: constructor signature changed
+  |     -> a changed constructor changes how objects are built and laid out; to stay hot, add a top-level factory function instead of changing the constructor
+  | WARM field-layout org/example/kmphr/Uniforms: fields added=['tilt'] removed=[]
+  |     -> adding or removing a field changes the instance layout, and existing objects cannot be patched; keep new state in a new class or pass it as a parameter to stay hot
+  | WARM class-shape org/example/kmphr/Uniforms: unclassified class member changed
+  |     -> this declaration changed in a way the classifier does not analyse (for example an enum entry, the generated members of a data class whose fields changed, or a property without a backing field), so it is not patched
+  | compat: 3 ABI changes, cannot hot-patch; not restarted (--no-warm)
+  | > Task :shared:hotReload FAILED
+PASS #18: --no-warm prints the reasons with advice and 'not restarted (--no-warm)', sends nothing
+summary: 16/16 PASS

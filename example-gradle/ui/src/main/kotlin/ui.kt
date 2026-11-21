@@ -12,3 +12,5 @@ fun UiMark(tick: Int) {
     println("RENDER_UI $UI_MARK tick=$tick")
     Text("UI $UI_MARK", color = Color(0xFF7FD1AE), fontSize = 18.sp)
 }
+
+val warmTimingUi1: Int = 1

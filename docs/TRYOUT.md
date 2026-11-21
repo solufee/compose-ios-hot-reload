@@ -1,4 +1,4 @@
-# 试用指南（0.2.5，实验性）
+# 试用指南（0.2.6，实验性）
 
 这份指南带你在自己的 Mac 上，把 Compose Multiplatform 的 iOS 模拟器热重载接进工程：改 Kotlin 代码、执行一条命令，
 正在运行的 app 不重启就换上新代码，页面和 `remember` 状态都还在。有两种接法：
@@ -32,16 +32,16 @@
 
 ## 2. 下载工具链
 
-工具链版本：**2.5.255-hotreload.9**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
+工具链版本：**2.5.255-hotreload.10**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
 
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.9/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.10/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.9/`（下文记作 `<TOOLCHAIN>`）：
+完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.10/`（下文记作 `<TOOLCHAIN>`）：
 
 | 目录 | 内容 |
 |---|---|
@@ -102,7 +102,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.5"
+    id("com.solufee.cmp.hotreload") version "0.2.6"
 }
 
 cmpHotReload {
@@ -324,7 +324,7 @@ Ctrl-C 结束。它用的是 Gradle 的连续构建（`-t`，也可以写 `./gra
 `composeResources/`，等改动停下来（默认 250 ms 静默期）再跑一次，配置缓存和编译守护进程一直复用；某一次编译出错只让那一次失败，
 继续监视。不加 `-t` 时 `hotReloadWatch` 只跑一次并提示加 `-t`。
 
-改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（插件 0.2.5 + 工具链 .9 实测：示例 app 改库模块约 13.5 秒、改 app 模块约 15 秒，其中重新打包约 7 秒和 8.5 秒；KMP 向导模板约 15 秒和 17 秒）：
+改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（插件 0.2.6 + 工具链 .10 实测：示例 app 改库模块约 10 秒、改 app 模块约 11.5 秒，其中重新打包约 4 秒和 5 秒；KMP 向导模板约 11.5 秒和 12.5 秒）：
 类的字段布局和构造函数、open/override/接口成员的签名、`inline` 函数、`suspend` 函数，以及新增顶层属性。输出里会逐行列出
 `WARM …` 原因，每条下面跟一行建议（`-> …`），然后是 `WARM OK ms=…`，最后一行是总结，例如
 `compat: 2 ABI changes, cannot hot-patch; warm restart took 17.1 s`（0.2.4 起）。完整清单见下面“总是温重启的改动”。
@@ -390,13 +390,16 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 ## 5. 已知限制
 
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
-- 工具链版本固定，插件只认 2.5.255-hotreload.9。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
+- 工具链版本固定，插件只认 2.5.255-hotreload.10。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
+- 工具链 .10 起，热重载 `.app` 启动时从 `build/hotreload/app/merged-bootstrap.libs.o`（约 130 MB 的库对象）读取库代码，不再把它嵌进可执行文件，
+  所以打包更快，但这个 `.app` 只能在打包它的这台 Mac 上运行，删掉 `build/hotreload` 后要重新打包（`hotReloadRun` 会提示）。
+  要一个能拷走的 `.app`，写 `cmpHotReload { libsInExecutable = true }`（或 `-Pcmp.hotreload.libsInExecutable=true`），打包会慢一些。
 - 工具链 .8 起，补丁在 app 的主线程上应用（两帧之间，不会落在一帧中途）。主线程 2 s 内没空接手（例如卡在一段很长的计算里）时，
   这次补丁**不应用**：`hotReload` 失败并提示 `the app was busy, patch not applied`，app 照常运行；再保存一次或重跑 `hotReload`，
   同一处改动会重新发送。等待时间用 `cmpHotReload { mainWaitMs = 5000 }` 调整。
-- 温重启约 13.5–17 s（插件 0.2.5 + 工具链 .9 实测，各 3 次：示例 app 改库模块 13.5–13.6 s、改 app 模块 14.9–15.2 s，其中重新打包 7.0–7.2 s 和 8.4–8.6 s；KMP 向导模板 15.0–15.1 s 和 16.7–17.5 s；偶尔重启 app 一步会多 5 s 左右）。
-  重新打包用的是工具链 .9 的 payload 清单（#32/#52：编译器不再把约 200 MB 的 payload 复制进可执行文件，打包日志有一行 `payload list (#32): on`），分类器基线和合并、嵌入、组装同时进行；清理过 `build/hotreload`（`hotReloadClean`）后的第一次打包要重建缓存，约 2 分钟。温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
+- 温重启约 10–13 s（插件 0.2.6 + 工具链 .10 实测，各 3 次：示例 app 改库模块 10.0–10.3 s、改 app 模块 11.2–11.3 s，其中重新打包 4.0–4.2 s 和 5.2–5.3 s（打包这一步本身 3.7–3.8 s 和 4.9–5.0 s）；KMP 向导模板 11.3–11.4 s 和 12.6–12.8 s；偶尔重启 app 一步会多 5 s 左右）。
+  重新打包用的是工具链 .9 起的 payload 清单（#32/#52：编译器不再把约 200 MB 的 payload 复制进可执行文件，打包日志有一行 `payload list (#32): on`），以及工具链 .10 起的库对象文件（#56：约 130 MB 的库对象不再嵌进可执行文件，打包日志 `library payload (#56): loaded from its file …`），分类器基线和合并、嵌入、组装同时进行；清理过 `build/hotreload`（`hotReloadClean`）后的第一次打包要重建缓存，约 2 分钟。温重启只恢复能序列化的状态（例如页面、计数器），其它 `remember` 状态会丢失。
 - 兼容性检查（判断能不能热替换）和编译同时进行。只改 app 时检查本身约 0.6 s，但被编译时间盖住，端到端只多十几毫秒。
 - 被替换的 `@Composable` 要在下一次重组时真的被执行，新代码才会显示。Compose 会跳过参数没变、也不读任何 state 的 composable：只传一个会变的参数还不够，**函数体里必须读到它**（或者读一个 `State`），否则热替换已经生效，画面却要等这块被重新绘制（例如翻页再回来）才会变。
 - 长时间运行（几个小时、上万次重组）后，热替换会慢 1 s 左右，重启 app 就恢复。
@@ -485,7 +488,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.5"
+    id("com.solufee.cmp.hotreload") version "0.2.6"
 }
 ```
 

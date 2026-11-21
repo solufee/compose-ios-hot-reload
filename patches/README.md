@@ -82,6 +82,8 @@ $ git -C /tmp/verify-compose apply --check patches/compose-multiplatform-core-bu
 （无输出，退出码 0）
 ```
 
+Issue #53（#32 第二步，2026-11-21）：`llvm-kaldo.patch` sha256 `81fa2129…`（`Kaldo.cpp` 每条 bootstrap payload 一个 buffer 名、清单种类 2 从文件加载对象，`Kaldo.hpp`，`ManifestReader.cpp` 接受种类 2），在 gabryon99/llvm-project-kotlin 的基线 `2f8844c2b355` 上 `git apply --cached --check` 通过，3 个文件与工作树逐字节相同；`kotlin-native-hot-reload.patch` sha256 `3fcf2ab7…`（新增 binary option `splitPayloadReserve`），在 `8e53ee99fbc0` 上通过，2 个文件逐字节相同（`patches/apply-check.log`）。
+
 Issue #32（2026-11-21，`kotlin-native-hot-reload.patch` sha256 `a34772eb…`：新增 binary option `splitPayloadList`（`native/binary-options/.../BinaryOptions.kt`），`SplitCompilationSupport.kt` 给出时写 payload 清单、`BootstrapMetadata.kt` 嵌入空清单加零填充预留）：在 JetBrains/kotlin 的基线 `8e53ee99fbc0` 上用临时 index 检查，`git apply --cached --check` 通过，打出来的 3 个文件和工作树逐字节相同（`patches/apply-check.log`）。
 
 Issue #29（2026-11-21，`kotlin-native-hot-reload.patch` sha256 `c8bd0687…`：新增 `plugins/compose/compiler-hosted` 里 4 个文件——`ComposePlugin.kt` 的 feature flag `HotReloadStableKeys`、`DurableFunctionKeyTransformer.kt`（名字 + remember 形状作 key，重复时加序号）、`ComposableFunctionBodyTransformer.kt`（内层偏移从函数体开头算）、`AbstractComposeLowering.kt`）：在 JetBrains/kotlin 的基线 `8e53ee99fbc0` 上用临时 index 检查，`git apply --cached --check` 通过，打出来的 4 个文件和工作树逐字节相同（`patches/apply-check.log`）。

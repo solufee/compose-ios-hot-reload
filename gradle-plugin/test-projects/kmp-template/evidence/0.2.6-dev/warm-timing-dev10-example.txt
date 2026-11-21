@@ -1,0 +1,12 @@
+# warm-restart timing AFTER #56 on the .10 dev view (example app), 2026-11-21 11:17:31, project example-gradle, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 22s payload list (#32): on (50 payloads read from disk); package timing ms=17683 compile=9260 merge=6417 embed+bundle=2006 embed=820 bundle=1186 baseline-wait=0
+ui[1] OK warm=10921 package=4414 relaunch=6507 | compile=2539 merge=701 embed+bundle=766 embed=301 bundle=465 baseline-wait=0 | package timing ms=4006 compile=2539 merge=701 embed+bundle=766 embed=301 bundle=465 baseline-wait=0
+ui[2] OK warm=10887 package=4537 relaunch=6350 | compile=2702 merge=699 embed+bundle=775 embed=308 bundle=467 baseline-wait=0 | package timing ms=4176 compile=2702 merge=699 embed+bundle=775 embed=308 bundle=467 baseline-wait=0
+ui[3] OK warm=10726 package=4133 relaunch=6593 | compile=2370 merge=675 embed+bundle=736 embed=304 bundle=432 baseline-wait=0 | package timing ms=3781 compile=2370 merge=675 embed+bundle=736 embed=304 bundle=432 baseline-wait=0
+app[1] OK warm=12072 package=5676 relaunch=6396 | compile=3957 merge=636 embed+bundle=755 embed=300 bundle=455 baseline-wait=0 | package timing ms=5348 compile=3957 merge=636 embed+bundle=755 embed=300 bundle=455 baseline-wait=0
+app[2] OK warm=12539 package=5573 relaunch=6966 | compile=3883 merge=629 embed+bundle=725 embed=290 bundle=435 baseline-wait=0 | package timing ms=5237 compile=3883 merge=629 embed+bundle=725 embed=290 bundle=435 baseline-wait=0
+app[3] OK warm=12566 package=5842 relaunch=6724 | compile=4019 merge=703 embed+bundle=766 embed=324 bundle=442 baseline-wait=0 | package timing ms=5488 compile=4019 merge=703 embed+bundle=766 embed=324 bundle=442 baseline-wait=0
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 10.9 s, package 4.4 s (compile 2.5, merge 0.7, embed+bundle 0.8, embed 0.3, bundle 0.5, baseline-wait 0.0), relaunch 6.5 s
+median app (3/3 ok): warm 12.5 s, package 5.7 s (compile 4.0, merge 0.6, embed+bundle 0.8, embed 0.3, bundle 0.4, baseline-wait 0.0), relaunch 6.7 s
+summary: 6/6 warm restarts measured

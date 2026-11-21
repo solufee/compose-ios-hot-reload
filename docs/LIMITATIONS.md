@@ -19,7 +19,7 @@
 | Gradle 双模块示例（app + ui），一条命令出包 | ✅ |
 | 已有的 Kotlin Multiplatform 工程（向导模板，插件加在 `shared` 上） | ✅ 0.2.0：commonMain/iosMain 函数体热替换；0.2.4 起 `expect`/`actual` 函数改签名、增删一对 `expect fun` 也热替换，增删一对类等仍自动温重启 |
 | KMP 工程的第三方 iOS 依赖 | ✅ 从 Gradle 解析（含传递依赖）；工具链自带的库（stdlib、kotlinx、Compose、AndroidX）只链工具链那一份 |
-| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.5 / 工具链 .9：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
+| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.6 / 工具链 .10：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
 | KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
 | 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
 | Compose 1.13 的 `ComposeUIView`（嵌在 app 自己的 `UIViewController` 里） | ✅ 0.2.3 实测（工具链 .7，CMP 1.13.0-beta02）：插件生成的入口只调用 `MainViewController()`，和它不冲突；给定宽高时正常显示，热替换后不用点就刷新。⚠️ 两点：`ComposeUIView` 里的内容不进无障碍树；只设 `preferredSizeReportingStrategy = IntrinsicContentSize`、不给宽高时，这个视图在热重载 app 里没有得到尺寸（空白），是否 Compose 本身的行为没有核实，暂时请给定宽高 |
@@ -139,6 +139,12 @@
    只改 `remember` 里的计算、或不碰 `remember` 的函数体改动不受影响。根治（Issue #29）：`remember` 的类型、个数或顺序一变，
    这个 composable 的状态安全重置，随工具链 .9 发布（热重载构建打开 `HotReloadStableKeys`，TECHNICAL-NOTES §1.9；同时改签名时
    `remember` 能保留，REPORT §36）。
+
+20. **热重载构建的 `.app` 依赖这台 Mac 上的库对象文件（工具链 .10 起）**。为了让温重启打包快（Issue #32），缓存的库对象
+   （`build/app/merged-bootstrap.libs.o`，约 130 MB）不再嵌进可执行文件，app 启动时由 libKaldo 按绝对路径读取。所以这个 `.app`
+   只能在打包它的这台 Mac 的模拟器上运行；删掉 `build/` 后要重新打包。`HR_LIBS_IN_EXECUTABLE=1` 把它嵌回可执行文件（打包慢约 1 s）。
+   插件（0.2.6 起）同样默认从文件读，文件在 `build/hotreload/app/merged-bootstrap.libs.o`；`cmpHotReload { libsInExecutable = true }`
+   （或 `-Pcmp.hotreload.libsInExecutable=true`）把它嵌回可执行文件；文件不在时 `hotReloadRun` 报错并提示重新打包。
 
 ## 已解决（旧文档里可能还会看到）
 

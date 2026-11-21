@@ -174,6 +174,14 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
     abstract val stableKeys: Property<Boolean>
 
     /**
+     * Toolchain .10+ (#56): by default the hot-reload .app loads the large, rarely changing library object (Compose and
+     * the other dependencies, ~200 MB) from its file under build/hotreload/app at launch, so the executable stays small
+     * and packaging is fast; such an .app only runs on this Mac and only while that file exists. true embeds it in the
+     * executable (a portable .app, slower packaging). Also `-Pcmp.hotreload.libsInExecutable=true`. Hot-reload builds only.
+     */
+    abstract val libsInExecutable: Property<Boolean>
+
+    /**
      * UIDeviceFamily of the Info.plist the plugin generates for an app module without one (#9): listOf(1) iPhone
      * (default), listOf(1, 2) iPhone and iPad, listOf(2) iPad. Also `-Pcmp.hotreload.deviceFamily=1,2`. An app module
      * that has its own Info.plist uses it as is (this setting is then ignored, with a warning).

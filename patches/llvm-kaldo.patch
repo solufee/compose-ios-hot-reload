@@ -280,7 +280,7 @@ index a848f54aee63..deb2c347dd51 100644
          plugins/WeakSymbolFallbackGenerator.cpp
  )
 diff --git a/llvm/tools/kaldo/Kaldo.cpp b/llvm/tools/kaldo/Kaldo.cpp
-index 9acf22f299ba..9bea9c696d29 100644
+index 9acf22f299ba..9c939d6a5eb9 100644
 --- a/llvm/tools/kaldo/Kaldo.cpp
 +++ b/llvm/tools/kaldo/Kaldo.cpp
 @@ -1,3 +1,5 @@
@@ -362,7 +362,49 @@ index 9acf22f299ba..9bea9c696d29 100644
  #if defined(__APPLE__)
              ObjCInteropManager =
                  std::make_unique<llvm::kaldo::objc::ObjCInteropManager>(J);
-@@ -301,6 +333,16 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -222,7 +254,15 @@ llvm::Error llvm::kaldo::SymbolsOrchestrator::loadBootstrapPayloads(
+   auto &OLL = JIT->getObjLinkingLayer();
+   auto &ES = JIT->getExecutionSession();
+ 
++  unsigned EntryIndex = 0;
+   for (const auto &Entry : Manifest.Entries) {
++    // One buffer name per entry: ORC's MachO platform derives symbol names from it (for example the
++    // `$.<name>.__inits.0` init section symbol), so two object entries with one name collide (#32: the user
++    // object and the cached library object). The first entry keeps the old name.
++    const std::string BufferName =
++        EntryIndex == 0 ? std::string("kaldo-bootstrap-object")
++                        : "kaldo-bootstrap-object-" + std::to_string(EntryIndex);
++    ++EntryIndex;
+ 
+     llvm::StringRef Bytes(
+         reinterpret_cast<const char *>(Manifest.StartData + Entry.Offset),
+@@ -231,8 +271,23 @@ llvm::Error llvm::kaldo::SymbolsOrchestrator::loadBootstrapPayloads(
+     switch (Entry.Kind) {
+ 
+     case manifest::PayloadKind::kObject: {
+-      auto Buffer = llvm::MemoryBuffer::getMemBuffer(
+-          Bytes, "kaldo-bootstrap-object", false);
++      auto Buffer = llvm::MemoryBuffer::getMemBuffer(Bytes, BufferName, false);
++      LoadedSymbols +=
++          KotlinHotSymbols::createFrom(*Buffer, ES.getSymbolStringPool());
++      if (auto Err = JIT->addObjectFile(TargetJD, std::move(Buffer)))
++        return Err;
++      break;
++    }
++    case manifest::PayloadKind::kObjectFile: {
++      auto BufferOrErr = llvm::MemoryBuffer::getFile(Bytes, /*IsText=*/false,
++                                                     /*RequiresNullTerminator=*/false);
++      if (!BufferOrErr)
++        return llvm::createStringError(BufferOrErr.getError(),
++                                       "bootstrap payload file '%s': %s", Bytes.str().c_str(),
++                                       BufferOrErr.getError().message().c_str());
++      auto FileBuffer = std::move(*BufferOrErr);
++      auto Buffer = llvm::MemoryBuffer::getMemBuffer(FileBuffer->getMemBufferRef().getBuffer(), BufferName, false);
++      BootstrapFileBuffers.push_back(std::move(FileBuffer));  // the JIT keeps pointing into the mapping
+       LoadedSymbols +=
+           KotlinHotSymbols::createFrom(*Buffer, ES.getSymbolStringPool());
+       if (auto Err = JIT->addObjectFile(TargetJD, std::move(Buffer)))
+@@ -301,6 +356,16 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    auto &BootstrapJD = *BootstrapJDOrErr;
  
@@ -379,7 +421,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    auto Cleanup = llvm::make_scope_exit([&] {
      if (Succeeded)
        return;
-@@ -316,6 +358,12 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -316,6 +381,12 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    BootstrapJD.addToLinkOrder(StubsJD); // StubsJD
    BootstrapJD.addToLinkOrder(MainJD);
@@ -392,7 +434,7 @@ index 9acf22f299ba..9bea9c696d29 100644
  
    BootstrapJD.addGenerator(
        std::make_unique<
-@@ -361,6 +409,23 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -361,6 +432,23 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
      return tl::make_unexpected(dumpLlvmErrorToString(std::move(RedirectErr)));
    }
  
@@ -416,7 +458,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    if (auto ConstErr =
            callKonanConstructors(ES, JIT->getDataLayout(), BootstrapJD)) {
      return tl::make_unexpected(dumpLlvmErrorToString(std::move(ConstErr)));
-@@ -368,6 +433,14 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -368,6 +456,14 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    RuntimeInit();
  
@@ -431,7 +473,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    if (ObjCInteroManager) {
      auto InitPrefixOrErr =
          ObjCInteroManager->initializeObjCUniquePrefixFromJIT(BootstrapJD);
-@@ -376,14 +449,6 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -376,14 +472,6 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
      }
  
      ObjCUniquePrefixInit(*InitPrefixOrErr);
@@ -446,7 +488,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    }
  
    auto BootstrapHandle = llvm::kaldo::ReloadUnitHandle::getBootstrapHandle();
-@@ -397,6 +462,8 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -397,6 +485,8 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    llvm::dbgs() << "[kaldo] :: bootstrap objects loaded with success!\n";
  
@@ -455,7 +497,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    return BootstrapHandle;
  }
  
-@@ -409,7 +476,32 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -409,7 +499,32 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
  
    auto Succeeded = false;
  
@@ -488,7 +530,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    auto ReloadDylibName = KReloadJdName + std::to_string(ReloadUnits.size() - 1);
    auto &StubsJD = SymRedirector->getStubsJD();
    auto &MainJD = JIT->getMainJITDylib();
-@@ -432,11 +524,14 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -432,11 +547,14 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
      }
    });
  
@@ -503,7 +545,7 @@ index 9acf22f299ba..9bea9c696d29 100644
  
    ReloadedJD.addToLinkOrder(StubsJD);
    ReloadedJD.addToLinkOrder(MainJD);
-@@ -445,7 +540,7 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -445,7 +563,7 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
    // during materialization (generators on linked JITDylibs may not fire).
    if (auto HostGenOrErr = orc::plugin::MachOHostDataSymbolGenerator::
            createForCurrentProcess()) {
@@ -512,7 +554,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    } else {
      return tl::make_unexpected("Could not add MachOHostDataGenerator: " +
                                 dumpLlvmErrorToString(HostGenOrErr.takeError()));
-@@ -455,13 +550,15 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -455,13 +573,15 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
  
    if (auto DlsymGenOrErr =
            llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(GP)) {
@@ -529,7 +571,7 @@ index 9acf22f299ba..9bea9c696d29 100644
    auto &OLL = JIT->getObjLinkingLayer();
    auto LoadedSyms = KotlinHotSymbols::create();
  
-@@ -516,15 +613,37 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -516,15 +636,37 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
      }
    }
  
@@ -2041,10 +2083,16 @@ index a6e02e09012f..283e00058f27 100644
  
  #endif // LLVM_OBJCSELECTORFIXUPPLUGIN_H
 diff --git a/llvm/tools/kaldo/Kaldo.hpp b/llvm/tools/kaldo/Kaldo.hpp
-index a99fb9cfbb3e..65f8ea504840 100644
+index a99fb9cfbb3e..1f4baa0acb09 100644
 --- a/llvm/tools/kaldo/Kaldo.hpp
 +++ b/llvm/tools/kaldo/Kaldo.hpp
-@@ -19,6 +19,7 @@ class Error;
+@@ -14,11 +14,13 @@
+ 
+ namespace llvm {
+ class Error;
++class MemoryBuffer;
+ }
+ 
  namespace llvm::orc {
  class LLJIT;
  class JITDylib;
@@ -2052,7 +2100,17 @@ index a99fb9cfbb3e..65f8ea504840 100644
  } // namespace llvm::orc
  
  namespace llvm::kaldo {
-@@ -123,6 +124,13 @@ private:
+@@ -38,6 +40,9 @@ static constexpr char FormatIdentifier[] = "KALD0";
+ enum class PayloadKind : uint8_t {
+   kObject = 0,
+   kArchive = 1,
++  /// The entry bytes are the absolute path of a relocatable object loaded from that file at start (#32: the
++  /// cached library object of hot reload builds stays out of the executable).
++  kObjectFile = 2,
+ };
+ 
+ struct EntryMetadata {
+@@ -123,6 +128,16 @@ private:
    uint32_t CurrentReloadHandleId{ReloadUnitHandle::BootstrapRaw};
    bool ItDidBoot{false};
  
@@ -2063,6 +2121,23 @@ index a99fb9cfbb3e..65f8ea504840 100644
 +  llvm::orc::JITDylib *PrevReloadJD{nullptr};
 +  std::vector<llvm::orc::DefinitionGenerator *> PrevReloadGenerators;
 +
++  // Mappings of kObjectFile bootstrap payloads; the JIT keeps pointing into them for the life of the process.
++  mutable std::vector<std::unique_ptr<llvm::MemoryBuffer>> BootstrapFileBuffers;
++
    std::unique_ptr<llvm::orc::LLJIT> JIT;
    std::unique_ptr<SymbolsRedirector> SymRedirector;
    std::unique_ptr<objc::ObjCInteropManager> ObjCInteroManager;
+diff --git a/llvm/tools/kaldo/ManifestReader.cpp b/llvm/tools/kaldo/ManifestReader.cpp
+index 16a3f1b205ce..6c6680c8dd16 100644
+--- a/llvm/tools/kaldo/ManifestReader.cpp
++++ b/llvm/tools/kaldo/ManifestReader.cpp
+@@ -44,7 +44,8 @@ std::optional<Manifest> llvm::kaldo::manifest::parseKaldoManifestFromBytes(
+     const uint64_t Offset = read<uint64_t>(Data);
+     const uint64_t Size = read<uint64_t>(Data);
+ 
+-    if ((Kind != PayloadKind::kObject && Kind != PayloadKind::kArchive) ||
++    if ((Kind != PayloadKind::kObject && Kind != PayloadKind::kArchive &&
++         Kind != PayloadKind::kObjectFile) ||
+         Offset > BundleSize || Size > BundleSize - Offset) {
+       return std::nullopt;
+     }

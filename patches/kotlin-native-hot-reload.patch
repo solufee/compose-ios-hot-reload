@@ -1391,10 +1391,10 @@ index 00000000000..81e6e816024
 +}
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/SplitCompilationSupport.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/SplitCompilationSupport.kt
 new file mode 100644
-index 00000000000..6557fc8b40b
+index 00000000000..31bda1ba72c
 --- /dev/null
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/SplitCompilationSupport.kt
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,303 @@
 +/*
 + * Copyright 2010-2026 JetBrains s.r.o. and Kotlin Programming Language contributors.
 + * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
@@ -1632,7 +1632,9 @@ index 00000000000..6557fc8b40b
 +        val existing = manifest.payloadsToLoadAtRuntime.filter { Path(it).exists() }
 +        Path(payloadListPath).writeText(existing.joinToString("\n", postfix = "\n"))
 +        // Room for the merged payload the packager embeds (it is smaller than the payloads it is made of).
-+        manifest.copy(payloadsToLoadAtRuntime = emptyList(), reserveBytes = existing.sumOf { Path(it).fileSize() } + (1L shl 20))
++        val reserve = context.config.configuration.get(BinaryOptions.splitPayloadReserve)?.toLongOrNull()
++                ?: (existing.sumOf { Path(it).fileSize() } + (1L shl 20))
++        manifest.copy(payloadsToLoadAtRuntime = emptyList(), reserveBytes = reserve)
 +    } else {
 +        manifest
 +    }
@@ -5372,10 +5374,10 @@ index c5e18994812..573b9b2ef8b 100644
 +    return parts.joinToString(";")
 +}
 diff --git a/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt b/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt
-index 74c9ba2310f..46505d4a130 100644
+index 74c9ba2310f..513ce9218e9 100644
 --- a/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt
 +++ b/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt
-@@ -40,6 +40,13 @@ object BinaryOptions : BinaryOptionRegistry() {
+@@ -40,6 +40,20 @@ object BinaryOptions : BinaryOptionRegistry() {
      val objcExportErrorOnNameCollisions by booleanOption()
  
      val objcExportEntryPointsPath by stringOption()
@@ -5386,6 +5388,13 @@ index 74c9ba2310f..46505d4a130 100644
 +     * the payloads from the list and embeds its own merged payload afterwards.
 +     */
 +    val splitPayloadList by stringOption()
++
++    /**
++     * With [splitPayloadList]: size in bytes of the zero-filled reserve for the payload the packager embeds later
++     * (default: the size of all payloads, enough for any merge of them). The packager passes the size of its last
++     * merged payload plus a margin, so the executable carries less padding.
++     */
++    val splitPayloadReserve by stringOption()
      val objcExportExpandEntryPoints by booleanOption()
  
      val objcExportExplicitMethodFamily by booleanOption()

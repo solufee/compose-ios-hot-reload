@@ -133,7 +133,7 @@ abstract class PackageTask : HotReloadTask() {
         val pipeline = Pipeline(s, logger)
         // INTERFACE §10.2: package ends with the classifier's baseline snapshots of what it built; it runs beside
         // merge/embed/bundle (#52).
-        pipeline.packageApp(tools, daemons) { Compat(s, logger, pipeline, tools).baseline(daemons) }
+        pipeline.packageApp(tools, daemons, beside = { Compat(s, logger, pipeline, tools).baseline(daemons) })
     }
 }
 

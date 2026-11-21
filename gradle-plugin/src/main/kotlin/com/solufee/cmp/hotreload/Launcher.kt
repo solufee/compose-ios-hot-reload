@@ -40,6 +40,11 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         val bundle = pipeline.appBundle(info)
         if (!bundle.isDirectory) throw GradleException("CMP hot reload: ${bundle.path} not found; run ./gradlew hotReloadPackage first")
         if (!s.hotSymbols.isFile) throw GradleException("CMP hot reload: ${s.hotSymbols.path} missing (INTERFACE §3.3 #3); run ./gradlew hotReloadPackage")
+        // #56: the .app loads its library object from this file at start; without it the app could not start.
+        pipeline.packagedPayloadFile.takeIf { it.isFile }?.readText()?.trim()?.let { path ->
+            if (!File(path).isFile) throw GradleException("CMP hot reload: the packaged app loads its library object from $path at start, " +
+                "but the file is gone (build/hotreload was cleaned?); run ./gradlew hotReloadPackage, or package with libsInExecutable = true for a self-contained .app")
+        }
         val udid = s.udid
         if (udid == "booted") requireSingleBootedSimulator()
         Proc.run(listOf("xcrun", "simctl", "terminate", udid, info.bundleId), echo = false)

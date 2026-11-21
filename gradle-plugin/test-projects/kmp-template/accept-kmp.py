@@ -722,7 +722,9 @@ fun MainViewController(): UIViewController = UIViewController().apply {
 
     # ---------------------------------------------------------------- 5. counter-examples: klibs with edited manifests
     say("## 5. klibs with edited manifests (extraKlibs) stop the build before compiling")
-    src = next(l.strip() for l in open(os.path.join(os.path.dirname(a.toolchain), "klibs.txt")) if "kotlinx-datetime" in l)
+    # The toolchain's klib list (its manifest names it; an installed toolchain has it next to kotlin-native/).
+    klib_list = json.load(open(os.path.join(a.toolchain, "toolchain.json")))["compose"].get("klibList") or os.path.join(os.path.dirname(a.toolchain), "klibs.txt")
+    src = next(l.strip() for l in open(klib_list) if "kotlinx-datetime" in l)
     fake = os.path.join(WORK, "fake-klibs")
     os.makedirs(fake)
 

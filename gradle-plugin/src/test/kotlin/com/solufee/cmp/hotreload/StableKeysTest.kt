@@ -108,6 +108,35 @@ class StableKeysTest {
     }
 
     @Test
+    fun `#56 - reserve option and payload-file support are detected, release never gets them`() {
+        fun compilerJar(name: String, binaryOptions: String): File = File(tmp, name).also { f ->
+            ZipOutputStream(f.outputStream()).use { z ->
+                z.putNextEntry(ZipEntry("org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.class"))
+                z.write(binaryOptions.toByteArray(Charsets.ISO_8859_1)); z.closeEntry()
+            }
+        }
+        val k10 = compilerJar("k10.jar", "splitPayloadList splitPayloadReserve")
+        val k9 = compilerJar("k9.jar", "splitPayloadList")
+        assertTrue(Pipeline.compilerKnowsBinaryOption(k10, "splitPayloadReserve"))
+        assertFalse(Pipeline.compilerKnowsBinaryOption(k9, "splitPayloadReserve"))
+        val kaldo10 = File(tmp, "k10.dylib").apply { writeBytes(byteArrayOf(0, 1) + "load bootstrap payload file %s".toByteArray() + byteArrayOf(2)) }
+        val kaldo9 = File(tmp, "k9.dylib").apply { writeBytes("other strings".toByteArray()) }
+        assertTrue(Pipeline.kaldoLoadsPayloadFiles(kaldo10))
+        assertFalse(Pipeline.kaldoLoadsPayloadFiles(kaldo9))
+        assertFalse(Pipeline.kaldoLoadsPayloadFiles(File(tmp, "missing.dylib")))
+
+        val base = settings(jar("c9.jar", "HotReloadStableKeys"))
+        val on = Pipeline(base.copy(compilerJar = k10.path, kaldoDylib = kaldo10.path), logger)
+        assertTrue(on.libsSplit && on.libsFromFile)
+        assertFalse(Pipeline(base.copy(compilerJar = k10.path, kaldoDylib = kaldo10.path, libsInExecutable = true), logger).libsFromFile)
+        assertFalse(Pipeline(base.copy(compilerJar = k10.path, kaldoDylib = kaldo9.path), logger).libsFromFile)
+        val old = Pipeline(base.copy(compilerJar = k9.path, kaldoDylib = kaldo10.path), logger)
+        assertFalse(old.libsSplit || old.libsFromFile)   // toolchain .9: the 0.2.5 path
+        val release = ReleaseCheck(base.copy(compilerJar = k10.path, kaldoDylib = kaldo10.path), logger).commands(File(tmp, "rel")).flatten()
+        assertFalse(release.any { it.contains("splitPayload") }, release.joinToString(" "))
+    }
+
+    @Test
     fun `the HOT note follows the setting`() {
         val line = "NOTE remember-reset Badge: composable signature changed"
         assertTrue(hotNote(line, stableKeys = true).contains("its remember state is kept"), hotNote(line, true))

@@ -20,7 +20,7 @@ picks up the change without restarting. Navigation and `remember` state are kept
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.9/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.10/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
@@ -41,7 +41,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.5"
+    id("com.solufee.cmp.hotreload") version "0.2.6"
 }
 ```
 
@@ -49,7 +49,7 @@ plugins {
 from step 1, written as an absolute path:
 
 ```properties
-cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.9/kotlin-native
+cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.10/kotlin-native
 ```
 
 Add `<module>/.hr/` and `<module>/launch.log` to `.gitignore`. No source changes are needed: source sets,
@@ -76,9 +76,9 @@ Check the setup with `./gradlew hotReloadCheckToolchain`.
   hot too: added, removed or retyped parameters, default values, return types, `expect`/`actual` functions and new
   `expect`/`actual` function pairs. Every caller is recompiled into the patch. A `@Composable` whose signature
   changed starts its own `remember` state over once (`compat: note: …`); its callers keep theirs.
-- Changes that cannot be hot-swapped are applied with a warm restart (`WARM …`; plugin 0.2.5 with toolchain .9: about
-  13.5 s after an edit in a library module and 15 s after an edit in the app module on the example app, of which
-  repackaging takes about 7 s and 8.5 s; about 15 s and 17 s on the KMP wizard template; relaunching the app
+- Changes that cannot be hot-swapped are applied with a warm restart (`WARM …`; plugin 0.2.6 with toolchain .10:
+  about 10 s after an edit in a library module and 11.5 s after an edit in the app module on the example app, of which
+  repackaging takes about 4 s and 5 s; about 11.5 s and 12.5 s on the KMP wizard template; relaunching the app
   occasionally takes ~5 s longer), for example
   class fields and constructors, open/override/interface members, `inline` or `suspend` functions, `expect`/`actual`
   classes, and resource-only edits.
@@ -87,6 +87,10 @@ If the app's main thread is busy (for example a long frame or a blocking call) a
 2 s, the patch is not applied: `hotReload` fails with `the app was busy, patch not applied`, and the next
 `hotReload` (or the next save in watch mode) sends the same change again. The wait can be changed with
 `cmpHotReload { mainWaitMs = 5000 }` (toolchain .8+).
+
+With toolchain .10 the hot-reload `.app` loads its large library object (~130 MB) from a file under
+`build/hotreload/app` at launch instead of carrying it (faster packaging), so it only runs on this Mac and needs
+repackaging after `build/hotreload` is deleted. For a self-contained `.app` set `cmpHotReload { libsInExecutable = true }`.
 
 Every `WARM …` reason is followed by one line of advice (`-> …`), and the run ends with a summary such as
 `compat: 2 ABI changes, cannot hot-patch; warm restart took 17.1 s`.

@@ -1,0 +1,8 @@
+pid0 1387 state (0, 0)
+plus[0] OK state=(1, 0)
+plus[1] OK state=(2, 0)
+plus[2] OK state=(3, 0)
+nav[0] OK next=True back=True state=(3, 0) pid=1387
+nav[1] OK next=True back=True state=(3, 0) pid=1387
+nav[2] OK next=True back=True state=(3, 0) pid=1387
+=== navigation: OK counter=3 pid=1387 (start 1387) bad_lines=0 ===

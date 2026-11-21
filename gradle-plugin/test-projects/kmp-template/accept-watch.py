@@ -32,6 +32,7 @@ ap.add_argument("--plugin-version", default="0.2.3")
 ap.add_argument("--toolchain", required=True)
 ap.add_argument("--udid", required=True)
 ap.add_argument("--port", default="5568")
+ap.add_argument("--prop", action="append", default=[], help="extra key=value for local.properties (e.g. tools of a local toolchain view)")
 a = ap.parse_args()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -116,7 +117,7 @@ edit(os.path.join(P, "settings.gradle.kts"), "pluginManagement {\n    repositori
      f'pluginManagement {{\n    repositories {{\n        maven {{ url = uri("{a.plugin_repo}") }}\n')
 edit(os.path.join(P, "shared/build.gradle.kts"), "plugins {\n", f'plugins {{\n    id("com.solufee.cmp.hotreload") version "{a.plugin_version}"\n')
 open(os.path.join(P, "local.properties"), "w").write(
-    f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\ncmp.hotreload.port={a.port}\n")
+    f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\ncmp.hotreload.port={a.port}\n" + "".join(f"{p}\n" for p in a.prop))
 edit(APP, '                Text("Click me!")\n            }\n', '                Text("Click me!")\n            }\n            Text("Static: st-1")\n')
 watch = None
 try:

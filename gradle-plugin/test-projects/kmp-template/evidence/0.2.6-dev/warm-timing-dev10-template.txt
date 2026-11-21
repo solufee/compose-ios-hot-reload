@@ -1,0 +1,12 @@
+# warm-restart timing AFTER #56 on the .10 dev view (wizard template + core), 2026-11-21 11:22:35, project KmpHr, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 22s payload list (#32): on (67 payloads read from disk); package timing ms=17264 compile=7871 merge=7610 embed+bundle=1783 embed=816 bundle=967 baseline-wait=0
+ui[1] OK warm=11911 package=4288 relaunch=7623 | compile=2539 merge=695 embed+bundle=638 embed=301 bundle=337 baseline-wait=0 | package timing ms=3872 compile=2539 merge=695 embed+bundle=638 embed=301 bundle=337 baseline-wait=0
+ui[2] OK warm=12440 package=4414 relaunch=8026 | compile=2624 merge=717 embed+bundle=648 embed=313 bundle=335 baseline-wait=0 | package timing ms=3989 compile=2624 merge=717 embed+bundle=648 embed=313 bundle=335 baseline-wait=0
+ui[3] OK warm=11575 package=4265 relaunch=7310 | compile=2576 merge=668 embed+bundle=643 embed=299 bundle=344 baseline-wait=0 | package timing ms=3887 compile=2576 merge=668 embed+bundle=643 embed=299 bundle=344 baseline-wait=0
+app[1] OK warm=12839 package=5586 relaunch=7253 | compile=3892 merge=669 embed+bundle=643 embed=306 bundle=337 baseline-wait=0 | package timing ms=5204 compile=3892 merge=669 embed+bundle=643 embed=306 bundle=337 baseline-wait=0
+app[2] OK warm=13102 package=5522 relaunch=7580 | compile=3941 merge=640 embed+bundle=615 embed=299 bundle=316 baseline-wait=0 | package timing ms=5196 compile=3941 merge=640 embed+bundle=615 embed=299 bundle=316 baseline-wait=0
+app[3] OK warm=12794 package=5428 relaunch=7366 | compile=3788 merge=655 embed+bundle=614 embed=294 bundle=320 baseline-wait=0 | package timing ms=5057 compile=3788 merge=655 embed+bundle=614 embed=294 bundle=320 baseline-wait=0
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 11.9 s, package 4.3 s (compile 2.6, merge 0.7, embed+bundle 0.6, embed 0.3, bundle 0.3, baseline-wait 0.0), relaunch 7.6 s
+median app (3/3 ok): warm 12.8 s, package 5.5 s (compile 3.9, merge 0.7, embed+bundle 0.6, embed 0.3, bundle 0.3, baseline-wait 0.0), relaunch 7.4 s
+summary: 6/6 warm restarts measured

@@ -70,6 +70,8 @@ data class HrSettings(
     val mainWaitMs: Int = 2000,
     /** #29/#47: ask for HotReloadStableKeys in hot-reload compiles (used only when the toolchain's Compose compiler knows it). */
     val stableKeys: Boolean = true,
+    /** #56: embed the library object in the executable (portable .app) instead of loading it from its file on this Mac. */
+    val libsInExecutable: Boolean = false,
     // 0.2.0: Kotlin Multiplatform projects
     /** Klibs from the modules' Gradle dependencies, after the toolchain's own copies were taken out. */
     val extraKlibs: List<String> = emptyList(),

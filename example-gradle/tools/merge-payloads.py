@@ -33,6 +33,10 @@ DUP_ARCHIVE_MARKER = "ui-cache.a"
 # Optional (#32): a file listing the payload paths, written by the compiler with -Xbinary=splitPayloadList=<file>.
 # When set, the payloads are read from those paths instead of the executable's __kaldo_boot section.
 PAYLOAD_LIST = os.environ.get("KALDO_PAYLOAD_LIST", "")
+# Optional (#32 step 2, needs KALDO_PAYLOAD_LIST and KALDO_MERGE_CACHE_DIR): colon-separated directories whose payloads
+# are libraries. They are linked once into a cached "<out-stem>.libs.o" that is reused while the libraries do not change;
+# each merge then links only the user payloads into <out>. Both objects are embedded (embed-merged.py base out-libs out).
+LIB_PAYLOAD_DIRS = [d.rstrip("/") + "/" for d in os.environ.get("KALDO_LIB_PAYLOAD_DIRS", "").split(":") if d]
 
 
 def rename_section(path, old_sect, new_sect, old_seg, new_seg):
@@ -186,6 +190,21 @@ def member_is_cxx_only(path):
     return any(s.startswith("__Z") or s.startswith("_Z") for s in syms)
 
 
+def members_objc_classes(paths):
+    """{path: defined _OBJC_CLASS_$_ symbols} for several objects from batched `nm -g` (one call per batch).
+
+    ObjC class symbols are external, so `nm -g` sees the same defined classes as `nm -m` per file did."""
+    result = {p: set() for p in paths}
+    for p, lines in nm_global_lines(paths).items():
+        for line in lines:
+            parts = line.split()
+            if len(parts) >= 2 and parts[-1].startswith("_OBJC_CLASS_$_") and parts[-2] not in ("U", "w"):
+                result[p].add(parts[-1])
+    return result
+
+
+
+
 def objc_member_is_host_backed(member_path, host):
     classes = member_objc_classes(member_path)
     return bool(classes) and classes <= host
@@ -272,13 +291,17 @@ def dedup_archive(src, dst):
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         members = sorted(m for m in os.listdir(tmp) if not m.startswith("__.SYMDEF"))
         if os.environ.get("KALDO_GUEST_KEEP_OBJC") != "1":
+            # ObjC classes of every candidate member from one nm call (#32: one call per member cost ~0.4 s).
+            objc_classes = members_objc_classes(
+                [os.path.join(tmp, m) for m in members if m.startswith(SKIP_OBJC_PREFIX) and m.endswith(".o")])
             kept = []
             for m in members:
                 p = os.path.join(tmp, m)
                 if m.startswith(SKIP_OBJC_PREFIX) and m.endswith(".o"):
                     host_used = True
                 if (m.startswith(SKIP_OBJC_PREFIX) and m.endswith(".o")
-                        and objc_member_is_host_backed(p, host_symbol_table(HOST_KEXE))):
+                        and objc_classes.get(p)
+                        and objc_classes[p] <= host_symbol_table(HOST_KEXE)):
                     skipped_objc += 1
                     print(f"guest: dropping ObjC member {m} (host copy is used)")
                 elif (m.endswith(".o") and os.environ.get("KALDO_GUEST_DROP_CXX") == "1"
@@ -303,7 +326,7 @@ def dedup_archive(src, dst):
 # the host image (ObjC members) are never cached. After a successful merge,
 # entries this merge did not use are removed, so the cache holds one app's set.
 MERGE_CACHE = os.environ.get("KALDO_MERGE_CACHE_DIR", "")
-CACHE_ENTRY = re.compile(r"^[0-9a-f]{64}\.(a|json)$")
+CACHE_ENTRY = re.compile(r"^[0-9a-f]{64}\.(a|json|o)$")
 
 
 def cache_key(data):
@@ -351,102 +374,8 @@ def cache_prune(used):
             os.remove(os.path.join(MERGE_CACHE, f))
 
 
-def main():
-    if len(sys.argv) != 3:
-        print(__doc__)
-        return 2
-    global HOST_KEXE
-    kexe, out = sys.argv[1], sys.argv[2]
-    HOST_KEXE = kexe
-    open(HOT_SYMBOLS_OUT, "w").close()
-    work = tempfile.mkdtemp(prefix="kaldo-merge-")
-    try:
-        return _merge(kexe, out, work)
-    finally:
-        # Remove the ~600 MB work directory on every exit path (exceptions,
-        # SystemExit). KALDO_MERGE_KEEP=1 keeps it for debugging.
-        if os.environ.get("KALDO_MERGE_KEEP") == "1":
-            print(f"kept work dir: {work}", file=sys.stderr)
-        else:
-            shutil.rmtree(work, ignore_errors=True)
-
-
-def _merge(kexe, out, work):
-    payloads = []
-    keys = {}
-    if PAYLOAD_LIST:
-        # The compiler wrote the payload paths (-Xbinary=splitPayloadList=...) instead of embedding the payloads:
-        # read them from disk in the same order (#32). Each archive is copied, like the embedded ones were.
-        paths = [l.strip() for l in open(PAYLOAD_LIST) if l.strip()]
-        for i, src in enumerate(paths):
-            ext = "o" if src.endswith(".o") else "a"
-            p = os.path.join(work, f"p{i:02d}.{ext}")
-            shutil.copyfile(src, p)
-            payloads.append(p)
-            if MERGE_CACHE and ext == "a":
-                keys[p] = cache_key(open(p, "rb").read())
-        print(f"payload list: {PAYLOAD_LIST}")
-    else:
-        raw = os.path.join(work, "boot.bin")
-        dump_section(kexe, raw)
-        blob = open(raw, "rb").read()
-        entries, base = parse_manifest(blob)
-        for i, (kind, o, s) in enumerate(entries):
-            data = blob[base + o:base + o + s]
-            ext = "o" if kind == 0 else "a"
-            p = os.path.join(work, f"p{i:02d}.{ext}")
-            open(p, "wb").write(data)
-            payloads.append(p)
-            if MERGE_CACHE and ext == "a":
-                keys[p] = cache_key(data)
-    print(f"payloads: {len(payloads)}, total {sum(os.path.getsize(p) for p in payloads)} bytes")
-
-    inputs = []
-    # compiler-rt availability check object (real OS version semantics, not a stub).
-    shim = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "compiler-rt-os_version_check.o")
-    if os.path.exists(shim):
-        inputs.append(shim)
-        print(f"shim: {shim}")
-    weakened = 0
-    used, reused = set(), 0
-    for p in payloads:
-        if p.endswith(".a"):
-            key = keys.get(p)
-            hit = cache_get(key) if key else None
-            if hit:
-                cached, meta = hit
-                write_hot_symbols(meta["hot"], p)
-                weakened += meta["weakened"]
-                inputs.append(cached)
-                used.add(key)
-                reused += 1
-                continue
-            dedup = os.path.join(work, "d-" + os.path.basename(p))
-            hot, host_used = dedup_archive(p, dedup)
-            write_hot_symbols(hot, p)
-            weak_here = 0
-            # Patch the duplicate in the ui cache's member object.
-            members = subprocess.check_output(["ar", "t", dedup]).decode("utf-8", "replace")
-            if any(DUP_ARCHIVE_MARKER in m for m in members.splitlines()):
-                tmp = tempfile.mkdtemp(prefix="weak-", dir=work)
-                subprocess.run(["ar", "x", dedup], cwd=tmp, check=True)
-                for m in os.listdir(tmp):
-                    if m.endswith(".o"):
-                        weak_here += weaken_macho_symbol(os.path.join(tmp, m), DUP_SYMBOL)
-                members = sorted(m for m in os.listdir(tmp) if not m.startswith("__.SYMDEF"))
-                subprocess.run(["ar", "rcs", dedup] + members, cwd=tmp, check=True)
-                shutil.rmtree(tmp)
-            weakened += weak_here
-            if key and not host_used:
-                dedup = cache_put(key, dedup, {"hot": hot, "weakened": weak_here})
-                used.add(key)
-            inputs.append(dedup)
-        else:
-            inputs.append(p)
-    if MERGE_CACHE:
-        print(f"merge cache: {reused}/{len(keys)} archives reused ({MERGE_CACHE})")
-
+def link_and_fix(inputs, out):
+    """ld -r the inputs into one object, then the fix-ups JITLink needs (see below)."""
     ld = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "-f", "ld"]).decode().strip()
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"]).decode().strip()
     cmd = [ld, "-r", "-arch", "arm64",
@@ -454,7 +383,6 @@ def _merge(kexe, out, work):
            "-o", out, "-multiply_defined", "suppress"]
     for p in inputs:
         cmd += ["-force_load", p]
-    print(f"weakened symbols: {weakened}")
     print("ld -r ...")
     run(cmd)
     # The compiler-rt object's symbols are private-external; globalize the
@@ -485,6 +413,149 @@ def _merge(kexe, out, work):
                        b"__KALDO")
     else:
         run([LLVM_OBJCOPY, "--remove-section", "__LD,__compact_unwind", out])
+
+
+def main():
+    if len(sys.argv) != 3:
+        print(__doc__)
+        return 2
+    global HOST_KEXE
+    kexe, out = sys.argv[1], sys.argv[2]
+    HOST_KEXE = kexe
+    open(HOT_SYMBOLS_OUT, "w").close()
+    work = tempfile.mkdtemp(prefix="kaldo-merge-")
+    try:
+        return _merge(kexe, out, work)
+    finally:
+        # Remove the ~600 MB work directory on every exit path (exceptions,
+        # SystemExit). KALDO_MERGE_KEEP=1 keeps it for debugging.
+        if os.environ.get("KALDO_MERGE_KEEP") == "1":
+            print(f"kept work dir: {work}", file=sys.stderr)
+        else:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def _merge(kexe, out, work):
+    payloads = []
+    sources = []  # original payload paths (payload-list mode only)
+    keys = {}
+    libs_out = os.path.splitext(out)[0] + ".libs.o"
+    if os.path.lexists(libs_out):
+        os.remove(libs_out)
+    if PAYLOAD_LIST:
+        # The compiler wrote the payload paths (-Xbinary=splitPayloadList=...) instead of embedding the payloads:
+        # read them from disk in the same order (#32). Each archive is copied, like the embedded ones were.
+        paths = [l.strip() for l in open(PAYLOAD_LIST) if l.strip()]
+        for src in paths:
+            # Used in place (read only; every rewrite below goes to a copy in the work directory).
+            sources.append(src)
+            payloads.append(src)
+            if MERGE_CACHE and src.endswith(".a"):
+                with open(src, "rb") as f:
+                    keys[src] = cache_key(f.read())
+        print(f"payload list: {PAYLOAD_LIST}")
+    else:
+        raw = os.path.join(work, "boot.bin")
+        dump_section(kexe, raw)
+        blob = open(raw, "rb").read()
+        entries, base = parse_manifest(blob)
+        for i, (kind, o, s) in enumerate(entries):
+            data = blob[base + o:base + o + s]
+            ext = "o" if kind == 0 else "a"
+            p = os.path.join(work, f"p{i:02d}.{ext}")
+            open(p, "wb").write(data)
+            payloads.append(p)
+            if MERGE_CACHE and ext == "a":
+                keys[p] = cache_key(data)
+    print(f"payloads: {len(payloads)}, total {sum(os.path.getsize(p) for p in payloads)} bytes")
+
+    inputs = []
+    lib_inputs = set()   # inputs that belong to the cached library object (#32 step 2)
+    lib_keys = []        # their cache keys, in order
+    split_ok = bool(LIB_PAYLOAD_DIRS and PAYLOAD_LIST and MERGE_CACHE)
+    def is_lib(p):
+        if not split_ok:
+            return False
+        src = sources[payloads.index(p)]
+        return any(src.startswith(d) for d in LIB_PAYLOAD_DIRS)
+    # compiler-rt availability check object (real OS version semantics, not a stub).
+    shim = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "compiler-rt-os_version_check.o")
+    if os.path.exists(shim):
+        inputs.append(shim)
+        lib_inputs.add(shim)
+        print(f"shim: {shim}")
+    weakened = 0
+    used, reused = set(), 0
+    for p in payloads:
+        if p.endswith(".a"):
+            key = keys.get(p)
+            hit = cache_get(key) if key else None
+            if hit:
+                cached, meta = hit
+                write_hot_symbols(meta["hot"], p)
+                weakened += meta["weakened"]
+                inputs.append(cached)
+                used.add(key)
+                reused += 1
+                if is_lib(p):
+                    lib_inputs.add(cached)
+                    lib_keys.append(key)
+                continue
+            dedup = os.path.join(work, f"d{payloads.index(p):02d}-" + os.path.basename(p))
+            hot, host_used = dedup_archive(p, dedup)
+            write_hot_symbols(hot, p)
+            weak_here = 0
+            # Patch the duplicate in the ui cache's member object.
+            members = subprocess.check_output(["ar", "t", dedup]).decode("utf-8", "replace")
+            if any(DUP_ARCHIVE_MARKER in m for m in members.splitlines()):
+                tmp = tempfile.mkdtemp(prefix="weak-", dir=work)
+                subprocess.run(["ar", "x", dedup], cwd=tmp, check=True)
+                for m in os.listdir(tmp):
+                    if m.endswith(".o"):
+                        weak_here += weaken_macho_symbol(os.path.join(tmp, m), DUP_SYMBOL)
+                members = sorted(m for m in os.listdir(tmp) if not m.startswith("__.SYMDEF"))
+                subprocess.run(["ar", "rcs", dedup] + members, cwd=tmp, check=True)
+                shutil.rmtree(tmp)
+            weakened += weak_here
+            if key and not host_used:
+                dedup = cache_put(key, dedup, {"hot": hot, "weakened": weak_here})
+                used.add(key)
+                if is_lib(p):
+                    lib_inputs.add(dedup)
+                    lib_keys.append(key)
+            # A library archive that cannot be cached (processing looked at the host image, e.g. ui-uikit with its
+            # CMP* ObjC members) is reprocessed every time anyway; it goes into the user object.
+            inputs.append(dedup)
+        else:
+            inputs.append(p)
+    if MERGE_CACHE:
+        print(f"merge cache: {reused}/{len(keys)} archives reused ({MERGE_CACHE})")
+
+    print(f"weakened symbols: {weakened}")
+    if split_ok and lib_keys:
+        h = hashlib.sha256()
+        h.update(open(os.path.abspath(__file__), "rb").read())
+        h.update(repr((os.environ.get("KALDO_KEEP_COMPACT_UNWIND"), "libs")).encode())
+        h.update("".join(lib_keys).encode())
+        lkey = h.hexdigest()
+        cached_libs = os.path.join(MERGE_CACHE, lkey + ".o")
+        used.add(lkey)
+        if os.path.isfile(cached_libs):
+            print(f"library object: reused {cached_libs}")
+        else:
+            tmp = f"{cached_libs}.{os.getpid()}.tmp"
+            link_and_fix([p for p in inputs if p in lib_inputs], tmp)
+            os.replace(tmp, cached_libs)
+            print(f"library object: built {cached_libs} ({os.path.getsize(cached_libs)} bytes)")
+        try:
+            os.link(cached_libs, libs_out)
+        except OSError:
+            shutil.copyfile(cached_libs, libs_out)
+        link_and_fix([p for p in inputs if p not in lib_inputs], out)
+        print(f"library payload: {libs_out}")
+    else:
+        link_and_fix(inputs, out)
     print(f"merged: {out} ({os.path.getsize(out)} bytes)")
     cache_prune(used)
     return 0

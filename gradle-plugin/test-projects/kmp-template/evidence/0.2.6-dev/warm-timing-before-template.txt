@@ -1,0 +1,12 @@
+# warm-restart timing BEFORE: plugin 0.2.5 (release commit 654abcf, published locally as 0.2.5-rel) + toolchain .9 (official), wizard template + core, 2026-11-21 11:30:46, project KmpHr, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 129s payload list (#32): on (67 payloads read from disk); package timing ms=123962 compile=113170 merge=8290 embed+bundle=2502 embed=894 bundle=1608 baseline-wait=0
+ui[1] OK warm=15707 package=7934 relaunch=7773 | compile=3155 merge=2057 embed+bundle=2349 embed=891 bundle=1458 baseline-wait=0 | package timing ms=7561 compile=3155 merge=2057 embed+bundle=2349 embed=891 bundle=1458 baseline-wait=0
+ui[2] OK warm=16667 package=7445 relaunch=9222 | compile=2820 merge=2010 embed+bundle=2273 embed=864 bundle=1409 baseline-wait=0 | package timing ms=7103 compile=2820 merge=2010 embed+bundle=2273 embed=864 bundle=1409 baseline-wait=0
+ui[3] OK warm=15004 package=7329 relaunch=7675 | compile=2604 merge=1998 embed+bundle=2386 embed=845 bundle=1541 baseline-wait=0 | package timing ms=6988 compile=2604 merge=1998 embed+bundle=2386 embed=845 bundle=1541 baseline-wait=0
+app[1] OK warm=16304 package=8652 relaunch=7652 | compile=4244 merge=1846 embed+bundle=2240 embed=834 bundle=1406 baseline-wait=0 | package timing ms=8330 compile=4244 merge=1846 embed+bundle=2240 embed=834 bundle=1406 baseline-wait=0
+app[2] OK warm=16191 package=8370 relaunch=7821 | compile=4011 merge=1783 embed+bundle=2233 embed=837 bundle=1396 baseline-wait=0 | package timing ms=8027 compile=4011 merge=1783 embed+bundle=2233 embed=837 bundle=1396 baseline-wait=0
+app[3] OK warm=16348 package=8454 relaunch=7894 | compile=4087 merge=1685 embed+bundle=2271 embed=829 bundle=1442 baseline-wait=0 | package timing ms=8043 compile=4087 merge=1685 embed+bundle=2271 embed=829 bundle=1442 baseline-wait=0
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 15.7 s, package 7.4 s (compile 2.8, merge 2.0, embed+bundle 2.3, embed 0.9, bundle 1.5, baseline-wait 0.0), relaunch 7.8 s
+median app (3/3 ok): warm 16.3 s, package 8.5 s (compile 4.1, merge 1.8, embed+bundle 2.2, embed 0.8, bundle 1.4, baseline-wait 0.0), relaunch 7.8 s
+summary: 6/6 warm restarts measured

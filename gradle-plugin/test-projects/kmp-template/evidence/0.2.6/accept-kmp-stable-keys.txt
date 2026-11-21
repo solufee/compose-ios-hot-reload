@@ -1,0 +1,110 @@
+# KMP template acceptance, 2026-11-21 12:24:08, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB, port 5568
+# wizard zip sha256 cdf81001083be535f372e78a9fdf639e185689ddc57d190de3f4430fa23d65ab
+# plugin repository a local Maven directory
+## 1. fixture: one expect/actual pair and kotlinx-datetime 0.7.1 (Maven Central) in the wizard template
+   fixture (--signatures): Sig.kt (sigLabel, Describer.describe, @Composable SigBadge with a remember counter), SigCaller.kt (a caller in another file)
+   fixture: a static Text in App() and a Dialog (Open dialog / Close dialog)
+   --multi: modules core (expect/actual, Compose string resource) and base; shared -> core -> base
+## 2. TRYOUT section 7: plugin repository, plugin line, local.properties, .gitignore
+   MainViewController.kt unchanged
+## 2b. release baseline: hotReloadVerifyRelease -Pcmp.hotreload.releaseBaseline=true, sources snapshot
+  release: compiling base
+  release: compiling core
+  release: compiling shared
+  CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=95702b001002, embed-merged.py=19c174720bc6, merge-payloads.py=c44e58281b90, release-text-digest.py=c2fa4df02310)
+  release baseline build 1/1: __text digest b94d9aa8d2fc (raw __text ea6b7114f5d5)
+  release baseline recorded: <WORK>/KmpHr/shared/build/hotreload/release/baseline.fingerprint (73798 symbols, 42 sections, __text digest b94d9aa8d2fc)
+  BUILD SUCCESSFUL in 2m 3s
+PASS release baseline recorded | 124s
+## 3. ./gradlew hotReloadPackage, ./gradlew hotReloadRun
+  CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+  dependency klibs: 7 linked, 88 replaced by the toolchain's copies, 1 duplicates skipped
+  dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6; code that uses API added after those versions does not compile here
+  hot packages: kmphr.core.generated.resources,kmphr.shared.generated.resources,org.example.base,org.example.core,org.example.kmphr; keep compact unwind: true
+  bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 584, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+  package timing ms=120165 compile=111250 merge=7289 embed+bundle=1626 embed=791 bundle=835 baseline-wait=0
+  BUILD SUCCESSFUL in 2m 3s
+PASS package | 124s
+PASS package again (no change) | 4.4s; package timing ms=3707 compile=2552 merge=554 embed+bundle=601 embed=300 bundle=301 baseline-wait=0
+  CMP hot reload: app started (attempt 1, pid 82502, 6.6 s, port 5568, log <WORK>/KmpHr/shared/launch.log)
+  BUILD SUCCESSFUL in 7s
+PASS run | 8.0s pid 82502
+PASS run: EH check FDE > 0, 0 pc-out-of-range | [('129141', '0')]
+PASS run: SELREF stub check 0 mismatch | [('569', '0'), ('110', '0')]
+PASS run: no crash in launch.log
+PASS tap 'Click me!' shows the greeting (commonMain + iosMain actual + kotlinx-datetime) | 'Compose: Hello, iOS 27.2! | tag-ios-1 | 2026-11-20'
+PASS core module shows its string resource, actual and base's function | 'Core: Core title v1 | core-ios-1 | core-1 base-1'
+## 3f. forced recomposition (toolchain .6): new code on screen without any tap
+PASS static call site in App() updates without taps -> HOT | pid 82502->82502 labels=['Static: st-2']
+PASS existing lambda (Button content) updates without taps -> HOT | pid 82502->82502
+PASS the lambda changed back updates without taps -> HOT | pid 82502->82502
+PASS the app logged its forced recompositions | 4 'HR forceRecompose' lines; HR forceRecompose recomposers=1 compositions=1 invalidated=96 recomposed=81 deferred=0 via=reload dispatchMs=0 forceMs=0 frameMs=19 totalMs=20 frameEpochMs=1795235329453
+## 3d. Dialog (toolchain .6): opens before and after a reload with the new content; an open Dialog updates
+PASS Dialog opens and closes before any reload
+PASS after a HOT reload the Dialog opens with the new content | 'Dialog: dlg-2 | tag-ios-1' pid 82502->82502
+PASS an open Dialog shows the new content after a HOT reload, then closes | 'Dialog: dlg-3 | tag-ios-1' pid 82502->82502
+PASS no crash or IrLinkageError with Dialog
+## 4. changes
+PASS commonMain body (Greeting.greet) -> HOT | 4.1s exit=0 compat=HOT pid 82502->82502 screen='Compose: Hello again, iOS 27.2! | tag-ios-1 | 2026-11-20'
+PASS commonMain body using kotlinx-datetime (dateLine) -> HOT | 3.9s exit=0 compat=HOT pid 82502->82502 screen='Compose: Hello again, iOS 27.2! | tag-ios-1 | 2026-11-21'
+PASS iosMain actual body (platformTag) -> HOT | 3.8s exit=0 compat=HOT pid 82502->82502 screen='Compose: Hello again, iOS 27.2! | tag-ios-2 | 2026-11-21'
+PASS expect/actual signature (platformTag(n: Int = 0)) -> HOT | 3.9s exit=0 compat=HOT pid 82502->82502 screen='Compose: Hello again, iOS 27.2! | tag-ios-3 | 2026-11-21'
+PASS add an expect/actual fun pair (flavor) and use it -> HOT | 3.9s exit=0 compat=HOT pid 82502->82502 screen='Compose: Hello again, iOS 27.2! | tag-ios-4 sim | 2026-11-21'
+PASS remove the expect/actual fun pair (flavor) -> HOT | 3.9s exit=0 compat=HOT pid 82502->82502 screen='Compose: Hello again, iOS 27.2! | tag-ios-5 | 2026-11-21'
+PASS add an expect/actual class pair (counter-example) -> WARM | 16.8s exit=0 compat=WARM pid 82502->83698 ['WARM expect-actual Clock: expect class added', 'WARM OK ms=13044 ms_package=5794 ms_relaunch=7250 page=- count=-'] screen='Compose: Hello again, iOS 27.2! | tag-ios-5 | 2026-11-21'
+PASS add an expect/actual class pair (counter-example) (after warm restart): EH check FDE > 0, 0 pc-out-of-range | [('129141', '0')]
+PASS add an expect/actual class pair (counter-example) (after warm restart): SELREF stub check 0 mismatch | [('569', '0'), ('110', '0')]
+PASS add an expect/actual class pair (counter-example) (after warm restart): no crash in launch.log
+PASS commonMain body after the pair changes -> HOT | 4.0s exit=0 compat=HOT pid 83698->83698 screen='Compose: Hello once more, iOS 27.2! | tag-ios-5 | 2026-11-21'
+## 4m. library modules: core (direct) and base (only through core)
+PASS base body (library reached only through core) -> HOT | 5.8s exit=0 compat=HOT pid 83698->83698 screen='Core: Core title v1 | core-ios-1 | core-1 base-2'
+PASS core commonMain body -> HOT | 5.2s exit=0 compat=HOT pid 83698->83698 screen='Core: Core title v1 | core-ios-1 | core-2 base-2'
+PASS core iosMain actual body -> HOT | 5.4s exit=0 compat=HOT pid 83698->83698 screen='Core: Core title v1 | core-ios-2 | core-2 base-2'
+PASS core expect/actual signature -> HOT | 5.3s exit=0 compat=HOT pid 83698->83698 screen='Core: Core title v1 | core-ios-3 | core-2 base-2'
+PASS add an expect/actual fun pair in core and use it -> HOT | 5.4s exit=0 compat=HOT pid 83698->83698 screen='Core: Core title v1 | core-ios-4 sim | core-2 base-2'
+PASS remove the expect/actual fun pair in core -> HOT | 5.4s exit=0 compat=HOT pid 83698->83698 screen='Core: Core title v1 | core-ios-5 | core-2 base-2'
+PASS base body after the pair changes -> HOT | 5.7s exit=0 compat=HOT pid 83698->83698 screen='Core: Core title v1 | core-ios-5 | core-2 base-3'
+## 4r. a Compose string resource of core: one hotReload -> warm restart (resources are copied at package time)
+PASS core string resource (composeResources) -> WARM | 18.1s exit=0 compat=WARM pid 83698->84937 ['WARM compose-resources: 1 file(s) changed since packaging (composeResources/kmphr.core.generated.resources/values/strings.commonMain.cvr); resources are copied into the app when it is packaged', 'WARM OK ms=12734 ms_package=5477 ms_relaunch=7257 page=- count=-'] screen='Core: Core title v2 | core-ios-5 | core-2 base-3'
+PASS core string resource (composeResources) (after warm restart): EH check FDE > 0, 0 pc-out-of-range | [('129141', '0')]
+PASS core string resource (composeResources) (after warm restart): SELREF stub check 0 mismatch | [('569', '0'), ('110', '0')]
+PASS core string resource (composeResources) (after warm restart): no crash in launch.log
+## 4s. signature changes are HOT (#28): every caller is recompiled into the patch
+PASS top-level: parameter with a default added (callers in two files) -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: sl-2!/ds-1 | sl-2!', 'Badge: b-1 | taps=0'] notes=[]
+PASS top-level: parameter removed -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: sl-3/ds-1 | sl-3', 'Badge: b-1 | taps=0'] notes=[]
+PASS top-level: return type changed (String -> List<String>) -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: [sl-4]/ds-1 | [sl-4]', 'Badge: b-1 | taps=0'] notes=[]
+PASS final member: parameter added -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: [sl-4]/P-ds-2 | [sl-4]', 'Badge: b-1 | taps=0'] notes=[]
+PASS @Composable: parameter added (forceRecompose on), remember-reset note -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: [sl-4]/P-ds-2 | [sl-4]', 'Badge: b-1R | taps=2'] notes=['compat: note: SigBadge changed its signature; its remember state is kept (stable keys), unless its remember calls changed too, then it starts over']
+PASS #47 stable keys: the composable keeps its remember state across the parameter change (taps=2), the caller's too | before taps=2: True; after: 'Badge: b-1R | taps=2'; greeting kept: True
+PASS the changed composable keeps working (a tap counts on from 2)
+PASS #47: a remember added in front (count changed) -> HOT, that composable starts over with correct values -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: [sl-4]/P-ds-2 | [sl-4]', 'Badge: b-1R | taps=0 | extra-1'] notes=[]
+PASS #47: a remember type changed (Int -> Long) -> HOT, that composable starts over (taps=0), no wrong value -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: [sl-4]/P-ds-2 | [sl-4]', 'Badge: b-1R | taps=0 | extra-1 | L'] notes=[]
+PASS after the type change the counter works as Long state
+PASS #47: hotReload with stableKeys=false on an app packaged with it on is refused (nothing sent) | > CMP hot reload: stableKeys is off now but the app was packaged with it on; every compile of one app must agree. Run ./gradlew hotReloadPackage hotReloadRun (or set it back).
+PASS the same change with the packaged setting -> HOT -> HOT, same PID, new output without taps | pid 84937->84937 ['Sig: [sl-5]/P-ds-2 | [sl-5]', 'Badge: b-1R | taps=1 | extra-1 | L'] notes=[]
+## 4s-m. cross-module callers
+PASS base: parameter added, caller in core (another module) -> HOT | 5.8s exit=0 compat=HOT pid 84937->84937 screen='Core: Core title v2 | core-ios-5 | core-2 base-4'
+PASS core @Composable: parameter added, caller in shared (another module) -> HOT with a note | 5.3s notes=['compat: note: CoreBadge changed its signature; its remember state is kept (stable keys), unless its remember calls changed too, then it starts over'] ['Core: Core title v2 | core-ios-5 | core-2 base-4!']
+PASS no crash or IrLinkageError after the signature changes
+## 4f. control: relaunched with -Pcmp.hotreload.forceRecompose=false, the static call site stays stale
+PASS forceRecompose=false: app starts with it off, the reload is HOT, the static call site stays stale | startup line ['HR forceRecompose: off (KONAN_HR_FORCE_RECOMPOSE=0)'], forced recompositions 0, labels=['Static: st-2']
+PASS forceRecompose off: a @Composable signature change is WARM (not sent) | ['WARM signature SigBadge: signature changed: @Composable (text: kotlin/String, rim: kotlin/String /* = ... */): kotlin/Unit -> @Composable (text: kotlin/String, rim: kotlin/String /* = ... */, tail: kotlin/String /* = ... */): kotlin/Unit (@Composable with forceRecompose off)']
+PASS back to the default (forceRecompose on): the next change shows without taps | labels=['Static: st-on']
+## 5. klibs with edited manifests (extraKlibs) stop the build before compiling
+PASS edited manifest future-abi: build stops with the library named | - future-abi.klib: built for klib ABI 2.7.0, the toolchain's compiler reads up to 2.5.0. Use a release of this library built with Kotlin 2.5 or older.
+PASS edited manifest future-metadata: build stops with the library named | - future-metadata.klib: klib metadata 2.7.0 is newer than the toolchain's compiler can read (up to 2.6.0). Use an older release of this library.
+PASS edited manifest ancient-abi: build stops with the library named | - ancient-abi.klib: built for klib ABI 1.4.1, older than the oldest the compiler reads (1.6.0, Kotlin 1.6.10). Use a newer release of this library.
+PASS package again without the edited klibs | 5.9s
+## 6. release: sources back to the baseline state, then hotReloadVerifyRelease (daemons still running)
+  release: compiling base
+  release: compiling core
+  release: compiling shared
+  CMP hot reload: tools from plugin jar (sha256 HrCompileDaemon.java=4c5426a596ad, compat-classify.py=95702b001002, embed-merged.py=19c174720bc6, merge-payloads.py=c44e58281b90, release-text-digest.py=c2fa4df02310)
+  release unchanged: 73798 symbols, 42 section sizes and the __text digest b94d9aa8d2fc identical to the baseline (raw __text ea6b7114f5d5 -> ea6b7114f5d5, recorded only)
+  BUILD SUCCESSFUL in 2m 1s
+PASS hotReloadVerifyRelease (ReleaseCheck) | 121s
+PASS Xcode/KMP framework task graphs identical with and without the plugin (dry run) | 82 tasks with, 82 without
+## 7. stop
+terminated org.example.kmphr.hotreload (pid 86309); compile daemons stopped; app running now: False
+PASS libKaldo wrote no SELREF debug log (/tmp/gap-selrefs.log unchanged) | None -> None
+summary: 64/64 PASS
