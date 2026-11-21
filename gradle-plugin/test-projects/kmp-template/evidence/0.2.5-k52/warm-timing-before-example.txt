@@ -1,0 +1,12 @@
+# warm-restart timing BEFORE (main 7add617, example app), 2026-11-21 09:24:47, project example-gradle, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 19s package timing ms=15796 compile=10720 merge=2853 embed+bundle=2223
+ui[1] OK warm=18131 package=11282 relaunch=6849 | compile=5433 merge=2698 embed+bundle=2153 embed=None bundle=None baseline-wait=None | package timing ms=10284 compile=5433 merge=2698 embed+bundle=2153
+ui[2] OK warm=18225 package=11321 relaunch=6904 | compile=5284 merge=2818 embed+bundle=2222 embed=None bundle=None baseline-wait=None | package timing ms=10324 compile=5284 merge=2818 embed+bundle=2222
+ui[3] OK warm=17528 package=10960 relaunch=6568 | compile=5124 merge=2712 embed+bundle=2197 embed=None bundle=None baseline-wait=None | package timing ms=10033 compile=5124 merge=2712 embed+bundle=2197
+app[1] OK warm=18678 package=12075 relaunch=6603 | compile=6678 merge=2728 embed+bundle=2300 embed=None bundle=None baseline-wait=None | package timing ms=11706 compile=6678 merge=2728 embed+bundle=2300
+app[2] OK warm=21039 package=11979 relaunch=9060 | compile=6645 merge=2752 embed+bundle=2190 embed=None bundle=None baseline-wait=None | package timing ms=11587 compile=6645 merge=2752 embed+bundle=2190
+app[3] OK warm=18127 package=11806 relaunch=6321 | compile=6597 merge=2651 embed+bundle=2195 embed=None bundle=None baseline-wait=None | package timing ms=11443 compile=6597 merge=2651 embed+bundle=2195
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 18.1 s, package 11.3 s (compile 5.3, merge 2.7, embed+bundle 2.2, embed -, bundle -, baseline-wait -), relaunch 6.8 s
+median app (3/3 ok): warm 18.7 s, package 12.0 s (compile 6.6, merge 2.7, embed+bundle 2.2, embed -, bundle -, baseline-wait -), relaunch 6.6 s
+summary: 6/6 warm restarts measured

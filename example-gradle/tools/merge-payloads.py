@@ -30,6 +30,11 @@ DUP_SYMBOL = "_kfun:androidx.compose.ui.text.<get-DefaultCacheSize>#internal"
 DUP_ARCHIVE_MARKER = "ui-cache.a"
 
 
+# Optional (#32): a file listing the payload paths, written by the compiler with -Xbinary=splitPayloadList=<file>.
+# When set, the payloads are read from those paths instead of the executable's __kaldo_boot section.
+PAYLOAD_LIST = os.environ.get("KALDO_PAYLOAD_LIST", "")
+
+
 def rename_section(path, old_sect, new_sect, old_seg, new_seg):
     """Rename a Mach-O section in place (llvm-objcopy cannot express the comma)."""
     d = bytearray(open(path, "rb").read())
@@ -367,20 +372,33 @@ def main():
 
 
 def _merge(kexe, out, work):
-    raw = os.path.join(work, "boot.bin")
-    dump_section(kexe, raw)
-    blob = open(raw, "rb").read()
-    entries, base = parse_manifest(blob)
     payloads = []
     keys = {}
-    for i, (kind, o, s) in enumerate(entries):
-        data = blob[base + o:base + o + s]
-        ext = "o" if kind == 0 else "a"
-        p = os.path.join(work, f"p{i:02d}.{ext}")
-        open(p, "wb").write(data)
-        payloads.append(p)
-        if MERGE_CACHE and ext == "a":
-            keys[p] = cache_key(data)
+    if PAYLOAD_LIST:
+        # The compiler wrote the payload paths (-Xbinary=splitPayloadList=...) instead of embedding the payloads:
+        # read them from disk in the same order (#32). Each archive is copied, like the embedded ones were.
+        paths = [l.strip() for l in open(PAYLOAD_LIST) if l.strip()]
+        for i, src in enumerate(paths):
+            ext = "o" if src.endswith(".o") else "a"
+            p = os.path.join(work, f"p{i:02d}.{ext}")
+            shutil.copyfile(src, p)
+            payloads.append(p)
+            if MERGE_CACHE and ext == "a":
+                keys[p] = cache_key(open(p, "rb").read())
+        print(f"payload list: {PAYLOAD_LIST}")
+    else:
+        raw = os.path.join(work, "boot.bin")
+        dump_section(kexe, raw)
+        blob = open(raw, "rb").read()
+        entries, base = parse_manifest(blob)
+        for i, (kind, o, s) in enumerate(entries):
+            data = blob[base + o:base + o + s]
+            ext = "o" if kind == 0 else "a"
+            p = os.path.join(work, f"p{i:02d}.{ext}")
+            open(p, "wb").write(data)
+            payloads.append(p)
+            if MERGE_CACHE and ext == "a":
+                keys[p] = cache_key(data)
     print(f"payloads: {len(payloads)}, total {sum(os.path.getsize(p) for p in payloads)} bytes")
 
     inputs = []

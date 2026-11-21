@@ -184,13 +184,35 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         return externalKlibs().flatMap { listOf("-l", it) } + libs.flatMap { listOf("-l", s.klibOf(it).path) }
     }
 
+    /**
+     * #29/#47: Compose compiler options of every hot-reload compile (library klibs, package, patch, the classifier's app
+     * klib). Release compiles (ReleaseCheck) never use them.
+     */
+    val composeOptions: List<String> by lazy {
+        if (s.stableKeys && composePluginKnows(File(s.composePlugin), STABLE_KEYS)) listOf("-P", STABLE_KEYS_OPTION) else emptyList()
+    }
+
+    /** "on", "off" or "unsupported" (the toolchain's Compose compiler does not know the flag), for messages and the package record. */
+    val stableKeysState: String get() = when {
+        composeOptions.isNotEmpty() -> "on"
+        !s.stableKeys -> "off"
+        else -> "unsupported"
+    }
+
     fun libraryArgs(m: HrModule, out: File = s.klibOf(m)): List<String> = listOf(
         "-target", s.target, "-p", "library", "-g",
-        "-Xplugin=${s.composePlugin}", "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
-    ) + klibLinks(m) + sourceArgs(m) + listOf("-o", out.path.removeSuffix(".klib"))
+        "-Xplugin=${s.composePlugin}",
+    ) + composeOptions + listOf("-opt-in=kotlinx.cinterop.ExperimentalForeignApi") + klibLinks(m) + sourceArgs(m) + listOf("-o", out.path.removeSuffix(".klib"))
 
-    /** Identical for package and reload, so the incremental caches are shared (only -o and the dump differ). */
-    fun programArgs(output: File, dumpCaches: File?): List<String> {
+    /**
+     * #52 (#32, toolchain .9+): the package compile writes the bootstrap payload paths to a list instead of copying
+     * ~100-200 MB of payloads into the base executable; merge-payloads reads them from disk (KALDO_PAYLOAD_LIST).
+     * Only when the toolchain's compiler knows the binary option; release compiles never use it.
+     */
+    val splitPayloads: Boolean by lazy { compilerKnowsSplitPayloadList(File(s.compilerJar)) }
+
+    /** Identical for package and reload, so the incremental caches are shared (only -o, the dump and [packageOnly] differ). */
+    fun programArgs(output: File, dumpCaches: File?, packageOnly: List<String> = emptyList()): List<String> {
         return listOf(
             "-target", s.target, "-p", "program", "-g",
             "-Xcompilation-scheme=split",
@@ -199,12 +221,13 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             *autoCacheRoots().map { "-Xauto-cache-from=$it" }.toTypedArray(),
             "-Xauto-cache-dir=${File(work, "auto-cache").path}",
             "-Xplugin=${s.composePlugin}",
+            *composeOptions.toTypedArray(),
             "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
         ) + s.linkerOptions.map { "-linker-option=$it" } +
             listOf("-linker-option=-force_load", "-linker-option=${s.objcUtilsLib}") +
             klibLinks(null) +
             (dumpCaches?.let { listOf("-Xdump-built-caches-to=${it.path}") } ?: emptyList()) +
-            listOf("-o", output.path) + sourceArgs(s.app)
+            packageOnly + listOf("-o", output.path) + sourceArgs(s.app)
     }
 
     // ---------------------------------------------------------------- compile
@@ -362,7 +385,11 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * [daemons]: compile through the klib daemon (it never runs cache-only, INTERFACE §5), falling back to
      * kotlinc-native when it is unreachable or fails.
      */
-    fun packageApp(tools: Tools, daemons: Daemons? = null) {
+    /**
+     * [beside] runs in the background after the compile, next to merge/embed/bundle (the classifier baseline needs only
+     * the module klibs and the app sources, #32/#52); its failure fails the package.
+     */
+    fun packageApp(tools: Tools, daemons: Daemons? = null, beside: (() -> Unit)? = null) {
         s.sourceSetWarnings.forEach { logger.warn(it) }
         val t0 = System.currentTimeMillis()
         writeGeneratedMain()
@@ -373,28 +400,43 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         // (e.g. ComposeHRBase*). Keep the reference driver's names: a bare "base" collides at bootstrap.
         val base = File(app, "${info.executable}-base.kexe")
         base.delete()
-        compile(programArgs(base, null), if (daemons != null) s.klibSocket else null, "klib", cacheOnly = false, daemons = daemons,
+        logger.lifecycle("stable keys (remember kept across signature changes, #29): $stableKeysState")
+        val payloadList = File(app, "payloads.txt").apply { delete() }
+        val splitArgs = if (splitPayloads) listOf("-Xbinary=splitPayloadList=${payloadList.path}") else emptyList()
+        compile(programArgs(base, null, splitArgs), if (daemons != null) s.klibSocket else null, "klib", cacheOnly = false, daemons = daemons,
             retryDirectOnError = true)
         if (!base.isFile) throw GradleException("CMP hot reload: the package compile reported success but ${base.path} is missing")
         val tCompile = System.currentTimeMillis()
+        val pending = beside?.let { java.util.concurrent.CompletableFuture.runAsync(it) }
 
         val merged = File(app, "merged-bootstrap.o")
         val packages = hotPackages()
-        val env = mergeEnvironment(packages)
+        val usePayloadList = payloadList.isFile && payloadList.length() > 0
+        logger.lifecycle("payload list (#32): " + when {
+            usePayloadList -> "on (${payloadList.readLines().count { it.isNotBlank() }} payloads read from disk)"
+            splitPayloads -> "requested but not written; payloads embedded"
+            else -> "not supported by this toolchain; payloads embedded"
+        })
+        val env = mergeEnvironment(packages) + (if (usePayloadList) mapOf("KALDO_PAYLOAD_LIST" to payloadList.path) else emptyMap())
         logger.lifecycle("hot packages: ${packages.joinToString(",").ifEmpty { "<none>" }}; keep compact unwind: ${s.keepCompactUnwind}")
         Proc.check(listOf("python3", "-I", tools.mergePayloads.path, base.path, merged.path), env, logger = logger, echo = false)
         val tMerge = System.currentTimeMillis()
         logger.lifecycle("hot symbols: ${s.hotSymbols.readLines().count { it.isNotBlank() }}")
         val exe = File(app, "${info.executable}.kexe")
+        exe.delete()
         Proc.check(
             listOf("python3", "-I", tools.embedMerged.path, base.path, merged.path, exe.path),
             s.llvmHome?.let { mapOf("KONAN_LLVM_HOME" to it) } ?: emptyMap(), logger = logger,
         )
+        val tEmbed = System.currentTimeMillis()
 
         val bundle = appBundle(info)
         bundle.deleteRecursively()
         File(bundle, "Frameworks").mkdirs()
-        exe.copyTo(File(bundle, info.executable))
+        // clonefile on APFS (no copy of the large executable); a plain copy elsewhere.
+        if (Proc.run(listOf("cp", "-c", exe.path, File(bundle, info.executable).path), echo = false).exit != 0) {
+            exe.copyTo(File(bundle, info.executable), overwrite = true)
+        }
         File(bundle, info.executable).setExecutable(true)
         File(s.infoPlist).copyTo(File(bundle, "Info.plist"))
         // Compose Multiplatform resources (Res.drawable...): looked up under <bundle>/compose-resources/.
@@ -417,10 +459,19 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         }
         Proc.check(listOf("codesign", "--force", "--deep", "--sign", "-", bundle.path), echo = false)
         verifyBundle(bundle, info, merged)
+        val tBundle = System.currentTimeMillis()
+        try {
+            pending?.get()
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw (e.cause as? GradleException) ?: GradleException("CMP hot reload: ${e.cause}", e.cause)
+        }
         val tEnd = System.currentTimeMillis()
         logger.lifecycle("package: ${bundle.path} (ad-hoc signed)")
         markApplied(t0)
-        logger.lifecycle("package timing ms=${tEnd - t0} compile=${tCompile - t0} merge=${tMerge - tCompile} embed+bundle=${tEnd - tMerge}")
+        // The first four fields keep their meaning (scripts parse them); embed, bundle and the wait for [beside] follow.
+        logger.lifecycle("package timing ms=${tEnd - t0} compile=${tCompile - t0} merge=${tMerge - tCompile} embed+bundle=${tBundle - tMerge} " +
+            "embed=${tEmbed - tMerge} bundle=${tBundle - tEmbed} baseline-wait=${tEnd - tBundle}")
+        packagedStableKeys.writeText(stableKeysState)
     }
 
     // ---------------------------------------------------------------- reload
@@ -500,8 +551,17 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      */
 
     /** Compile (cache-only), collect this run's objects, merge them and check the symbols; returns the object to send. */
+    /** The stable-keys state the running app was packaged with (#47); a patch must be compiled the same way. */
+    val packagedStableKeys get() = File(work, "stable-keys.txt")
+
     fun preparePatch(daemons: Daemons?): File {
         writeGeneratedMain()
+        packagedStableKeys.takeIf { it.isFile }?.readText()?.trim()?.let { packaged ->
+            if (packaged != stableKeysState) throw GradleException(
+                "CMP hot reload: stableKeys is $stableKeysState now but the app was packaged with it $packaged; every compile of one app " +
+                    "must agree. Run ./gradlew hotReloadPackage hotReloadRun (or set it back).",
+            )
+        }
         if (!s.hotSymbols.isFile) throw GradleException("CMP hot reload: no packaged app in ${s.appDir}; run ./gradlew hotReloadPackage first")
         // #7: the sources are byte for byte what the running app was given - nothing to compile or send. (A failed
         // attempt does not update the digest, so the next run still compiles; resource-only changes are judged by
@@ -684,6 +744,29 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
                 describe("external", "dependency klibs changed"),
                 if (changed.any { it.startsWith("args ") || it.startsWith("toolchain ") }) "compiler arguments or toolchain changed" else null,
             ).joinToString("; ").ifEmpty { "inputs changed" }
+        }
+
+        /** Whether this Kotlin/Native compiler jar knows `-Xbinary=splitPayloadList` (toolchain .9+, #32). */
+        fun compilerKnowsSplitPayloadList(jar: File): Boolean = try {
+            java.util.zip.ZipFile(jar).use { z ->
+                val e = z.getEntry("org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.class") ?: return false
+                String(z.getInputStream(e).readBytes(), Charsets.ISO_8859_1).contains("splitPayloadList")
+            }
+        } catch (e: java.io.IOException) {
+            false
+        }
+
+        const val STABLE_KEYS = "HotReloadStableKeys"
+        const val STABLE_KEYS_OPTION = "plugin:androidx.compose.compiler.plugins.kotlin:featureFlag=$STABLE_KEYS"
+
+        /** Whether this Compose compiler plugin jar knows [flag] (a FeatureFlag enum entry; toolchain .9+), as hotreload.sh checks. */
+        fun composePluginKnows(jar: File, flag: String): Boolean = try {
+            java.util.zip.ZipFile(jar).use { z ->
+                val e = z.getEntry("androidx/compose/compiler/plugins/kotlin/FeatureFlag.class") ?: return false
+                String(z.getInputStream(e).readBytes(), Charsets.ISO_8859_1).contains(flag)
+            }
+        } catch (e: java.io.IOException) {
+            false
         }
 
         fun pendingArchives(pending: List<String>, built: List<String>): List<String> =

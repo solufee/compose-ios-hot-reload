@@ -1,0 +1,12 @@
+# warm-restart timing AFTER (plugin 0.2.5-k52 = feat/052-split-payloads, wizard template + core), 2026-11-21 09:33:11, project KmpHr, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 15s payload list (#32): on (67 payloads read from disk); package timing ms=11305 compile=7162 merge=1955 embed+bundle=2188 embed=863 bundle=1325 baseline-wait=0
+ui[1] OK warm=19370 package=6963 relaunch=12407 | compile=2621 merge=1734 embed+bundle=2262 embed=846 bundle=1416 baseline-wait=0 | package timing ms=6617 compile=2621 merge=1734 embed+bundle=2262 embed=846 bundle=1416 baseline-wait=0
+ui[2] OK warm=15104 package=7194 relaunch=7910 | compile=2750 merge=1788 embed+bundle=2322 embed=843 bundle=1479 baseline-wait=0 | package timing ms=6860 compile=2750 merge=1788 embed+bundle=2322 embed=843 bundle=1479 baseline-wait=0
+ui[3] OK warm=15012 package=7116 relaunch=7896 | compile=2686 merge=1803 embed+bundle=2269 embed=844 bundle=1425 baseline-wait=0 | package timing ms=6758 compile=2686 merge=1803 embed+bundle=2269 embed=844 bundle=1425 baseline-wait=0
+app[1] OK warm=17478 package=8496 relaunch=8982 | compile=4167 merge=1734 embed+bundle=2232 embed=861 bundle=1371 baseline-wait=0 | package timing ms=8133 compile=4167 merge=1734 embed+bundle=2232 embed=861 bundle=1371 baseline-wait=0
+app[2] OK warm=16680 package=8743 relaunch=7937 | compile=4149 merge=1954 embed+bundle=2281 embed=849 bundle=1432 baseline-wait=0 | package timing ms=8384 compile=4149 merge=1954 embed+bundle=2281 embed=849 bundle=1432 baseline-wait=0
+app[3] OK warm=22163 package=8577 relaunch=13586 | compile=4156 merge=1707 embed+bundle=2337 embed=853 bundle=1484 baseline-wait=0 | package timing ms=8200 compile=4156 merge=1707 embed+bundle=2337 embed=853 bundle=1484 baseline-wait=0
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 15.1 s, package 7.1 s (compile 2.7, merge 1.8, embed+bundle 2.3, embed 0.8, bundle 1.4, baseline-wait 0.0), relaunch 7.9 s
+median app (3/3 ok): warm 17.5 s, package 8.6 s (compile 4.2, merge 1.7, embed+bundle 2.3, embed 0.9, bundle 1.4, baseline-wait 0.0), relaunch 9.0 s
+summary: 6/6 warm restarts measured

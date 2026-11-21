@@ -166,6 +166,14 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
     abstract val mainWaitMs: Property<Int>
 
     /**
+     * Toolchain .9+ (#29): hot-reload compiles pass the Compose compiler flag `HotReloadStableKeys`, so a composable keeps
+     * its `remember` state when its parameter list changes (a changed `remember` type or count resets it safely). Used
+     * only when the toolchain's Compose compiler knows the flag; never in release builds. true (default) or false
+     * (`-Pcmp.hotreload.stableKeys=false`). A change needs `./gradlew hotReloadPackage` (every compile of one app must agree).
+     */
+    abstract val stableKeys: Property<Boolean>
+
+    /**
      * UIDeviceFamily of the Info.plist the plugin generates for an app module without one (#9): listOf(1) iPhone
      * (default), listOf(1, 2) iPhone and iPad, listOf(2) iPad. Also `-Pcmp.hotreload.deviceFamily=1,2`. An app module
      * that has its own Info.plist uses it as is (this setting is then ignored, with a warning).

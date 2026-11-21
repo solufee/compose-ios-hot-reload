@@ -1174,10 +1174,10 @@ index fcde08759a5..caa29a5f2a8 100644
  internal fun <Context, Input, Output, P> PhaseEngine<Context>.runAndMeasurePhase(phase: P, input: Input, disable: Boolean = false): Output
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/BootstrapMetadata.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/BootstrapMetadata.kt
 new file mode 100644
-index 00000000000..22406d53d85
+index 00000000000..81e6e816024
 --- /dev/null
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/BootstrapMetadata.kt
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,211 @@
 +/*
 + * Copyright 2010-2026 JetBrains s.r.o. and Kotlin Programming Language contributors.
 + * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
@@ -1229,7 +1229,9 @@ index 00000000000..22406d53d85
 +internal data class BootstrapCompilationMetadata(
 +        val forceLoadCaches: List<String>,
 +        val payloadsToLoadAtRuntime: List<String>,
-+        val resolvedCaches: ResolvedCacheBinaries
++        val resolvedCaches: ResolvedCacheBinaries,
++        /** Zero bytes reserved after the manifest, so a packager can replace the section with a bigger payload later. */
++        val reserveBytes: Long = 0,
 +)
 +
 +private enum class PayloadKind(val raw: Int) {
@@ -1331,7 +1333,15 @@ index 00000000000..22406d53d85
 +        ByteOrder.LITTLE_ENDIAN
 +    }
 +    val manifestBytes = manifest.toByteArray(targetByteOrder)
-+    val dataInitializer = LLVMConstStringInContext(context, manifestBytes.toCValues(), manifestBytes.size, 1)
++    val manifestInitializer = LLVMConstStringInContext(context, manifestBytes.toCValues(), manifestBytes.size, 1)
++    val dataInitializer = if (metadata.reserveBytes > 0) {
++        require(metadata.reserveBytes <= Int.MAX_VALUE) { "The bootstrap reserve is too large: ${metadata.reserveBytes} bytes." }
++        // A zeroinitializer costs nothing in LLVM, unlike the payload bytes it stands in for.
++        val reserve = LLVMConstNull(LLVMArrayType(LLVMInt8TypeInContext(context), metadata.reserveBytes.toInt()))!!
++        LLVMConstStructInContext(context, listOf(manifestInitializer, reserve).toCValues(), 2, 1)!!
++    } else {
++        manifestInitializer
++    }
 +    val dataGlobal = LLVMAddGlobal(this, LLVMTypeOf(dataInitializer), BOOTSTRAP_START_MANIFEST_DATA_NAME).apply {
 +        LLVMSetInitializer(this, dataInitializer)
 +        LLVMSetGlobalConstant(this, 1)
@@ -1381,10 +1391,10 @@ index 00000000000..22406d53d85
 +}
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/SplitCompilationSupport.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/SplitCompilationSupport.kt
 new file mode 100644
-index 00000000000..97c5c52dcfd
+index 00000000000..6557fc8b40b
 --- /dev/null
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/driver/phases/split/SplitCompilationSupport.kt
-@@ -0,0 +1,292 @@
+@@ -0,0 +1,301 @@
 +/*
 + * Copyright 2010-2026 JetBrains s.r.o. and Kotlin Programming Language contributors.
 + * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
@@ -1405,6 +1415,7 @@ index 00000000000..97c5c52dcfd
 +import org.jetbrains.kotlin.backend.konan.llvm.runtime.RuntimeModule
 +import org.jetbrains.kotlin.backend.konan.llvm.runtime.RuntimeModulesConfig
 +import org.jetbrains.kotlin.backend.konan.util.absoluteNormalizedPathString
++import org.jetbrains.kotlin.config.nativeBinaryOptions.BinaryOptions
 +import org.jetbrains.kotlin.config.nativeBinaryOptions.CCallMode
 +import org.jetbrains.kotlin.ir.IrBuiltIns
 +import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
@@ -1612,8 +1623,16 @@ index 00000000000..97c5c52dcfd
 +    // caches linked with `ld -r`) to replace the per-cache payload list. This
 +    // avoids JITLink materializing individual Compose cache archives.
 +    val mergedBootstrapPath = System.getenv("KONAN_SPLIT_MERGED_BOOTSTRAP")
++    // Hot reload packaging: hand the payload list to the packager instead of copying ~100 MB of payloads into the
++    // executable through LLVM (they are read back out and replaced by one merged payload right after).
++    val payloadListPath = context.config.configuration.get(BinaryOptions.splitPayloadList)
 +    val effectiveManifest = if (!mergedBootstrapPath.isNullOrBlank()) {
 +        manifest.copy(payloadsToLoadAtRuntime = listOf(mergedBootstrapPath))
++    } else if (!payloadListPath.isNullOrBlank()) {
++        val existing = manifest.payloadsToLoadAtRuntime.filter { Path(it).exists() }
++        Path(payloadListPath).writeText(existing.joinToString("\n", postfix = "\n"))
++        // Room for the merged payload the packager embeds (it is smaller than the payloads it is made of).
++        manifest.copy(payloadsToLoadAtRuntime = emptyList(), reserveBytes = existing.sumOf { Path(it).fileSize() } + (1L shl 20))
 +    } else {
 +        manifest
 +    }
@@ -5211,3 +5230,162 @@ index 58b02f74028..1cafdb869db 100644
      val runtimeDefinitions get() = targetList("runtimeDefinitions")
  }
  
+diff --git a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/ComposePlugin.kt b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/ComposePlugin.kt
+index a371b4bfea6..f7a5c3cdd2a 100644
+--- a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/ComposePlugin.kt
++++ b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/ComposePlugin.kt
+@@ -415,6 +415,8 @@ enum class FeatureFlag(val featureName: String, val default: Boolean) {
+     IntrinsicRemember("IntrinsicRemember", default = true),
+     OptimizeNonSkippingGroups("OptimizeNonSkippingGroups", default = true),
+     PausableComposition("PausableComposition", default = true),
++    /** Hot reload builds only: group keys do not depend on the signature (Issue #29). */
++    HotReloadStableKeys("HotReloadStableKeys", default = false),
+     ;
+ 
+     val disabledName get() = "-$featureName"
+diff --git a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/AbstractComposeLowering.kt b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/AbstractComposeLowering.kt
+index cb72024627f..720b6494728 100644
+--- a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/AbstractComposeLowering.kt
++++ b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/AbstractComposeLowering.kt
+@@ -1265,8 +1265,11 @@ abstract class AbstractComposeLowering(
+             info.used = true
+             return info.key
+         }
+-        val signature = symbol.descriptor.computeJvmDescriptor(withName = false)
+         val name = fqNameForIrSerialization
++        // Hot reload builds (#29 prototype): the key does not depend on the signature, so a composable keeps its
++        // group (and the remember slots in it) when parameters are added or changed.
++        if (FeatureFlag.HotReloadStableKeys.enabled) return "hr:$name".hashCode()
++        val signature = symbol.descriptor.computeJvmDescriptor(withName = false)
+         val stringKey = "$name$signature"
+         return stringKey.hashCode()
+     }
+diff --git a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/ComposableFunctionBodyTransformer.kt b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/ComposableFunctionBodyTransformer.kt
+index 37847226f17..3fbf7054ac7 100644
+--- a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/ComposableFunctionBodyTransformer.kt
++++ b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/ComposableFunctionBodyTransformer.kt
+@@ -2030,8 +2030,14 @@ class ComposableFunctionBodyTransformer(
+ 
+     private fun IrElement.sourceKey(): Int {
+         var hash = functionSourceKey(currentFunctionScope.function)
+-        hash = 31 * hash + (startOffset - currentFunctionScope.function.startOffset)
+-        hash = 31 * hash + (endOffset - currentFunctionScope.function.startOffset)
++        // Hot reload builds (#29): offsets from the start of the body, so a changed parameter list does not move them.
++        val base = if (FeatureFlag.HotReloadStableKeys.enabled) {
++            currentFunctionScope.function.body?.startOffset ?: currentFunctionScope.function.startOffset
++        } else {
++            currentFunctionScope.function.startOffset
++        }
++        hash = 31 * hash + (startOffset - base)
++        hash = 31 * hash + (endOffset - base)
+ 
+ 
+         when (this) {
+diff --git a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/DurableFunctionKeyTransformer.kt b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/DurableFunctionKeyTransformer.kt
+index c5e18994812..573b9b2ef8b 100644
+--- a/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/DurableFunctionKeyTransformer.kt
++++ b/plugins/compose/compiler-hosted/src/main/java/androidx/compose/compiler/plugins/kotlin/lower/DurableFunctionKeyTransformer.kt
+@@ -19,6 +19,7 @@
+ package androidx.compose.compiler.plugins.kotlin.lower
+ 
+ import androidx.compose.compiler.plugins.kotlin.ComposeClassIds
++import androidx.compose.compiler.plugins.kotlin.FeatureFlag
+ import androidx.compose.compiler.plugins.kotlin.FeatureFlags
+ import androidx.compose.compiler.plugins.kotlin.ModuleMetrics
+ import androidx.compose.compiler.plugins.kotlin.analysis.StabilityInferencer
+@@ -34,6 +35,14 @@ import org.jetbrains.kotlin.ir.types.defaultType
+ import org.jetbrains.kotlin.ir.util.constructors
+ import org.jetbrains.kotlin.ir.util.hasAnnotation
+ import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
++import androidx.compose.compiler.plugins.kotlin.hasComposableAnnotation
++import org.jetbrains.kotlin.ir.IrElement
++import org.jetbrains.kotlin.ir.declarations.IrFunction
++import org.jetbrains.kotlin.ir.expressions.IrCall
++import org.jetbrains.kotlin.ir.util.kotlinFqName
++import org.jetbrains.kotlin.ir.util.render
++import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
++import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
+ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
+ 
+ class KeyInfo(
+@@ -132,8 +141,22 @@ class DurableFunctionKeyTransformer(
+     }
+ 
+     override fun visitSimpleFunction(declaration: IrSimpleFunction): IrStatement {
+-        val signature = declaration.signatureString()
+-        val [fullName, success] = buildKey("fun-$signature")
++        // Hot reload builds (#29): the durable key leaves out the parameter list, so a composable keeps
++        // its group when parameters change; same-named functions in one scope still get distinct keys (buildKey).
++        val stable = FeatureFlag.HotReloadStableKeys.enabled
++        val signature = if (stable) {
++            "${declaration.name.asString()}{${declaration.rememberShape()}}"
++        } else {
++            declaration.signatureString()
++        }
++        var keyAndUnique = buildKey("fun-$signature")
++        // Same name and shape twice in one scope (overloads): number the later ones so the keys stay distinct.
++        var ordinal = 2
++        while (stable && !keyAndUnique.second) {
++            keyAndUnique = buildKey("fun-$signature#${ordinal++}")
++        }
++        val fullName = keyAndUnique.first
++        val success = keyAndUnique.second
+         val info = KeyInfo(
+             fullName,
+             declaration.startOffset,
+@@ -144,3 +167,37 @@ class DurableFunctionKeyTransformer(
+         return super.visitSimpleFunction(declaration)
+     }
+ }
++
++/**
++ * Hot reload builds (#29): the slots a function body keeps by position, in source order: every call to a `remember*` function,
++ * to `Composer.cache` and to a generic @Composable, with the callee, its type arguments and its parameter count.
++ * Part of the hot reload group key, so a change of a remembered type, of the number or the order of `remember`
++ * calls gives the function a new group (its state resets) instead of handing an old slot value to new code that
++ * expects another type (Kotlin/Native does not check such casts). Nested functions and lambdas have their own keys.
++ */
++internal fun IrFunction.rememberShape(): String {
++    val parts = mutableListOf<String>()
++    body?.acceptChildrenVoid(object : IrVisitorVoid() {
++        override fun visitElement(element: IrElement) {
++            element.acceptChildrenVoid(this)
++        }
++
++        override fun visitFunction(declaration: IrFunction) {
++            // a nested function or lambda: its slots belong to its own group
++        }
++
++        override fun visitCall(expression: IrCall) {
++            val callee = expression.symbol.owner
++            val name = callee.name.asString()
++            val fq = callee.kotlinFqName.asString()
++            if (name.startsWith("remember") || fq == "androidx.compose.runtime.cache" ||
++                (callee.hasComposableAnnotation() && expression.typeArguments.isNotEmpty())
++            ) {
++                parts += "$fq<" + expression.typeArguments.joinToString(",") { it?.render() ?: "?" } + ">/" +
++                    callee.parameters.size
++            }
++            expression.acceptChildrenVoid(this)
++        }
++    })
++    return parts.joinToString(";")
++}
+diff --git a/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt b/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt
+index 74c9ba2310f..46505d4a130 100644
+--- a/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt
++++ b/native/binary-options/src/main/kotlin/org/jetbrains/kotlin/config/nativeBinaryOptions/BinaryOptions.kt
+@@ -40,6 +40,13 @@ object BinaryOptions : BinaryOptionRegistry() {
+     val objcExportErrorOnNameCollisions by booleanOption()
+ 
+     val objcExportEntryPointsPath by stringOption()
++
++    /**
++     * Split compilation (hot reload packaging only): write the bootstrap payload paths to this file, one per line, and
++     * embed an empty payload manifest instead of copying every payload into the executable. The packaging step reads
++     * the payloads from the list and embeds its own merged payload afterwards.
++     */
++    val splitPayloadList by stringOption()
+     val objcExportExpandEntryPoints by booleanOption()
+ 
+     val objcExportExplicitMethodFamily by booleanOption()

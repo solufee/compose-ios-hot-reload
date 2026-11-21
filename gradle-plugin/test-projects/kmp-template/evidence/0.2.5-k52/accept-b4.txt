@@ -1,0 +1,24 @@
+package timing ms=10030 compile=5706 merge=1901 embed+bundle=2423 embed=860 bundle=1563 baseline-wait=0
+BUILD SUCCESSFUL in 11s
+started app pid 45404
+
+=== B4 matrix ===
+01-text                    hot   PASS pid 45404->45404 render=True shot_changed=True 
+02-color                   hot   PASS pid 45404->45404 render=True shot_changed=True 
+03-if                      hot   PASS pid 45404->45404 render=True shot_changed=True 
+03b-revert-if              hot   PASS pid 45404->45404 render=True shot_changed=True 
+04-fnbody                  hot   PASS pid 45404->45404 render=True shot_changed=True 
+05-add-composable          hot   PASS pid 45404->45404 render=True shot_changed=True 
+06-remove-composable       hot   PASS pid 45404->45404 render=True shot_changed=True 
+07a-add-class              hot   PASS pid 45404->45404 render=True shot_not_checked 
+07b-field-layout           warm  PASS reason=True WARM_OK=True pid 45404->48164 shot_same=True warm_ms=14715 package_ms=7684 relaunch_ms=7031 [compile=2613 merge=2045 embed+bundle=2700]
+08a-add-fun                hot   PASS pid 48164->48164 render=True shot_not_checked 
+08b-signature              hot   PASS pid 48164->48164 render=True shot_not_checked 
+09a-add-inline             hot   PASS pid 48164->48164 render=True shot_not_checked 
+09b-inline-body            warm  PASS reason=True WARM_OK=True pid 48164->49019 shot_same=True warm_ms=18909 package_ms=7408 relaunch_ms=11501 [compile=2566 merge=2066 embed+bundle=2445]
+10a-add-suspend            hot   PASS pid 49019->49019 render=True shot_not_checked 
+10b-suspend-body           warm  PASS reason=True WARM_OK=True pid 49019->49984 shot_same=True warm_ms=13982 package_ms=7292 relaunch_ms=6690 [compile=2520 merge=1993 embed+bundle=2445]
+11-top-level-property      warm  PASS reason=True WARM_OK=True pid 49984->50699 shot_same=True warm_ms=13899 package_ms=7207 relaunch_ms=6692 [compile=2522 merge=1929 embed+bundle=2439]
+12-tap-after-warm          tap   PASS pid 50699->50699 Back@(201.2,528.3)->count=3/page=0 +@(247.5,499.4)->count=4/page=0 Next@(201,569.7)->count=4/page=1 Back@(201.2,528.3)->count=4/page=0 page2_kept4=True page1_counter4=True crash=none
+summary: 17/17 passed
+# sources restored from git

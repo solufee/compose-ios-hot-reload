@@ -102,6 +102,14 @@ Gradle 插件的数字见第 7 节。每轮另外检查：补丁里每个改过�
 | BUSY：补丁到达时主线程被阻塞 4 s | 2 s 后 `HR reload: NOT applied`，不挂住、不崩，补丁不生效；之后重发成功 | 明确失败，不退回监听线程 |
 | LATENCY：同一页面开关各 20 次，reload 请求 → 新帧应用完 | 主队列中位 49.5 / 最大 62 ms，监听线程中位 56.0 / 最大 359 ms | 不增加延迟 |
 | 其他线程（`Dispatchers.Default` 上不睡眠的循环）在 reload 期间停住 | 140/140 | stop-the-world 不变 |
+
+`example-gradle/accept-remember-signature.sh`（Issue #29，工具链 .9 起的 `HotReloadStableKeys`，`example-gradle/accept-remember-signature.txt`）：
+
+| 测试内容 | 结果 | 备注 |
+|---|---|---|
+| 改签名：加带默认值的参数、加不带默认值的参数（调用方传值）、改参数类型、改签名后再改函数体、同文件两个重载 | 7/7 保留 `remember` 状态，同一进程 | 对照（`HR_STABLE_KEYS=0`）全部重置 |
+| 改 `remember` 的类型、在前面插入一个 `remember` | 2/2 整组安全重置，新 `remember` 拿到自己的值 | 对照里旧槽位被当成新类型使用（LIMITATIONS 第 19 条） |
+| release 用新编译器（不传 flag） | 摘要和 .8 相同 | |
 | 反例：C2off（强制重组关）、WINDOW-NOMAIN（`KONAN_HR_RELOAD_ON_MAIN=0`，只有帧入口）、WINDOW-NOFRAME（.7 的行为） | 三个都退出（SIGSEGV） | 不计入；说明 runtime 的主队列这一处是必需的（REPORT §34） |
 
 ---

@@ -68,6 +68,8 @@ data class HrSettings(
     val forceRecompose: Boolean = true,
     /** Toolchain .8+: how long a reload waits for the app's main thread before it is given up (KONAN_HR_MAIN_WAIT_MS). */
     val mainWaitMs: Int = 2000,
+    /** #29/#47: ask for HotReloadStableKeys in hot-reload compiles (used only when the toolchain's Compose compiler knows it). */
+    val stableKeys: Boolean = true,
     // 0.2.0: Kotlin Multiplatform projects
     /** Klibs from the modules' Gradle dependencies, after the toolchain's own copies were taken out. */
     val extraKlibs: List<String> = emptyList(),

@@ -49,6 +49,9 @@ ap.add_argument("--compose", default=None, help="set the template's Compose Mult
 ap.add_argument("--back-handler", action="store_true", help="a BackHandler panel: back events reach the handler, a HOT edit changes it")
 ap.add_argument("--signatures", action="store_true",
                 help="0.2.4 #28: signature changes are HOT (needs --force-recompose for the counter-example)")
+ap.add_argument("--expect-stable-keys", action="store_true",
+                help="0.2.5 #47 (toolchain .9): with --signatures, a @Composable keeps its remember state across a parameter change; "
+                     "a remember count or type change resets it safely; turning stableKeys off without repackaging is refused")
 ap.add_argument("--adaptive", action="store_true", help="at the end: MainViewController hosting a content-sized ComposeUIView (Compose 1.13)")
 ap.add_argument("--prop", action="append", default=[], help="extra key=value for local.properties (e.g. tools of a local toolchain)")
 ap.add_argument("--plist-workaround", action="store_true",
@@ -579,11 +582,41 @@ fun CoreBadge() {
         sig_reload("@Composable: parameter added (forceRecompose on), remember-reset note", "Badge: b-1R | taps=",
                    note="SigBadge changed its signature")
         after = next((l for l in labels() if l.startswith("Badge: ")), None)
-        check("the composable's own remember state starts over, its caller's state is kept (recorded)",
-              before and after == "Badge: b-1R | taps=0" and greeting() == greet_before,
-              f"before taps=2: {before}; after: {after!r}; greeting kept: {greeting() == greet_before}")
-        tap("BadgeTap")
-        check("the changed composable keeps working (a tap counts)", wait(lambda ls: "Badge: b-1R | taps=1" in ls, timeout=10))
+        if a.expect_stable_keys:
+            check("#47 stable keys: the composable keeps its remember state across the parameter change (taps=2), the caller's too",
+                  before and after == "Badge: b-1R | taps=2" and greeting() == greet_before,
+                  f"before taps=2: {before}; after: {after!r}; greeting kept: {greeting() == greet_before}")
+            tap("BadgeTap")
+            check("the changed composable keeps working (a tap counts on from 2)", wait(lambda ls: "Badge: b-1R | taps=3" in ls, timeout=10))
+            # A changed remember count: the old slots must not be read as the new ones (on .8 this read wrong objects).
+            edit(SIG, "    var taps by remember { mutableStateOf(0) }\n", '    val extra = remember { "extra-1" }\n    var taps by remember { mutableStateOf(0) }\n')
+            edit(SIG, 'Text("Badge: $text$rim | taps=$taps")', 'Text("Badge: $text$rim | taps=$taps | $extra")')
+            sig_reload("#47: a remember added in front (count changed) -> HOT, that composable starts over with correct values",
+                       "Badge: b-1R | taps=0 | extra-1")
+            tap("BadgeTap")
+            tap("BadgeTap")
+            wait(lambda ls: "Badge: b-1R | taps=2 | extra-1" in ls, timeout=10)
+            # A changed remember type: Int -> Long state.
+            edit(SIG, "remember { mutableStateOf(0) }", "remember { mutableStateOf(0L) }")
+            edit(SIG, '| $extra")', '| $extra | L")')
+            sig_reload("#47: a remember type changed (Int -> Long) -> HOT, that composable starts over (taps=0), no wrong value",
+                       "Badge: b-1R | taps=0 | extra-1 | L")
+            tap("BadgeTap")
+            check("after the type change the counter works as Long state", wait(lambda ls: "Badge: b-1R | taps=1 | extra-1 | L" in ls, timeout=10))
+            # Every compile of one app must agree: stableKeys off without repackaging is refused.
+            edit(SIG, 'listOf("sl-4")', 'listOf("sl-5")')
+            p0 = pid()
+            rc, out, dt = gradle("hotReload", "-Pcmp.hotreload.stableKeys=false")
+            msg = grep(out, r"stableKeys is off now but the app was packaged with it on")
+            check("#47: hotReload with stableKeys=false on an app packaged with it on is refused (nothing sent)",
+                  rc != 0 and msg and "sent " not in out and pid() == p0, (msg or ["-"])[0][:200])
+            sig_reload("the same change with the packaged setting -> HOT", "Sig: [sl-5]/P-ds-2 | [sl-5]")
+        else:
+            check("the composable's own remember state starts over, its caller's state is kept (recorded)",
+                  before and after == "Badge: b-1R | taps=0" and greeting() == greet_before,
+                  f"before taps=2: {before}; after: {after!r}; greeting kept: {greeting() == greet_before}")
+            tap("BadgeTap")
+            check("the changed composable keeps working (a tap counts)", wait(lambda ls: "Badge: b-1R | taps=1" in ls, timeout=10))
         if a.multi:
             say("## 4s-m. cross-module callers")
             edit(BASE, 'fun baseLine(): String = "base-3"', 'fun baseLine(n: Int = 4): String = "base-$n"')

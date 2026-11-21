@@ -12,14 +12,14 @@
 | 改文案、颜色、普通（非 composable）函数体 | ✅ 10/10 |
 | 增删 composable、改 if 分支 | ✅ 10/10 |
 | 保留页面与 `remember` 状态、PID 不变 | ✅ |
-| 顶层函数、final 成员改签名（含 `expect`/`actual` 函数、增删一对 `expect fun`） | ✅ 0.2.4 起热替换，调用方一起重编；`@Composable` 改签名时它自己的 `remember` 重置一次（要求 forceRecompose 开着） |
+| 顶层函数、final 成员改签名（含 `expect`/`actual` 函数、增删一对 `expect fun`） | ✅ 0.2.4 起热替换，调用方一起重编；`@Composable` 改签名要求 forceRecompose 开着：0.2.4 / .8 时它自己的 `remember` 重置一次，0.2.5 / .9 起保留（稳定 group key） |
 | 类字段布局 / 构造函数 / open、override、接口成员的签名 / inline / suspend / 新增顶层属性 | ✅ 分类器拦下并自动温重启 |
 | 温重启恢复页面与计数器 | ✅ 回到原页面，状态从 `hr-state.json` 恢复（`--hr-state` 启动参数） |
 | iOS 模拟器（arm64），macOS arm64 主机 | ✅ |
 | Gradle 双模块示例（app + ui），一条命令出包 | ✅ |
 | 已有的 Kotlin Multiplatform 工程（向导模板，插件加在 `shared` 上） | ✅ 0.2.0：commonMain/iosMain 函数体热替换；0.2.4 起 `expect`/`actual` 函数改签名、增删一对 `expect fun` 也热替换，增删一对类等仍自动温重启 |
 | KMP 工程的第三方 iOS 依赖 | ✅ 从 Gradle 解析（含传递依赖）；工具链自带的库（stdlib、kotlinx、Compose、AndroidX）只链工具链那一份 |
-| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.4 / 工具链 .8：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
+| 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.5 / 工具链 .9：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
 | KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
 | 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
 | Compose 1.13 的 `ComposeUIView`（嵌在 app 自己的 `UIViewController` 里） | ✅ 0.2.3 实测（工具链 .7，CMP 1.13.0-beta02）：插件生成的入口只调用 `MainViewController()`，和它不冲突；给定宽高时正常显示，热替换后不用点就刷新。⚠️ 两点：`ComposeUIView` 里的内容不进无障碍树；只设 `preferredSizeReportingStrategy = IntrinsicContentSize`、不给宽高时，这个视图在热重载 app 里没有得到尺寸（空白），是否 Compose 本身的行为没有核实，暂时请给定宽高 |
@@ -128,13 +128,17 @@
    `Can not get instance of singleton 'LocalNavigationEventDispatcherOwner'`，进程退出。`Popup` 不受影响。
    .6 补齐这几个 klib，并在打包时检查 klib 集合是否闭合（`scripts/check-klib-deps.py`，缺一个就不打包）。
 
-19. **只改函数体、但改了 `remember` 的类型或个数：旧值会被当成新类型使用（工具链 .8 及以前都有，.9 修复）**。分类器把这种改动判为
+19. **只改函数体、但改了 `remember` 的类型或个数：旧值会被当成新类型使用（工具链 .8 及以前；.9 起已修，见本条末尾）**。分类器把这种改动判为
    HOT，热替换后 `remember` 的槽位按位置复用，旧值直接交给新代码。例如把 `remember { intArrayOf(0) }` 改成 `remember { longArrayOf(0L) }`，
    新代码会把旧的 `IntArray` 当 `LongArray` 读；在已有的 `remember` 前面插入一个 `remember { "x" }`，这个 `String` 变量拿到的是旧的
    `IntArray`。Kotlin/Native 不检查这种转换，所以不会报 `ClassCastException`：可能显示错值，对象布局不同时可能崩溃。
-   **做法**：改了 `remember` 的类型、个数或顺序后，用温重启（插件的 warm restart / `hotreload.sh warm`），不要用热重载。
+   **插件 0.2.5 配工具链 .9 起已修**：插件在热重载构建里自动打开稳定 group key（`HotReloadStableKeys`），`remember` 形状一变这个
+   composable 就安全重置（插件验收 `accept-kmp.py --expect-stable-keys`）。
+   **.8 及以前的做法**：改了 `remember` 的类型、个数或顺序后，重新打包并重启（插件 `./gradlew hotReloadPackage hotReloadRun`，
+   `hotreload.sh warm`），不要用热重载。
    只改 `remember` 里的计算、或不碰 `remember` 的函数体改动不受影响。根治（Issue #29）：`remember` 的类型、个数或顺序一变，
-   这个 composable 的状态安全重置，随工具链 .9 发布。
+   这个 composable 的状态安全重置，随工具链 .9 发布（热重载构建打开 `HotReloadStableKeys`，TECHNICAL-NOTES §1.9；同时改签名时
+   `remember` 能保留，REPORT §36）。
 
 ## 已解决（旧文档里可能还会看到）
 

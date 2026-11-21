@@ -16,6 +16,13 @@ fi
 KOTLIN_DIST=${KOTLIN_DIST:?KOTLIN_DIST is required (see README)}
 KC=$KOTLIN_DIST/bin/kotlinc-native
 PLUGIN=${COMPOSE_PLUGIN_JAR:?COMPOSE_PLUGIN_JAR is required (see README)}
+# Issue #29: in hot reload builds a composable's group key leaves out its parameter list (plus a guard on the remember
+# slots), so remember state survives signature changes. Only when the toolchain's Compose compiler knows the flag
+# (toolchain .9 on); HR_STABLE_KEYS=0 turns it off. Every compile of one app must use the same setting.
+COMPOSE_FLAGS=()
+if [ "${HR_STABLE_KEYS:-1}" != 0 ] && unzip -p "$PLUGIN" androidx/compose/compiler/plugins/kotlin/FeatureFlag.class 2>/dev/null | LC_ALL=C grep -aq HotReloadStableKeys; then
+  COMPOSE_FLAGS=(-P "plugin:androidx.compose.compiler.plugins.kotlin:featureFlag=HotReloadStableKeys")
+fi
 KLIBLIST=${KLIBLIST:-$ROOT/tools/klibs.txt}
 BUILD=${BUILD_DIR:-$ROOT/build}
 IC_DIR=${IC_DIR:-$BUILD/ic}
@@ -120,7 +127,7 @@ common_args() {
     -Xbinary=perFileCacheForStdlib=false \
     $(auto_cache_args) \
     -Xauto-cache-dir="$AUTO_CACHE" \
-    -Xplugin="$PLUGIN" \
+    -Xplugin="$PLUGIN" ${COMPOSE_FLAGS[@]+"${COMPOSE_FLAGS[@]}"} \
     -opt-in=kotlinx.cinterop.ExperimentalForeignApi \
     -linker-option=-framework -linker-option=ImageIO \
     -linker-option=-Wl,-no_warn_duplicate_libraries \
@@ -140,7 +147,7 @@ build_app_klib() {
   rm -f "$COMPAT_DIR/app.klib"
   app_source_args || return 2
   local args=(-target ios_simulator_arm64 -p library -g
-    -Xplugin="$PLUGIN" -opt-in=kotlinx.cinterop.ExperimentalForeignApi
+    -Xplugin="$PLUGIN" ${COMPOSE_FLAGS[@]+"${COMPOSE_FLAGS[@]}"} -opt-in=kotlinx.cinterop.ExperimentalForeignApi
     "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" "${APP_SRC_ARGS[@]}" -o "$COMPAT_DIR/app")
   if [ -S "$HRC_KLIB_SOCKET" ]; then
     python3 "$ROOT/tools/hrc.py" "$HRC_KLIB_SOCKET" "${args[@]}" >/dev/null
@@ -253,7 +260,7 @@ ui-klib)
   KLIB_SOCK=$HRC_KLIB_SOCKET
   ui_source_args
   ARGS=(-target ios_simulator_arm64 -p library -g
-    -Xplugin="$PLUGIN" -opt-in=kotlinx.cinterop.ExperimentalForeignApi
+    -Xplugin="$PLUGIN" ${COMPOSE_FLAGS[@]+"${COMPOSE_FLAGS[@]}"} -opt-in=kotlinx.cinterop.ExperimentalForeignApi
     "${KLIBS[@]}" "${UI_SRC_ARGS[@]}" -o "$BUILD/ui/ui")
   if [ -S "$KLIB_SOCK" ]; then
     echo "ui-klib: daemon $KLIB_SOCK"
@@ -310,7 +317,12 @@ package)
   fi
   echo "kaldo: $KALDO_DYLIB sha256=${KALDO_SHA:0:12}${WANT_SHA:+ (matches manifest)}"
   app_source_args
+  # #32: the compiler writes the bootstrap payload paths to a list instead of copying ~100 MB of payloads into the
+  # base executable (merge-payloads reads them from disk). A compiler without the option ignores it, writes no list,
+  # and merge-payloads falls back to the embedded payloads.
+  PAYLOAD_LIST="$BUILD/app/payloads.txt"; rm -f "$PAYLOAD_LIST"
   PKG_ARGS=($(common_args) "${KLIBS[@]}" -l "$BUILD/ui/ui.klib" \
+    -Xbinary=splitPayloadList="$PAYLOAD_LIST" \
     -o "$BUILD/app/ComposeHR-base.kexe" "${APP_SRC_ARGS[@]}")
   # The ordinary compile daemon (hr-klib.sock, never cache-only) saves the JVM
   # start and warm-up (~3 s). It cannot see per-call environment, so
@@ -326,11 +338,16 @@ package)
     "$KC" "${PKG_ARGS[@]}"
   fi
   pkg_step compile
+  # #32: the classifier baseline needs only ui.klib and the app sources, so it runs beside merge/embed/bundle.
+  BASELINE_LOG="$BUILD/app/baseline.out"
+  compat_baseline > "$BASELINE_LOG" 2>&1 &
+  BASELINE_PID=$!
   # merge-cache keeps the processed library archives between packages (they
   # do not change), which takes the merge from ~6 s to ~2 s.
   KALDO_MERGE_CACHE_DIR=${KALDO_MERGE_CACHE_DIR:-$BUILD/merge-cache} \
   KALDO_HOT_PACKAGES=${KALDO_HOT_PACKAGES:-expui} \
   KALDO_HOT_SYMBOLS_OUT="$BUILD/app/hot-symbols.txt" \
+  KALDO_PAYLOAD_LIST=$([ -s "$PAYLOAD_LIST" ] && echo "$PAYLOAD_LIST") \
     python3 "$ROOT/tools/merge-payloads.py" "$BUILD/app/ComposeHR-base.kexe" "$BUILD/app/merged-bootstrap.o"
   echo "hot symbols: $(wc -l < "$BUILD/app/hot-symbols.txt" | tr -d ' ')"
   pkg_step merge
@@ -338,7 +355,7 @@ package)
   pkg_step embed
   APP="$OUT.app"
   mkdir -p "$APP/Frameworks"
-  cp "$OUT.kexe" "$APP/ComposeHR"
+  rm -f "$APP/ComposeHR"; cp -c "$OUT.kexe" "$APP/ComposeHR" 2>/dev/null || cp "$OUT.kexe" "$APP/ComposeHR"   # clonefile on APFS
   cp "$ROOT/app/Info.plist" "$APP/Info.plist"
   cp "$KALDO_DYLIB" "$APP/Frameworks/libKaldo.iossim.dylib"
   # The linker leaves an absolute rpath to the LLVM install dir. That dylib is
@@ -352,7 +369,9 @@ package)
   codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
   echo "package: $APP"
   pkg_step bundle
-  compat_baseline
+  BASELINE_RC=0; wait "$BASELINE_PID" || BASELINE_RC=$?
+  cat "$BASELINE_LOG"
+  [ "$BASELINE_RC" = 0 ] || { echo "package: classifier baseline failed (exit $BASELINE_RC)" >&2; exit "$BASELINE_RC"; }
   pkg_step baseline
   echo "PACKAGE ms=$(( $(now_ms) - T_PKG0 ))$PKG_STEPS"
   ;;

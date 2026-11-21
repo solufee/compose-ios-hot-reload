@@ -49,6 +49,7 @@ class HotReloadPlugin : Plugin<Project> {
         ext.warmRestart.convention(prop("cmp.hotreload.warmRestart").map { it.toBoolean() }.orElse(true))
         ext.forceRecompose.convention(prop("cmp.hotreload.forceRecompose").map { it.toBoolean() }.orElse(true))
         ext.mainWaitMs.convention(prop("cmp.hotreload.mainWaitMs").map { it.trim().toInt() }.orElse(2000))
+        ext.stableKeys.convention(prop("cmp.hotreload.stableKeys").map { it.toBoolean() }.orElse(true))
         ext.deviceFamily.convention(prop("cmp.hotreload.deviceFamily").map { v -> v.split(',').mapNotNull { it.trim().toIntOrNull() } })
         // No fixed default here: see resolveBinaries (toolchain download layout first, then tools/).
         ext.orcRuntime.convention(project.layout.file(prop("cmp.hotreload.orcRuntime").map { File(home(it)) }))
@@ -219,6 +220,7 @@ class HotReloadPlugin : Plugin<Project> {
                     warmRestart = ext.warmRestart.get(),
                     forceRecompose = ext.forceRecompose.get(),
                     mainWaitMs = ext.mainWaitMs.get(),
+                    stableKeys = ext.stableKeys.get(),
                     iosEntry = iosEntry,
                     composeResources = composeResources,
                     infoPlistContent = plistContent,

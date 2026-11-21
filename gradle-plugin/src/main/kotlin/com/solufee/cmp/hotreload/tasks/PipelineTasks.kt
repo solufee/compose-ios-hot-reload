@@ -131,9 +131,9 @@ abstract class PackageTask : HotReloadTask() {
         val tools = tools(s)
         val daemons = daemons(s, tools)
         val pipeline = Pipeline(s, logger)
-        pipeline.packageApp(tools, daemons)
-        // INTERFACE §10.2: package ends with the classifier's baseline snapshots of what it built.
-        Compat(s, logger, pipeline, tools).baseline(daemons)
+        // INTERFACE §10.2: package ends with the classifier's baseline snapshots of what it built; it runs beside
+        // merge/embed/bundle (#52).
+        pipeline.packageApp(tools, daemons) { Compat(s, logger, pipeline, tools).baseline(daemons) }
     }
 }
 
@@ -210,7 +210,7 @@ abstract class ReloadTask : HotReloadTask() {
             }
             if (patchError != null) throw patchError
             logger.lifecycle("compat: HOT (classifier ${r.ms} ms, waited ${waited} ms after the patch was ready)")
-            r.notes.forEach { logger.lifecycle(hotNote(it)) }
+            r.notes.forEach { logger.lifecycle(hotNote(it, pipeline.stableKeysState == "on")) }
             pipeline.sendPatch(patch!!)
             compat.commit()
             return

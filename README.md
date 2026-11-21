@@ -20,7 +20,7 @@ picks up the change without restarting. Navigation and `remember` state are kept
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.8/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.9/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
@@ -41,7 +41,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.4"
+    id("com.solufee.cmp.hotreload") version "0.2.5"
 }
 ```
 
@@ -49,7 +49,7 @@ plugins {
 from step 1, written as an absolute path:
 
 ```properties
-cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.8/kotlin-native
+cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.9/kotlin-native
 ```
 
 Add `<module>/.hr/` and `<module>/launch.log` to `.gitignore`. No source changes are needed: source sets,
@@ -76,7 +76,10 @@ Check the setup with `./gradlew hotReloadCheckToolchain`.
   hot too: added, removed or retyped parameters, default values, return types, `expect`/`actual` functions and new
   `expect`/`actual` function pairs. Every caller is recompiled into the patch. A `@Composable` whose signature
   changed starts its own `remember` state over once (`compat: note: …`); its callers keep theirs.
-- Changes that cannot be hot-swapped are applied with a warm restart (`WARM …`, about 20 s), for example
+- Changes that cannot be hot-swapped are applied with a warm restart (`WARM …`; plugin 0.2.5 with toolchain .9: about
+  13.5 s after an edit in a library module and 15 s after an edit in the app module on the example app, of which
+  repackaging takes about 7 s and 8.5 s; about 15 s and 17 s on the KMP wizard template; relaunching the app
+  occasionally takes ~5 s longer), for example
   class fields and constructors, open/override/interface members, `inline` or `suspend` functions, `expect`/`actual`
   classes, and resource-only edits.
 
@@ -108,16 +111,18 @@ Stop with `./gradlew hotReloadDaemonStop`.
 
 Not in this list because they are hot since 0.2.4: signature changes of top-level functions and of final members of
 final classes, objects and companions (parameters, default values, return types), `expect`/`actual` functions and
-`expect fun` pairs, and `@Composable` signatures while `forceRecompose` is on (the composable's own `remember` state
-resets once); a top-level `const val` added or removed, a new `inline` or `suspend` function in a final class or object,
+`expect fun` pairs, and `@Composable` signatures while `forceRecompose` is on (from plugin 0.2.5 with toolchain .9 the
+composable keeps its `remember` state; before, it reset once); a top-level `const val` added or removed, a new `inline` or `suspend` function in a final class or object,
 and a new final (not open, not override) member in an open, abstract or sealed class
 ([review](gradle-plugin/test-projects/classifier-cases/RELAXATIONS.md)).
 
-**Not detected yet (toolchain .8 and earlier):** if you change the type or the number of `remember { }` calls inside a
-composable (and nothing else in its signature), the classifier says HOT, but the composable may then read an old slot
-as the new type: wrong values or a crash. After such an edit, restart the app instead of hot reloading:
-`./gradlew hotReloadPackage hotReloadRun` (rebuild and reinstall; the app starts from its first screen). A fix is
-planned for toolchain .9 / plugin 0.2.5.
+**`remember` and signature changes (plugin 0.2.5, toolchain .9):** hot-reload builds compile composables with stable
+group keys (the Compose compiler flag `HotReloadStableKeys`, set by the plugin; never in release builds). A composable
+keeps its `remember` state when its parameters change; when the type, number or order of its `remember { }` calls
+changes, that composable starts over cleanly. Turn it off with `cmpHotReload { stableKeys = false }` (then repackage).
+With toolchain .8 or earlier the flag does not exist: a changed `remember` type or count is not detected and the old
+slot may be read as the new type (wrong values or a crash), so after such an edit use
+`./gradlew hotReloadPackage hotReloadRun` (rebuild and reinstall; the app starts from its first screen).
 
 Details and examples: [docs/TRYOUT.md](docs/TRYOUT.md), section 4.
 

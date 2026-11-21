@@ -1,0 +1,12 @@
+# warm-restart timing AFTER (feat/052-split-payloads, example app), 2026-11-21 09:30:49, project example-gradle, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 15s payload list (#32): on (50 payloads read from disk); package timing ms=12584 compile=8165 merge=2035 embed+bundle=2384 embed=850 bundle=1534 baseline-wait=0
+ui[1] OK warm=13536 package=6973 relaunch=6563 | compile=2580 merge=1720 embed+bundle=2361 embed=857 bundle=1504 baseline-wait=0 | package timing ms=6661 compile=2580 merge=1720 embed+bundle=2361 embed=857 bundle=1504 baseline-wait=0
+ui[2] OK warm=16973 package=7181 relaunch=9792 | compile=2610 merge=1703 embed+bundle=2531 embed=854 bundle=1677 baseline-wait=0 | package timing ms=6844 compile=2610 merge=1703 embed+bundle=2531 embed=854 bundle=1677 baseline-wait=0
+ui[3] OK warm=13554 package=6997 relaunch=6557 | compile=2464 merge=1740 embed+bundle=2427 embed=910 bundle=1517 baseline-wait=0 | package timing ms=6631 compile=2464 merge=1740 embed+bundle=2427 embed=910 bundle=1517 baseline-wait=0
+app[1] OK warm=14989 package=8500 relaunch=6489 | compile=4115 merge=1638 embed+bundle=2419 embed=870 bundle=1549 baseline-wait=0 | package timing ms=8172 compile=4115 merge=1638 embed+bundle=2419 embed=870 bundle=1549 baseline-wait=0
+app[2] OK warm=14907 package=8365 relaunch=6542 | compile=3921 merge=1644 embed+bundle=2471 embed=842 bundle=1629 baseline-wait=0 | package timing ms=8036 compile=3921 merge=1644 embed+bundle=2471 embed=842 bundle=1629 baseline-wait=0
+app[3] OK warm=15216 package=8621 relaunch=6595 | compile=4126 merge=1662 embed+bundle=2467 embed=844 bundle=1623 baseline-wait=0 | package timing ms=8255 compile=4126 merge=1662 embed+bundle=2467 embed=844 bundle=1623 baseline-wait=0
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 13.6 s, package 7.0 s (compile 2.6, merge 1.7, embed+bundle 2.4, embed 0.9, bundle 1.5, baseline-wait 0.0), relaunch 6.6 s
+median app (3/3 ok): warm 15.0 s, package 8.5 s (compile 4.1, merge 1.6, embed+bundle 2.5, embed 0.8, bundle 1.6, baseline-wait 0.0), relaunch 6.5 s
+summary: 6/6 warm restarts measured

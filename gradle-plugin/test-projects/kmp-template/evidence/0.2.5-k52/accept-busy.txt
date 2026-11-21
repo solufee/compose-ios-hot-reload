@@ -1,0 +1,30 @@
+# #40 acceptance (patch NOT applied while the main thread is busy), plugin 0.2.5-k52, 2026-11-21 09:47:55, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+## 1. package, run, one edit
+PASS package | 125s
+PASS run (KONAN_HR_RELOAD_ON_MAIN=1, KONAN_HR_MAIN_WAIT_MS=2000 passed to the app) | pid 2700
+  | compat: HOT (classifier 879 ms, waited 0 ms after the patch was ready)
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (107 ms; on the main queue after 0 ms, applied in 42 ms); it shows on the next recomposition
+PASS an edit -> HOT, applied on the main queue, on screen | 8.3s
+## 2. main thread blocked for 8 s, an edit
+  | compat: HOT (classifier 844 ms, waited 0 ms after the patch was ready)
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | > CMP hot reload: the app was busy, patch not applied: its main thread did not take the reload within 2000 ms ("HR reload: NOT applied: the main thread did not take the reload within 2000 ms (blocked or busy; KONAN_HR_MAIN_WAIT_MS). Let it return to its run loop and send the patch again."). Save again or rerun ./gradlew hotReload; the same change is sent again.
+PASS hotReload fails with 'the app was busy, patch not applied' (non-zero exit) | > CMP hot reload: the app was busy, patch not applied: its main thread did not take the reload within 2000 ms ("HR reload: NOT applied: the main thread did not take the reload within 2000 ms (blocked or busy; KONAN_HR_MA
+PASS the runtime logged 'HR reload: NOT applied' and applied nothing; same PID; the old text stays | HR reload: NOT applied: the main thread did not take the reload within 2000 ms (blocked or busy; KONAN_HR_MAIN_WAIT_MS). Let it return to its run loop and send 
+## 3. main thread free again: hotReload without another edit
+  | compat: HOT (classifier 58 ms, waited 0 ms after the patch was ready)
+  | sent <WORK>/KmpHr/shared/build/hotreload/patch/merged.o port 5568
+  | app loaded the patch (103 ms; on the main queue after 0 ms, applied in 32 ms); it shows on the next recomposition
+PASS the pending change is sent again (not 'nothing changed') and shows | 2.3s
+## 4. hotReloadWatch -t
+PASS watch: first run, then waits
+  | compat: HOT (classifier 1049 ms, waited 0 ms after the patch was ready)
+  | > CMP hot reload: the app was busy, patch not applied: its main thread did not take the reload within 2000 ms ("HR reload: NOT applied: the main thread did not take the reload within 2000 ms (blocked or busy; KONAN_HR_MAIN_WAIT_MS). Let it return to its run loop and send the patch again."). Save again or rerun ./gradlew hotReload; the same change is sent again.
+  | BUILD FAILED in 5s
+PASS watch: with the main thread blocked the run fails with 'the app was busy', the watch keeps watching
+PASS watch: the next edit is applied (with the one that was not)
+PASS watch: Ctrl-C (SIGINT) stops it | exit 130
+PASS no crash in launch.log; one app process throughout | pid 2700
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+summary: 11/11 PASS

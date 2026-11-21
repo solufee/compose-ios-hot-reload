@@ -1,0 +1,14 @@
+# commit 0e75198, 2026-11-21 10:11:47, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+# toolchain: interfaceVersion 8 layout local kotlin a34772eb llvm 3e0dafa3 kaldo 6810d16b compose 42e1eba6
+## clean state
+## package
+> Task :gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+bundle check (INTERFACE §3.3): compact unwind kept, hot symbols 305, libKaldo sha256 ok, rpaths [@executable_path/Frameworks], signature valid
+package: <REPO>/example-gradle/build/hotreload/ComposeHR.app (ad-hoc signed)
+BUILD SUCCESSFUL in 2m 2s
+## run
+CMP hot reload: app started (attempt 1, pid 24240, 6.0 s, port 5568, log <REPO>/example-gradle/launch.log)
+BUILD SUCCESSFUL in 7s
+[kaldo] :: EH check: 128513 FDE, 3785 lsda, 0 lsda-out-of-range, 0 pc-out-of-range, 0 unresolved-personality
+EH OK eh-probe

@@ -1,0 +1,12 @@
+# warm-restart timing BEFORE (plugin 0.2.5 = main 7add617, wizard template + core), 2026-11-21 09:27:34, project KmpHr, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+package rc=0 17s package timing ms=15568 compile=10658 merge=2806 embed+bundle=2104
+ui[1] OK warm=18996 package=11401 relaunch=7595 | compile=5394 merge=2740 embed+bundle=2177 embed=None bundle=None baseline-wait=None | package timing ms=10311 compile=5394 merge=2740 embed+bundle=2177
+ui[2] OK warm=18971 package=11065 relaunch=7906 | compile=5196 merge=2723 embed+bundle=2145 embed=None bundle=None baseline-wait=None | package timing ms=10064 compile=5196 merge=2723 embed+bundle=2145
+ui[3] OK warm=18604 package=10978 relaunch=7626 | compile=5184 merge=2782 embed+bundle=2053 embed=None bundle=None baseline-wait=None | package timing ms=10019 compile=5184 merge=2782 embed+bundle=2053
+app[1] OK warm=19701 package=12043 relaunch=7658 | compile=6777 merge=2747 embed+bundle=2135 embed=None bundle=None baseline-wait=None | package timing ms=11659 compile=6777 merge=2747 embed+bundle=2135
+app[2] OK warm=19528 package=11854 relaunch=7674 | compile=6697 merge=2702 embed+bundle=2077 embed=None bundle=None baseline-wait=None | package timing ms=11476 compile=6697 merge=2702 embed+bundle=2077
+app[3] OK warm=26758 package=11938 relaunch=14820 | compile=6669 merge=2756 embed+bundle=2140 embed=None bundle=None baseline-wait=None | package timing ms=11565 compile=6669 merge=2756 embed+bundle=2140
+# sources restored; app and compile daemons stopped
+median ui (3/3 ok): warm 19.0 s, package 11.1 s (compile 5.2, merge 2.7, embed+bundle 2.1, embed -, bundle -, baseline-wait -), relaunch 7.6 s
+median app (3/3 ok): warm 19.7 s, package 11.9 s (compile 6.7, merge 2.7, embed+bundle 2.1, embed -, bundle -, baseline-wait -), relaunch 7.7 s
+summary: 6/6 warm restarts measured

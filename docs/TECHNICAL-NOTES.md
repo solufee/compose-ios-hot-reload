@@ -290,6 +290,24 @@ type adapter 不受影响。普通构建不走这条分支。
 
 ---
 
+### 1.9 改签名时保住 `remember`：与签名无关的 group key（工具链 .9 起，Issue #29）
+
+Compose 编译器给每个 composable 的 restart group 一个 key，按“文件/类路径 + 函数签名”算（`DurableFunctionKeyTransformer`），
+函数体里内层 group 的 key 再加上源码偏移（从函数声明开头算）。参数表一变 key 就变，运行时把它当成新组，`remember` 全部重置。
+
+热重载构建打开 Compose 的 feature flag `HotReloadStableKeys`（`hotreload.sh` 自动传，INTERFACE §7 `HR_STABLE_KEYS`）后：
+- key = 文件/类路径 + 函数名 + **remember 形状**，不含参数表；同一作用域里同名同形状的重载按出现顺序加序号区分；
+- 内层 group 的偏移改从函数体开头算，参数表变长不再挪动它们；
+- **remember 形状**：函数体里按位置占槽的调用（`remember*`、`Composer.cache`、带类型参数的 `@Composable` 调用），按源码顺序记下
+  被调用方、类型参数和参数个数。形状一变（`remember` 的类型、个数、顺序变了）key 就变，整组安全重置。没有这一条时旧槽位会被当成
+  新类型直接使用——Kotlin/Native 不检查这种转换（LIMITATIONS 第 19 条，.8 及以前只改函数体时也会发生）；
+- 嵌套 lambda 和局部函数有各自的 key，各自算形状。
+
+于是：加参数（带或不带默认值）、改参数类型、改签名后再改函数体，`remember` 都保留；参数比较（`$changed`）不挤占 `remember` 的槽位。
+函数挪到别的文件或类时 key 变，状态重置。release 构建不传这个 flag，key 计算和原来逐字节相同（release 摘要不变）。
+改动在 Kotlin 补丁里的 `plugins/compose/compiler-hosted`（`ComposePlugin.kt` 的 `FeatureFlag`、`DurableFunctionKeyTransformer.kt`、
+`ComposableFunctionBodyTransformer.kt`、`AbstractComposeLowering.kt`）。验收：`example-gradle/accept-remember-signature.sh`。
+
 ## 2. 合成的 `objc_msgSend` stub 共用了同一块缓冲区
 
 **背景**。Compose 的缓存对象引用了大量 `_objc_msgSend$<selector>` 形式的符号（合并对象里有 142 个以上未定义）。

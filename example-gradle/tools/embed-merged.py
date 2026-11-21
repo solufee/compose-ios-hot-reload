@@ -22,9 +22,9 @@ def main():
                 bytes([0]) + struct.pack("<QQ", 0, len(data)) + data)
     tmp = tempfile.mktemp(suffix=".bin")
     open(tmp, "wb").write(manifest)
-    shutil.copyfile(base, out)
+    # objcopy writes the output itself; no separate copy of the (large) base executable first (#32).
     subprocess.run([OBJCOPY, "--update-section",
-                    f"__TEXT,__kaldo_boot={tmp}", out], check=True)
+                    f"__TEXT,__kaldo_boot={tmp}", base, out], check=True)
     os.unlink(tmp)
     print(f"embedded {obj} -> {out} ({os.path.getsize(out)} bytes)")
     return 0

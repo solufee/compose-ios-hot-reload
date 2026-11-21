@@ -54,11 +54,16 @@ fun expectActualReasons(before: Set<String>, now: Set<String>): List<String> =
  * A classifier note shown under the HOT line, e.g. `NOTE remember-reset Screen: ...` (#28: a @Composable whose
  * signature changed is hot with forceRecompose, but its own remember state starts over once).
  */
-fun hotNote(line: String): String {
+fun hotNote(line: String, stableKeys: Boolean = false): String {
     val m = Regex("^NOTE (\\S+) (.+?): (.*)$").find(line.trim()) ?: return "compat: $line"
     val (category, symbol, detail) = m.destructured
-    return if (category == "remember-reset") "compat: note: $symbol changed its signature; the remember state inside $symbol resets once (its callers keep theirs)"
-    else "compat: note: $category $symbol: $detail"
+    return when {
+        category != "remember-reset" -> "compat: note: $category $symbol: $detail"
+        // #29/#47: with stable keys the group key no longer depends on the parameter list.
+        stableKeys -> "compat: note: $symbol changed its signature; its remember state is kept (stable keys), unless its remember " +
+            "calls changed too, then it starts over"
+        else -> "compat: note: $symbol changed its signature; the remember state inside $symbol resets once (its callers keep theirs)"
+    }
 }
 
 private val MODS = "(?:(?:public|internal|private|protected|open|abstract|sealed|data|inline|value|annotation|enum|inner|fun|suspend|external|infix|operator|tailrec)\\s+)*"
