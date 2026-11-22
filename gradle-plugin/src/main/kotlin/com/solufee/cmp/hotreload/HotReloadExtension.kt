@@ -198,6 +198,13 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
      */
     abstract val resolveDependencyKlibs: Property<Boolean>
 
+    /**
+     * #107: run the app with libKaldo's perf map (KALDO_PERF_MAP=1), which writes `/tmp/perf-<pid>.map` so a profiler
+     * (Instruments, perf tools) can symbolize frames of hot-reloaded (JIT-linked) code. About 70 MB per app start; the plugin
+     * deletes the maps of app processes it started once they are gone (next launch, hotReloadClean). Default false.
+     */
+    abstract val perfMap: Property<Boolean>
+
     val simulator: SimulatorSpec = objects.newInstance(SimulatorSpec::class.java)
     fun simulator(action: Action<in SimulatorSpec>) = action.execute(simulator)
 

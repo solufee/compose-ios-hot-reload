@@ -104,16 +104,54 @@ class KmpTest {
     }
 
     @Test
-    fun `a dependency newer than the toolchain's copy that replaces it is reported`() {
+    fun `P0 B1 - a library newer in the project is linked from the project and the toolchain's copy is left out`() {
         val stdlib = klib("stdlib", "stdlib", abi = "2.5.0", dir = true)
         File(tmp, "tc/androidx.lifecycle/lifecycle-common-iossimulatorarm64/2.9.4").mkdirs()
         val tc = klib("tc/androidx.lifecycle/lifecycle-common-iossimulatorarm64/2.9.4/lc", "androidx.lifecycle:lifecycle-common")
         val dep = klib("dep-lc", "androidx.lifecycle:lifecycle-common")
         val old = klib("dep-lc-old", "androidx.lifecycle:lifecycle-common")
-        assertEquals(listOf("androidx.lifecycle:lifecycle-common-iossimulatorarm64 2.11.0 -> 2.9.4"),
-            Kmp.selectKlibs(listOf(tc.path), stdlib, listOf(Kmp.Dependency("androidx.lifecycle:lifecycle-common-iossimulatorarm64:2.11.0", dep)), "1.13.0-beta01", null).newer)
-        assertEquals(emptyList<String>(),
-            Kmp.selectKlibs(listOf(tc.path), stdlib, listOf(Kmp.Dependency("androidx.lifecycle:lifecycle-common-iossimulatorarm64:2.9.0", old)), "1.13.0-beta01", null).newer)
+        val newer = Kmp.selectKlibs(listOf(tc.path), stdlib, listOf(Kmp.Dependency("androidx.lifecycle:lifecycle-common-iossimulatorarm64:2.11.0", dep)), "1.13.0-beta01", null)
+        assertEquals(listOf("androidx.lifecycle:lifecycle-common-iossimulatorarm64 2.11.0 (toolchain 2.9.4)"), newer.newer)
+        assertEquals(listOf(dep.path), newer.klibs)
+        assertEquals(listOf(tc.path), newer.toolchainDropped)
+        assertEquals(emptyList<String>(), newer.replaced)
+        val older = Kmp.selectKlibs(listOf(tc.path), stdlib, listOf(Kmp.Dependency("androidx.lifecycle:lifecycle-common-iossimulatorarm64:2.9.0", old)), "1.13.0-beta01", null)
+        assertEquals(emptyList<String>(), older.newer)
+        assertEquals(emptyList<String>(), older.klibs)
+        assertEquals(emptyList<String>(), older.toolchainDropped)
+        assertEquals(listOf("androidx.lifecycle:lifecycle-common-iossimulatorarm64 2.9.0 -> 2.9.4"), older.older)
+    }
+
+    @Test
+    fun `P0 B1 - a newer component with a cinterop klib replaces all of the toolchain's klibs of that component`() {
+        val stdlib = klib("stdlib", "stdlib", abi = "2.5.0", dir = true)
+        File(tmp, "tc/org.jetbrains.kotlinx/atomicfu-iossimulatorarm64/0.28.0").mkdirs()
+        val tcMain = klib("tc/org.jetbrains.kotlinx/atomicfu-iossimulatorarm64/0.28.0/a", "org.jetbrains.kotlinx:atomicfu")
+        val tcInterop = klib("tc/org.jetbrains.kotlinx/atomicfu-iossimulatorarm64/0.28.0/ai", "org.jetbrains.kotlinx:atomicfu-cinterop-interop")
+        val depMain = klib("dep-a", "org.jetbrains.kotlinx:atomicfu")
+        val depInterop = klib("dep-ai", "org.jetbrains.kotlinx:atomicfu-cinterop-interop")
+        val id = "org.jetbrains.kotlinx:atomicfu-iossimulatorarm64:0.33.0"
+        val sel = Kmp.selectKlibs(listOf(tcMain.path, tcInterop.path), stdlib, listOf(Kmp.Dependency(id, depMain), Kmp.Dependency(id, depInterop)), "1.13.0-rc01", null)
+        assertEquals(listOf(depMain.path, depInterop.path), sel.klibs)
+        assertEquals(setOf(tcMain.path, tcInterop.path), sel.toolchainDropped.toSet())
+        assertEquals(emptyList<String>(), sel.cinterop)
+    }
+
+    @Test
+    fun `P0 B1 - the Compose fork's modules always come from the toolchain, a toolchain klib in a Gradle cache path is a library`() {
+        val stdlib = klib("stdlib", "stdlib", abi = "2.5.0", dir = true)
+        val fork = klib("compose-klibs/ui", "org.jetbrains.compose.ui:ui", dir = true)
+        val depUi = klib("dep-ui", "org.jetbrains.compose.ui:ui")
+        val sel = Kmp.selectKlibs(listOf(fork.path), stdlib, listOf(Kmp.Dependency("org.jetbrains.compose.ui:ui-iossimulatorarm64:1.13.0-beta01", depUi)), "1.13.0-rc01", null)
+        assertEquals(emptyList<String>(), sel.klibs)
+        assertEquals(listOf("org.jetbrains.compose.ui:ui-iossimulatorarm64:1.13.0-beta01"), sel.replaced)
+        // P0 C: a klib list edited to point at the Gradle cache (<group>/<artifact>/<version>/<sha1>/<file>)
+        File(tmp, "g/org.jetbrains.kotlinx/kotlinx-serialization-core-iossimulatorarm64/1.12.0/a6aef05b30d80f7f2ed684a11329761137a753c9").mkdirs()
+        val tcCore = klib("g/org.jetbrains.kotlinx/kotlinx-serialization-core-iossimulatorarm64/1.12.0/a6aef05b30d80f7f2ed684a11329761137a753c9/core", "org.jetbrains.kotlinx:kotlinx-serialization-core")
+        val depCore = klib("dep-core", "org.jetbrains.kotlinx:kotlinx-serialization-core")
+        val c = Kmp.selectKlibs(listOf(tcCore.path), stdlib, listOf(Kmp.Dependency("org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64:1.13.0", depCore)), "1.13.0-rc01", null)
+        assertEquals(listOf(depCore.path), c.klibs)
+        assertEquals(listOf("org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 (toolchain 1.12.0)"), c.newer)
     }
 
     @Test

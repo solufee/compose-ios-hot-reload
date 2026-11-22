@@ -91,9 +91,13 @@ data class HrSettings(
     val stableKeys: Boolean = true,
     /** #56: embed the library object in the executable (portable .app) instead of loading it from its file on this Mac. */
     val libsInExecutable: Boolean = false,
+    /** #107: run the app with KALDO_PERF_MAP=1 (cmpHotReload { perfMap }, cmp.hotreload.perfMap); default off. */
+    val perfMap: Boolean = false,
     // 0.2.0: Kotlin Multiplatform projects
     /** Klibs from the modules' Gradle dependencies, after the toolchain's own copies were taken out. */
     val extraKlibs: List<String> = emptyList(),
+    /** P0/B1: toolchain klibs not linked because the project's newer copy of the same component is in [extraKlibs]. */
+    val droppedToolchainKlibs: List<String> = emptyList(),
     /** `pkg.Function` returning a UIViewController; set when the app has no Kotlin main (KMP template). */
     val iosEntry: String? = null,
     /**

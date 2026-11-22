@@ -1,0 +1,21 @@
+# accept-perf-map.py, plugin 0.2.10-pm1 = fix/perf-map on main 9956b10, toolchain .11.2, simulator HR-Plugin-3
+# #107 acceptance (perf map), 2026-11-22 17:12:47, plugin 0.2.10-pm1, simulator B5B3B794-9E96-4C87-A142-20DCD9424C7C
+perf maps in /tmp before: 151
+## A default: package, run, 3 HOT, 1 WARM
+PASS A: package (128s)
+PASS A: run (7s) | pid 37378
+PASS A: HOT 1 (9.9s)
+PASS A: HOT 2 (5.2s)
+PASS A: HOT 3 (4.8s)
+PASS A: WARM (14.1s) | pid 37378->38472
+PASS A: no perf map for this test's app processes (the switch is off by default) | pids 37378, 38472
+  (new perf maps of other processes, e.g. apps started at the same time by plugins without #107: ['perf-36164.map', 'perf-37676.map'])
+## B -Pcmp.hotreload.perfMap=true
+PASS B: run (6s): the app's perf map exists | pid 38596, 65 MB
+PASS B: WARM (15.8s): the old process's map is deleted, the new one exists | pid 38596->39062; CMP hot reload: deleted 1 perf map(s) of earlier app processes (65 MB in /tmp)
+PASS B: hotReloadRun again (7s): the previous map is deleted | pid 39062->39419
+  | CMP hot reload: deleted 1 perf map(s) of earlier app processes (65 MB in /tmp)
+PASS B: app stopped + hotReloadClean: its map is deleted
+PASS B: in the end none of this test's app processes left a perf map | pids 38596, 39062, 39419
+  (new perf maps of other processes, not touched: ['perf-36164.map', 'perf-37676.map'])
+summary: 12/12 PASS

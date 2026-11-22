@@ -41,7 +41,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.9"
+    id("com.solufee.cmp.hotreload") version "0.2.10"
 }
 ```
 
@@ -164,6 +164,25 @@ classes) are both handled. The package log lists what it did with each such name
 Since plugin 0.2.9, upgrading the plugin or the toolchain needs no `hotReloadClean`: the next package notices the change
 (`build identity changed (...)`), clears what the old version compiled and builds from scratch once. A plain
 `hotReload` after such a change sends nothing and asks for `hotReloadPackage hotReloadRun`.
+
+Since plugin 0.2.10, a library that is newer in your project than in the toolchain is no longer swapped for the
+toolchain's older copy. Up to 0.2.9, for example, kotlinx-serialization 1.12.0 was hot-reload-linked as the toolchain's
+1.7.3, and the app could crash at start with `IrLinkageError` (or a `@Serializable` class with an `Instant` field did not
+compile). Now each library is linked at the newer of your version and the toolchain's, as in your release build; only
+the Compose modules always come from the toolchain. The first `hotReloadPackage` after upgrading to 0.2.10 compiles
+everything once, about as long as a cold package (124 s on a Koin + serialization sample project); later packages are
+as fast as before. One difference remains: a library that is *older* in your project than in the toolchain is linked
+at the toolchain's version (docs/LIMITATIONS.md item 16).
+
+Since plugin 0.2.10, the app no longer writes a perf map by default. Up to 0.2.9 every app start under hot reload wrote
+`/tmp/perf-<pid>.map` (about 70 MB each, never deleted). Turn it on only when you need hot-reloaded frames named in
+Instruments or lldb: `cmpHotReload { perfMap = true }` or `-Pcmp.hotreload.perfMap=true`; the plugin then deletes the
+maps of the app processes it started once they have exited. Maps left by 0.2.9 and earlier are not removed for you; to
+delete yours that are more than 7 days old:
+
+```bash
+find /tmp -maxdepth 1 -type f -name 'perf-*.map' -user "$USER" -mtime +7 -print -delete
+```
 
 Minimal sample (iosMain):
 

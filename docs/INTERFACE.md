@@ -329,7 +329,7 @@ HR READY first-frame epochMs=1795240093197
 | `HR_AX_HINT` | 开 | `hotreload.sh warm` 的环境变量。值为 `0` 时不读取模拟器的无障碍开关，也不打 `hint:` 行。这个检查只读，不改设置 |
 | `KONAN_HR_MAIN_WAIT_MS` | 2000 | 上一条等主队列接手的最长毫秒数，超时则这次补丁不应用 |
 | `HR_STABLE_KEYS` | 开（工具链 .9 起） | 编译端（`hotreload.sh`）的环境变量。开：工具链里的 Compose 编译器认得 `HotReloadStableKeys` 这个 feature flag 时，热重载构建的每次编译都带上 `-P plugin:androidx.compose.compiler.plugins.kotlin:featureFlag=HotReloadStableKeys`：composable 的 group key 不含参数表，改签名时 `remember` 状态保留；`remember` 的类型、个数或顺序一变就整组重置（TECHNICAL-NOTES §1.9，REPORT §36）。值为 `0` 时不传（.8 的行为）。同一个 app 的所有编译（打包、热重载、分类器）必须用同一设置；插件在热重载构建里传同一个选项，release 构建不传 |
-| `KALDO_PERF_MAP` | 关 | 写 `/tmp/perf-<pid>.map`，给 lldb 符号化 |
+| `KALDO_PERF_MAP` | 关 | 写 `/tmp/perf-<pid>.map`，给 lldb 符号化。只要设置了就写（不看值），每次启动约 70 MB，追加写入，libKaldo 在进程退出后也不删；发送方只应在需要符号化时设置，并自己删掉。脚本用 `HR_PERF_MAP=1` 打开，那次启动的 map 在退出时删除（Issue #108）；插件用 `cmp.hotreload.perfMap=true` 打开，并删掉自己启动、已退出的 app 进程的 map（#107） |
 | `KALDO_RELOAD_TIMING` | 关 | app 的环境变量（模拟器上加 `SIMCTL_CHILD_`）。值为 `1` 时 libKaldo 每次 reload 打一行 `[kaldo] :: reload-timing jd=… linkorder=… pruned=… setup_us=… add_us=… stubs_us=… redirect_us=… total_us=…`（调试用；`redirect_us` 含补丁的 JIT 链接）。工具链 .8 起（LLVM 补丁 `3e0dafa3…`） |
 | `KALDO_KEEP_RELOAD_GENERATORS` | 关 | 值为 `1` 时不摘除旧 `reload<N>` JITDylib 上的宿主符号生成器，恢复修复前的行为（链接耗时随 reload 次数线性增长，LIMITATIONS 第 7 条），只用于对照测量。工具链 .8 起 |
 | `KALDO_DEBUG_SELREFS` | 关 | 只有值为 `1` 时，才把 selector 区间里补登记的 selector 追加到 `/tmp/gap-selrefs.log`（调试用）。v8 起默认不写；v7 及以前每次启动都写 |

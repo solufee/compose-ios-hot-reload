@@ -14,10 +14,9 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
 
     /** Runtime environment, prefixed with SIMCTL_CHILD_ so simctl passes it to the app. */
     /** INTERFACE §3.3 #2 (SYNTH_EH_FRAME) and #3 (narrowed KALDO_HOT_SYMBOLS) are set here. */
-    fun appEnvironment(): Map<String, String> = mapOf(
+    fun appEnvironment(): Map<String, String> = (mapOf(
         "KONAN_ORC_RUNTIME_PATH" to s.orcRuntime,
         "KALDO_SYNTH_EH_FRAME" to "1",
-        "KALDO_PERF_MAP" to "1",
         "KALDO_HOT_SYMBOLS" to s.hotSymbols.path,
         "KONAN_HOT_RELOAD_PORT" to s.port.toString(),
         // Toolchain .6+: full recomposition after each reload (INTERFACE §7); passed explicitly either way.
@@ -25,7 +24,8 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         // Toolchain .8+ (#27): every reload runs on the main queue; not taken within this time = not applied (INTERFACE §7).
         "KONAN_HR_RELOAD_ON_MAIN" to "1",
         "KONAN_HR_MAIN_WAIT_MS" to s.mainWaitMs.toString(),
-    ).mapKeys { "SIMCTL_CHILD_${it.key}" }
+    // #107: libKaldo's perf map (/tmp/perf-<pid>.map, ~70 MB per start) only on request
+    ) + (if (s.perfMap) mapOf("KALDO_PERF_MAP" to "1") else emptyMap())).mapKeys { "SIMCTL_CHILD_${it.key}" }
 
     /**
      * [appArgs] go to the app's argv (e.g. `--hr-state=2,3` for a warm restart). With [readyTokens], the app
@@ -55,6 +55,7 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
         val udid = s.udid
         if (udid == "booted") requireSingleBootedSimulator()
         Proc.run(listOf("xcrun", "simctl", "terminate", udid, info.bundleId), echo = false)
+        PerfMaps.clean(File(s.workDir), logger)   // #107: maps of app processes that are gone now
         // #62: read only; the plugin never changes the simulator's accessibility setting. A failed read says nothing. The
         // read (~0.4 s) runs beside the launch and its note is printed once the app is up.
         val axNote = java.util.concurrent.CompletableFuture.supplyAsync {
@@ -138,6 +139,7 @@ class Launcher(private val s: HrSettings, private val logger: Logger) {
                         logger.lifecycle(("CMP hot reload: app started (attempt $attempt, pid $pid, %.1f s, ready: ${ReadyState.describe(how)}$frame, " +
                             "port ${s.port}, log ${log.path})").format(sec))
                         printAxNote()
+                        if (s.perfMap) PerfMaps.remember(File(s.workDir), pid)
                         return Started(attempt, pid, sec, how)
                     }
                     if (!proc.isAlive) break

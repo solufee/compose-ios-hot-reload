@@ -1,0 +1,19 @@
+# first run: the two /tmp-wide checks failed on maps of OTHER processes (regression runs of plugins without #107 at the same time); the script now judges this test's app pids
+# #107 acceptance (perf map), 2026-11-22 17:08:19, plugin 0.2.10-pm1, simulator B5B3B794-9E96-4C87-A142-20DCD9424C7C
+perf maps in /tmp before: 146
+## A default: package, run, 3 HOT, 1 WARM
+PASS A: package (138s)
+PASS A: run (8s) | pid 25909
+PASS A: HOT 1 (10.8s)
+PASS A: HOT 2 (5.4s)
+PASS A: HOT 3 (4.6s)
+PASS A: WARM (14.6s) | pid 25909->26725
+FAIL A: no perf map written (the switch is off by default) | ['perf-22933.map', 'perf-23916.map', 'perf-23992.map', 'perf-24098.map']
+## B -Pcmp.hotreload.perfMap=true
+PASS B: run (6s): the app's perf map exists | pid 26982, 65 MB
+PASS B: WARM (14.9s): the old process's map is deleted, the new one exists | pid 26982->27285; CMP hot reload: deleted 1 perf map(s) of earlier app processes (65 MB in /tmp)
+PASS B: hotReloadRun again (6s): the previous map is deleted | pid 27285->27652
+  | CMP hot reload: deleted 1 perf map(s) of earlier app processes (65 MB in /tmp)
+PASS B: app stopped + hotReloadClean: its map is deleted
+FAIL B: in the end no perf map left behind in /tmp | ['perf-22933.map', 'perf-23916.map', 'perf-23992.map', 'perf-24098.map', 'perf-28025.map']
+summary: 10/12 PASS; FAILED: ['A: no perf map written (the switch is off by default)', 'B: in the end no perf map left behind in /tmp']

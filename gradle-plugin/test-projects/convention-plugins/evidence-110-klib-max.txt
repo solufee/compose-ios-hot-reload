@@ -1,0 +1,71 @@
+# Issue #110 (P0 B1): the newer of the project's and the toolchain's copy of each library; toolchain auto-cache root guard
+# plugin feat/klib-max-b1 published locally as 0.2.10-b1; toolchain 2.5.255-hotreload.11.2 (fetched); simulator iPhone 18 Pro
+
+## 0. before: plugin 0.2.9, the same Stamp.kt (Instant field) with the pinned serialization-core 1.7.3
+  core/src/commonMain/kotlin/org/example/core/Stamp.kt:11:26: error: serializer was not found for type 'Instant'. To use a context serializer as the fallback, explicitly annotate type or property with '@Contextual'.
+BUILD FAILED in 2s
+
+## 1. botas-like project (accept-klib-max-110.sh shape): which copy of each library is linked (first B1 package)
+dependency klibs: 18 linked, 41 replaced by the toolchain's copies, 5 toolchain klib(s) replaced by the project's newer copies, 26 duplicates skipped
+dependency klibs: the project's version is used (newer than the toolchain's, as in the release build): org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 (toolchain 2.9.6), org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.12.0 (toolchain 1.7.3), org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 (toolchain 1.9.0), org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 (toolchain 0.28.0)
+dependency klibs: the toolchain's version is used (newer than the project's, as Gradle would resolve it; the Compose modules always come from the toolchain): androidx.savedstate:savedstate-compose-iossimulatorarm64 1.4.0 -> 1.5.0, androidx.savedstate:savedstate-iossimulatorarm64 1.4.0 -> 1.5.0, org.jetbrains.skiko:skiko-iossimulatorarm64 0.150.2 -> 0.156.1, androidx.collection:collection-iossimulatorarm64 1.5.0 -> 1.6.0, org.jetbrains.kotlinx:kotlinx-datetime-iossimulatorarm64 0.6.0 -> 0.7.1
+
+# (run with 7eb5646; 00caa19 rewords the second line to: "the toolchain's version is used (newer than the project's; the toolchain's
+#  Compose modules are built against it, while the release build keeps the project's version)" — the selection is unchanged)
+
+## 2. first package after the library set changes (same project, Stamp.kt set aside for the 0.2.9 runs)
+t0-029-cold: package timing ms=122185 compile=110668
+t0w-029-noop: package timing ms=6229 compile=4227
+t1-b1-first: package timing ms=124199 compile=112566
+t1w-b1-noop: package timing ms=6264 compile=3616
+# t0 = 0.2.9 cold; t0w = 0.2.9 nothing changed; t1 = first B1 package (coroutines/serialization/atomicfu/lifecycle versions change,
+# so the caches of every library that depends on them are rebuilt: about one cold package); t1w = B1 nothing changed
+
+## 3. accept-dup-91.py --rounds 40 on that project (B1 plugin, run alone)
+RESULT 1) clean package: rc=0 145s
+  | duplicate definitions across libraries (packaging): tier 1 local=3 tier 2 weak=0 tier 3 conflict=0; same library=0
+  |   tier 1 local: _kfun:androidx.compose.ui.text.<get-DefaultCacheSize>#internal
+  |   tier 1 local: _kfun:org.koin.plugin.hints#componentscan_org_example_core_CoreModule_single(org.example.core.ServerStore){}
+  |   tier 1 local: _kfun:org.koin.plugin.hints#configuration_default(org.example.core.CoreModule){}
+  PASS 1) tier counts printed (duplicate definitions across libraries (packaging): tier 1 local=3 tier 2 weak=0 tier 3 conflict=0; same library=0)
+  PASS 1) no conflict (duplicate definitions across libraries (packaging): tier 1 local=3 tier 2 weak=0 tier 3 conflict=0; same library=0)
+  PASS 1) org.koin.plugin.hints#configuration_default(org.example.core.CoreModule): tier 1 local (  tier 1 local: _kfun:org.koin.plugin.hints#configuration_default(org.example.core.CoreModule){})
+first BOTAS line: BOTAS ts={"at":"2023-11-14T22:13:20Z","label":"s1"} miss=SerializationException date=2024-02-29 ui=u1 greet=g1 extra=none rpc=ping server={"host":"h1"
+hot symbols from whole-module caches of :core/:domain: 0
+
+## 4. P0 C: klibs.txt edited to point serialization-core at the Gradle cache (outside the toolchain directory), project core 1.12.0
+dependency klibs: 17 linked, 42 replaced by the toolchain's copies, 4 toolchain klib(s) replaced by the project's newer copies, 24 duplicates skipped
+duplicate definitions across libraries (packaging): tier 1 local=3 tier 2 weak=0 tier 3 conflict=0; same library=0
+  tier 1 local: _kfun:androidx.compose.ui.text.<get-DefaultCacheSize>#internal
+  tier 1 local: _kfun:org.koin.plugin.hints#componentscan_org_example_core_CoreModule_single(org.example.core.ServerStore){}
+  tier 1 local: _kfun:org.koin.plugin.hints#configuration_default(org.example.core.CoreModule){}
+BUILD SUCCESSFUL in 2m 10s
+whole-module core/domain caches: 0; hot-symbol lines from them: 0
+# before the guard (0.2.9, same edit): tier 3 conflict=3, basis 'hot symbol', 'hot symbols: 120 (from libcore-cache.a)', 'hot symbols: 13 (from libdomain-cache.a)' (issues/P0-klib-pin.md C.1)
+
+## 5. release zero change: Gradle's own linkReleaseFrameworkIosSimulatorArm64 of the botas-like project, plugin 0.2.9 vs B1
+# static framework: compared per archive member (byte sha256), defined symbols, section sizes
+0.2.9: 2027 members, 171453 defined symbols, archive 118092320 bytes
+0.2.10-b1: 2027 members, 171453 defined symbols, archive 118092320 bytes
+member objects: byte-identical
+defined symbols: identical
+section sizes: identical
+
+## 6. simulator full regression (plugin 0.2.10-b1 from this branch, toolchain .11.2, one simulator, in sequence)
+17:42:10 start 7eb5646 feat/klib-max-b1 udid=0B879832-98D9-49A5-AC00-8BAB579AFBB2 plugin 0.2.10-b1
+17:42:10 perf-map guard: start, 80 existing /tmp/perf-*.map
+17:42:36 unit rc=0 summary: 131/131 passed (skipped 0)
+17:47:24 clean-run rc=0 summary: 4/4 PASS
+17:50:47 watch rc=0 summary: 17/17 PASS
+18:02:29 kmp rc=0 summary: 65/65 PASS
+18:14:23 composite rc=1 summary: 49/51 PASS; FAILED: ['release baseline recorded (lib-build modules compiled from source)', 'hotReloadVerifyRelease (digest) with lib-build modules']
+18:17:34 relaunch rc=0 summary: 28/28 checks passed
+18:17:34 perf-map guard rc=1 (plugin Launcher still sets KALDO_PERF_MAP until the plugin line's fix)
+# composite 49/51 in that run: both failures are the release steps of section A (baseline 11 s, then hotReloadVerifyRelease);
+# the Gradle error was not captured. Not reproduced: the same suite again with this plugin in a fresh directory (18:34-18:46):
+#   B1 rerun: summary: 51/51 PASS
+#   control, plugin 0.2.9 (main): summary: 51/51 PASS
+# (a leftover composite project fails hotReloadVerifyRelease with either plugin: section F leaves core calling util's
+#  iosSharedMain sharedLine(), which the release check does not compile; a test-order artifact, not this change)
+# perf-map guard: 26 new /tmp/perf-*.map from the plugin's Launcher (KALDO_PERF_MAP on by default; the plugin line's fix)
+unit tests on the final head: 131/131 passed

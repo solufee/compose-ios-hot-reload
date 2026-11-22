@@ -102,7 +102,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.9"
+    id("com.solufee.cmp.hotreload") version "0.2.10"
 }
 
 cmpHotReload {
@@ -474,15 +474,15 @@ Xcode 工程（`iosApp/`）和你平时的 debug 构建都和原来一样。热�
 | 源码 | 这个模块的 `iosSimulatorArm64Main` 和它 `dependsOn` 的全部源码集，包括默认层级里的 `appleMain`、`iosMain`、`commonMain`，以及 Compose 资源（`composeResources/`，第一次打包时由 Compose 插件生成） |
 | 同工程的其他 KMP 模块 | 这个模块依赖的同工程模块（含间接依赖，例如 `shared` → `core` → `base`）都会一起热重载，作为库模块，源码必须写 `package`；它们自己的 `expect`/`actual` 和 Compose 资源也都支持（0.2.1 起，按三模块工程验收） |
 | Compose 资源 | 字符串、图片等放在各模块 `composeResources/` 里的资源，打包时拷进 app。只改资源时 `./gradlew hotReload` 会自动温重启（输出 `WARM compose-resources: …`）来换上新资源；资源不能热替换 |
-| 第三方依赖 | 自动从 `iosSimulatorArm64CompileKlibraries` 解析（含传递依赖）。Kotlin 标准库、kotlinx、Compose、AndroidX 这些工具链自带的库，一律换成工具链里的那一份（不会链进两份） |
+| 第三方依赖 | 自动从 `iosSimulatorArm64CompileKlibraries` 解析（含传递依赖）。同一个库只链一份（不会链进两份）：Compose 模块用工具链里的那一份；kotlinx、AndroidX 等其他库取你工程里和工具链里两者中较新的那一份（插件 0.2.10 起）：你的版本更新时，和 release 构建用的是同一份；你的版本更旧时，热重载用工具链的版本（见 LIMITATIONS 第 16 条） |
 | Compose 版本 | 每个 Compose 模块（`org.jetbrains.compose.*`、`androidx.compose.*`）和工具链里**同名的那一份**比版本（两套版本号各比各的）：比工具链的新就在打包前报错，写出是哪个依赖拉进来的。工具链 2.5.255-hotreload.7 基于官方 Compose Multiplatform **1.13.0-rc01**，所以 1.13.0-beta02 和 rc01 的工程都能用；1.13.0 正式版及以后（例如 1.14.0-alpha01）会在打包前报错。工具链里没有的 Compose 模块不做版本判断 |
 | 依赖库的 klib 版本 | klib ABI 在 **1.6.0（Kotlin 1.6.10）到 2.5.0** 之间、metadata 不高于 **2.6.0**，即用 Kotlin 2.5 及更早版本编出的库。超出范围的库在打包前报错，报错里有库名、版本和该怎么换 |
 | 带原生代码的库（cinterop） | **0.2.0 不支持**。依赖里有 cinterop klib（绑定系统框架、静态库或 C 库的那类，例如 SQLite 驱动）时，打包会打印 `warning: cinterop klibs … are not supported in 0.2.0`，并列出是哪些库、谁拉进来的、要链接什么；它们可能链接失败或运行出错。kotlinx-datetime 这类纯 Kotlin 库没有问题 |
 | 你工程里的 Kotlin 版本 | 不受限制（向导模板的 2.4.21 实测可用）：热重载不用它编译，只用它读设置 |
 
-工具链里的 kotlinx、AndroidX 比你工程里用的旧时（例如模板用 lifecycle 2.11.0，工具链里是 2.9.x），打包时会打印一行
-`hot reload compiles against the toolchain's older copies of …`。这时只用到了旧版本里也有的 API 就没问题；用到新 API 的
-代码在热重载里编译不过。
+打包时会打印两行，说明每个库最后用的是哪一份：`the project's version is used …`（你工程里的版本更新，例如 serialization 1.12.0、
+coroutines 1.10.2）和 `the toolchain's version is used …`（工具链里的更新）。版本一变（换了依赖版本、换了插件或工具链），第一次打包会把
+受影响的库缓存重编一遍，耗时接近一次全新打包（向导形态的多模块工程实测约 2 分钟），之后照常。
 
 ### 接入（三步）
 
@@ -504,7 +504,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.9"
+    id("com.solufee.cmp.hotreload") version "0.2.10"
 }
 ```
 

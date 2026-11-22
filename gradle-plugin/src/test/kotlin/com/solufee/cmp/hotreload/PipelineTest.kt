@@ -106,6 +106,31 @@ class PipelineTest {
     }
 
     @Test
+    fun `P0 C - the toolchain's auto-cache root never covers the project, dropped toolchain klibs are not linked`(@TempDir dir: File) {
+        val home = File(System.getProperty("user.home"))
+        val project = File(dir, "proj").apply { mkdirs() }
+        val tc = File(dir, "tc").apply { mkdirs() }
+        val a = File(tc, "a.klib").apply { writeText("") }
+        val b = File(tc, "b.klib").apply { writeText("") }
+        // one toolchain klib in another tree under the user's home: the common directory would be the home directory
+        val outside = File(home, ".gradle/caches/modules-2/files-2.1/org.example/x/1.0/abc/x.klib")
+        val list = File(dir, "klibs.txt").apply { writeText("${a.path}\n${b.path}\n${outside.path}\n") }
+        fun st(dropped: List<String>) = HrSettings(
+            rootDir = project.path, workDir = File(dir, "w").path, dist = "/nonexistent", kotlinc = "/nonexistent/kotlinc-native", compilerJar = "/c.jar",
+            composePlugin = "/p.jar", klibList = list.path, kaldoDylib = "/l.dylib", kaldoSha256 = null, target = "ios_simulator_arm64",
+            orcRuntime = "/o.a", objcUtilsLib = "/u.a", llvmHome = null, useDaemon = false, socketDir = "/s", javaHome = "/j",
+            modules = emptyList(), infoPlist = "/p", linkerOptions = emptyList(), keepCompactUnwind = true, port = 5567, udid = "booted",
+            launchLog = "/l", readyMarker = null, launchTimeoutSec = 1, launchRetries = 1, reinstall = true, warmRestart = true,
+            droppedToolchainKlibs = dropped,
+        )
+        val roots = Pipeline(st(emptyList()), org.gradle.api.logging.Logging.getLogger("t")).autoCacheRoots()
+        assertTrue(roots.none { File(project.path).canonicalPath.startsWith(File(it).canonicalPath + "/") || File(it).canonicalPath == home.canonicalPath }, roots.toString())
+        assertEquals(listOf(tc.path, outside.parent).map { File(it).canonicalPath }.toSet(), roots.map { File(it).canonicalPath }.toSet())
+        val p = Pipeline(st(listOf(b.path)), org.gradle.api.logging.Logging.getLogger("t"))
+        assertEquals(listOf(a.path, outside.path), p.toolchainKlibs())
+    }
+
+    @Test
     fun `a patch's compact-unwind records move to the section the app's loader registers (#80)`(@TempDir dir: File) {
         fun obj(name: String, c: String): File {
             val src = File(dir, "$name.c").apply { writeText(c) }

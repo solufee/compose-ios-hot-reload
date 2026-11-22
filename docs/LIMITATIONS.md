@@ -18,7 +18,7 @@
 | iOS 模拟器（arm64），macOS arm64 主机 | ✅ |
 | Gradle 双模块示例（app + ui），一条命令出包 | ✅ |
 | 已有的 Kotlin Multiplatform 工程（向导模板，插件加在 `shared` 上） | ✅ 0.2.0：commonMain/iosMain 函数体热替换；0.2.4 起 `expect`/`actual` 函数改签名、增删一对 `expect fun` 也热替换，增删一对类等仍自动温重启 |
-| KMP 工程的第三方 iOS 依赖 | ✅ 从 Gradle 解析（含传递依赖）；工具链自带的库（stdlib、kotlinx、Compose、AndroidX）只链工具链那一份 |
+| KMP 工程的第三方 iOS 依赖 | ✅ 从 Gradle 解析（含传递依赖）。同一个库只链一份：Compose 模块用工具链的；kotlinx、AndroidX 等其他库取工程和工具链两者中较新的那一份，和 release 构建的解析一致（0.2.10，#110） |
 | 依赖库版本 | klib ABI 1.6.0–2.5.0、metadata ≤ 2.6.0；Compose 模块不比工具链里同名的那份新（插件 0.2.7 / 工具链 .11：Compose Multiplatform ≤ 1.13.0-rc01，1.13.0-beta02 和 rc01 的工程都能用，1.13.0 及以后打包前报错）；超出时打包前报错，写出库名和拉进它的依赖 |
 | KMP 工程的 Swift / Xcode 层（`iosApp/`） | ➖ 热重载时不运行：插件生成的入口直接调用 `MainViewController()`，Swift 侧代码不生效；正式 app 仍走 Xcode 工程 |
 | 带原生代码的依赖库（cinterop：系统框架、静态库、C 库绑定） | ❌ 0.2.0 不支持；打包时警告并列出这些库 |
@@ -134,10 +134,14 @@
    （画面过期原型里，存在文件级 `var` 里的句柄每次 reload 后都变回 null）。不会读到旧内存，原因见 TECHNICAL-NOTES §1.6。
    需要跨热替换保留的状态，放进 Compose state 或 `remember`，不要放在 `object` 或文件级 `var` 里。沿用旧槽需要同时改编译器和
    Kaldo，代价大，暂不做。
-16. **工具链自带的库比工程里用的旧时，热重载按旧版本编译**（0.2.0 起）。工具链 .6 把 collection、lifecycle、navigationevent、
-   savedstate、atomicfu 升到了 Compose 实际用的版本（androidx lifecycle 2.11.0 等），向导模板实测只剩一个：
-   `org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose` 工程里是 2.11.0、工具链里是 2.9.6。打包时会打印
-   `hot reload compiles against the toolchain's older copies of …` 列出这类库；只用到旧版本里也有的 API 就没问题，用到新 API 的代码在热重载里编译不过。
+16. **已修（0.2.10，#110）：工具链自带的库比工程里用的旧时，热重载以前按旧版本编译。** 0.2.0–0.2.9 会把工程里更新的
+   kotlinx、AndroidX 一律换成工具链里的旧版（例如 serialization-core 1.12.0 → 1.7.3）。没被换掉的同族库（serialization-json 1.12.0）
+   调用新 API 时，启动报 `IrLinkageError`（`InstantSerializer`）；工程自己的代码用到新 API 时，热重载直接编译不过。
+   现在除 Compose 模块外，每个库取两者中较新的那份，打包日志会列出 `the project's version is used …` 和
+   `the toolchain's version is used …`。
+   仍然存在的差异：工程用的版本**比工具链旧**时，热重载用工具链的版本，因为工具链里的 Compose 模块是按它编的；release 构建保留工程自己的旧版本。
+   向导形态实测：kotlinx-datetime 工程 0.6.0 / 工具链 0.7.1，只用 `LocalDate`，能打包、能启动、能热重载。工程代码如果用到旧版有、新版已经删掉的
+   API（例如 datetime 0.6 的 `kotlinx.datetime.Instant`、`Clock`），release 能编过，热重载会编译不过；这时把这个库升到工具链的版本或更新即可。
 17. **`remember { }` 里算出的值热替换后不会自己变**。向导模板的问候语在 `remember { Greeting().greet() }` 里，
    改 `greet()` 后补丁已经生效，要让这块重新进入组合（模板里点两下 “Click me!”）才显示新文字。
 18. **`Dialog`、`BackHandler` 在 .5 及以前的预构建工具链里会崩（.6 修复）**。工具链的 klib 集合缺 4 个 Compose 依赖：

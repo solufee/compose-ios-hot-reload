@@ -15,7 +15,7 @@ object BuildIdentity {
     private const val SHA_CACHE = "build-identity-sha.cache"
 
     /** Kept when the state is cleared: the extracted tools (content-addressed), the release baseline the user recorded and the generated Info.plist (written at configuration). */
-    private val KEEP = setOf("tools", "release", "generated", FILE, SHA_CACHE)
+    private val KEEP = setOf("tools", "release", "generated", FILE, SHA_CACHE, PerfMaps.RECORD)
 
     /** What compiling leaves behind; without a recorded identity, any of these means state from an older plugin version. */
     private val COMPILED = listOf("klib", "ic", "auto-cache", "merge-cache", "compat", "app")

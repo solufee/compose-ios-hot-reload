@@ -6,6 +6,7 @@ set -u
 O=$1; N=${2:-2}; mkdir -p "$O"
 HERE=$(cd "$(dirname "$0")" && pwd); EX=$(cd "$HERE/../.." && pwd)
 . "$TOOLCHAIN_ENV"; cd "$EX"
+export HR_PERF_MAP=1   # Issue #108: the JIT perf map is needed here (symtree.py); off by default in run.sh
 bash ../daemon/daemon-start.sh --force >/dev/null 2>&1
 [ -n "${SKIP_PKG:-}" ] || { bash hotreload.sh package > "$O/package.out" 2>&1 || exit 1; }
 for n in $(seq 1 "$N"); do
@@ -13,7 +14,7 @@ for n in $(seq 1 "$N"); do
   bash -c "set -m; nohup bash run.sh > '$O/run$n.out' 2>&1 & echo \$! > '$O/run$n.pid'"
   P=""; for _ in $(seq 1 3000); do P=$(pgrep -n -f "Devices/$UDID/.*ComposeHR\.app/ComposeHR$"); [ -n "$P" ] && break; sleep 0.01; done
   echo "run $n pid $P"; sample "$P" 10 1 -mayDie -file "$O/sample$n.txt" > /dev/null 2>&1
-  sleep 2; tr -d '\r' < launch.log > "$O/launch$n.log"; cp "/tmp/perf-$P.map" "$O/perf$n.map" 2>/dev/null
+  sleep 2; tr -d '\r' < launch.log > "$O/launch$n.log"; cp "/tmp/perf-$P.map" "$O/perf$n.map" 2>/dev/null; rm -f "/tmp/perf-$P.map"
   kill "$(cat "$O/run$n.pid")" 2>/dev/null
 done
 xcrun simctl terminate "$UDID" com.example.composehr 2>/dev/null

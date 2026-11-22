@@ -160,64 +160,111 @@ object Kmp {
 
     data class Selection(
         val klibs: List<String>, val replaced: List<String>, val duplicates: List<String>,
+        /** P0/B1: components whose project version is newer than the toolchain's copy and is linked instead ("id version (toolchain v)"). */
         val newer: List<String> = emptyList(), val cinterop: List<String> = emptyList(),
+        /** P0/B1: toolchain klibs left out because the project's newer copy of the same component is linked. */
+        val toolchainDropped: List<String> = emptyList(),
+        /** P0/B1: components that come from the toolchain although the project asked for an older version ("id version -> v"). */
+        val older: List<String> = emptyList(),
     )
 
     private val VERSION_DIR = Regex("""^\d+\.\d+.*""")
 
-    /** Version of a toolchain klib: its Maven version folder (external-klibs/<group>/<artifact>/<version>/), else the Compose fork's. */
-    private fun toolchainVersion(path: String, composeVersion: String): String =
-        File(path).parentFile?.name?.takeIf { VERSION_DIR.matches(it) } ?: composeVersion
+    /**
+     * The Maven version folder of a toolchain klib: external-klibs/<group>/<artifact>/<version>/<file>, or a Gradle cache
+     * path <group>/<artifact>/<version>/<sha1>/<file> (a klib list edited by hand); null for the Compose fork's klibs.
+     */
+    private fun versionDir(path: String): File? {
+        val parent = File(path).parentFile ?: return null
+        if (VERSION_DIR.matches(parent.name)) return parent
+        return parent.parentFile?.takeIf { VERSION_DIR.matches(it.name) && parent.name.matches(Regex("[0-9a-f]{20,40}")) }
+    }
+
+    /** Version of a toolchain klib: its Maven version folder, else the Compose fork's. */
+    private fun toolchainVersion(path: String, composeVersion: String): String = versionDir(path)?.name ?: composeVersion
+
+    /** `group:artifact` of a public toolchain klib; null for the Compose fork's klibs. */
+    private fun toolchainComponent(path: String): String? {
+        val artifact = versionDir(path)?.parentFile ?: return null
+        val group = artifact.parentFile ?: return null
+        return "${group.name}:${artifact.name}".lowercase()
+    }
 
     /**
-     * Klibs to link from the modules' dependencies: drops every klib whose `unique_name` the toolchain already
-     * provides (Kotlin stdlib, kotlinx, Compose, AndroidX: one copy only, the toolchain's) and duplicates among
-     * the dependencies. Fails when a klib's ABI or metadata is outside what the toolchain's compiler reads, or
-     * when a Compose module (org.jetbrains.compose.*, androidx.compose.*) resolves to a newer version than the
-     * toolchain's copy of that same module (each module against its own copy: the two Compose version schemes
-     * differ; modules the toolchain does not ship are not judged). Warns about cinterop klibs (native bindings),
-     * which 0.2.0 does not support.
+     * Klibs to link from the modules' dependencies (P0/B1, plugin 0.2.10). For every Maven component that the toolchain
+     * also provides (same `unique_name`, or the same `group:artifact` for the toolchain's public klibs):
+     *  - the Compose fork's modules (klibs of the toolchain without a Maven version folder) and every Compose module
+     *    (org.jetbrains.compose.*, androidx.compose.*) come from the toolchain; a project version newer than the toolchain's
+     *    copy stops the build (each module against its own copy: the two Compose version schemes differ);
+     *  - any other library is linked in the newer of the two versions, as Gradle resolves it for the release build: the
+     *    project's copy when it is newer (the toolchain's klibs of that component are then left out, [Selection.toolchainDropped]),
+     *    otherwise the toolchain's: the toolchain's Compose modules were built against it (here hot reload and the release
+     *    build, which keeps the project's older version, link different versions of that library).
+     * Duplicates among the dependencies are dropped. Fails when a linked klib's ABI or metadata is outside what the
+     * toolchain's compiler reads. Warns about cinterop klibs (native bindings) that do not replace a toolchain component.
      */
     fun selectKlibs(toolchainKlibs: List<String>, stdlib: File, deps: List<Dependency>, composeVersion: String, logger: Logger?): Selection {
         val providedVersions = toolchainKlibs.mapNotNull { p -> manifest(File(p))["unique_name"]?.let { it to toolchainVersion(p, composeVersion) } }.toMap()
         val provided = providedVersions.keys
+        val tcByName = toolchainKlibs.mapNotNull { p -> manifest(File(p))["unique_name"]?.let { it to p } }.groupBy({ it.first }, { it.second })
+        // The Compose fork's modules: toolchain klibs without a Maven version folder (compose-klibs/<module>).
+        val forkNames = toolchainKlibs.filter { toolchainComponent(it) == null }.mapNotNull { manifest(File(it))["unique_name"] }
+            .filter { it.startsWith("org.jetbrains.compose.") || it.startsWith("androidx.compose.") }.toSet()
+        val tcComponents = toolchainKlibs.mapNotNull { p -> toolchainComponent(p)?.let { it to p } }.groupBy({ it.first }, { it.second })
         val stdlibManifest = manifest(stdlib)
         val abi = stdlibManifest["abi_version"]
         // The compiler also reads klib metadata one version ahead of its ABI (2.5 reads metadata up to 2.6).
         val metadata = stdlibManifest["metadata_version"]?.let { v -> v.split('.').let { p -> "${p[0]}.${(p.getOrNull(1)?.toIntOrNull() ?: 0) + 1}.0" } }
         val manifests = deps.associateWith { manifest(it.file) }
+        fun nameOf(d: Dependency) = manifests.getValue(d)["unique_name"] ?: d.file.nameWithoutExtension
+        fun componentOf(d: Dependency) = d.id.split(':').takeIf { it.size >= 3 }?.let { "${it[0]}:${it[1]}".lowercase() }
+        fun versionOf(d: Dependency) = d.id.split(':').takeIf { it.size >= 3 }?.last()
         // A Maven component can ship several klibs (its library plus cinterop klibs whose names change between
-        // versions, e.g. ui-uikit-cinterop-utils -> ui-uikit-cinterop-objcUtils): when the toolchain provides any
-        // klib of a component, all of that component's klibs are replaced.
-        val providedComponents = deps.filter { (manifests.getValue(it)["unique_name"] ?: "") in provided }.map { it.id }.toSet()
+        // versions, e.g. ui-uikit-cinterop-utils -> ui-uikit-cinterop-objcUtils): the decision is per component.
+        val providedComponents = deps.filter { nameOf(it) in provided || componentOf(it)?.let { c -> c in tcComponents } == true }.map { it.id }.toSet()
+        val byComponent = deps.filter { it.id in providedComponents }.groupBy { it.id }
         val problems = mutableListOf<String>()
         val kept = LinkedHashMap<String, String>()
         val replaced = mutableListOf<String>()
         val duplicates = mutableListOf<String>()
         val newer = mutableListOf<String>()
+        val older = mutableListOf<String>()
         val cinterop = mutableListOf<String>()
-        for (d in deps) {
-            val m = manifests.getValue(d)
-            val name = m["unique_name"] ?: d.file.nameWithoutExtension
-            when {
-                name in provided || d.id in providedComponents -> {
-                    replaced += d.id
-                    val own = providedVersions[name]
-                    val version = d.id.split(':').takeIf { it.size >= 3 }?.last()
-                    if (own != null && version != null && compareVersions(version, own) > 0) {
-                        if (isCompose(d.id)) {
-                            problems += "${d.label}: Compose module $name $version is newer than the toolchain's copy ($own). " +
-                                "Use Compose Multiplatform $composeVersion or older" +
-                                (if (d.via != null && d.via != d.id) ", or a release of ${d.via} built against it." else ".")
-                        } else {
-                            newer += "${d.id.substringBeforeLast(':')} $version -> $own"
-                        }
+        val dropped = LinkedHashSet<String>()
+        val projectWins = mutableSetOf<String>()
+        for ((id, ds) in byComponent) {
+            val version = versionOf(ds.first())
+            val tcPaths = (ds.flatMap { tcByName[nameOf(it)].orEmpty() } + componentOf(ds.first())?.let { tcComponents[it] }.orEmpty()).distinct()
+            val own = tcPaths.map { toolchainVersion(it, composeVersion) }.maxWithOrNull { a, b -> compareVersions(a, b) }
+            val fork = ds.any { nameOf(it) in forkNames } || isCompose(id)
+            if (fork) {
+                for (d in ds) {
+                    val o = providedVersions[nameOf(d)]
+                    if (o != null && version != null && compareVersions(version, o) > 0) {
+                        problems += "${d.label}: Compose module ${nameOf(d)} $version is newer than the toolchain's copy ($o). " +
+                            "Use Compose Multiplatform $composeVersion or older" +
+                            (if (d.via != null && d.via != d.id) ", or a release of ${d.via} built against it." else ".")
                     }
                 }
+            } else if (own != null && version != null && compareVersions(version, own) > 0) {
+                projectWins += id
+                newer += "${id.substringBeforeLast(':')} $version (toolchain $own)"
+                dropped += tcPaths
+                continue
+            } else if (own != null && version != null && compareVersions(version, own) < 0) {
+                older += "${id.substringBeforeLast(':')} $version -> $own"
+            }
+            replaced += ds.map { it.id }
+        }
+        for (d in deps) {
+            val m = manifests.getValue(d)
+            val name = nameOf(d)
+            when {
+                d.id in providedComponents && d.id !in projectWins -> Unit
                 name in kept -> duplicates += d.id
                 else -> {
                     kept[name] = d.file.path
-                    if (m["interop"] == "true") {
+                    if (m["interop"] == "true" && d.id !in projectWins) {
                         val native = listOfNotNull(m["linkerOpts"]?.takeIf { it.isNotBlank() }?.let { "linkerOpts $it" },
                             m["staticLibraries"]?.takeIf { it.isNotBlank() }?.let { "static libraries $it" })
                         cinterop += d.label + (if (native.isEmpty()) "" else " [${native.joinToString("; ")}]")
@@ -243,16 +290,21 @@ object Kmp {
             throw GradleException("CMP hot reload: these dependencies cannot be linked with the toolchain:\n" + problems.joinToString("\n") { "  - $it" })
         }
         logger?.lifecycle("dependency klibs: ${kept.size} linked, ${replaced.size} replaced by the toolchain's copies" +
+            (if (dropped.isEmpty()) "" else ", ${dropped.size} toolchain klib(s) replaced by the project's newer copies") +
             (if (duplicates.isEmpty()) "" else ", ${duplicates.size} duplicates skipped"))
         if (newer.isNotEmpty()) {
-            logger?.lifecycle("dependency klibs: hot reload compiles against the toolchain's older copies of " +
-                "${newer.distinct().joinToString(", ")}; code that uses API added after those versions does not compile here")
+            logger?.lifecycle("dependency klibs: the project's version is used (newer than the toolchain's, as in the release build): " +
+                newer.distinct().joinToString(", "))
+        }
+        if (older.isNotEmpty()) {
+            logger?.lifecycle("dependency klibs: the toolchain's version is used (newer than the project's; the toolchain's Compose " +
+                "modules are built against it, while the release build keeps the project's version): ${older.distinct().joinToString(", ")}")
         }
         if (cinterop.isNotEmpty()) {
             logger?.warn("CMP hot reload: warning: cinterop klibs (bindings to native code) are not supported in 0.2.0; " +
                 "linking or running them may fail:\n" + cinterop.distinct().joinToString("\n") { "  - $it" })
         }
-        return Selection(kept.values.toList(), replaced, duplicates, newer.distinct(), cinterop.distinct())
+        return Selection(kept.values.toList(), replaced, duplicates, newer.distinct(), cinterop.distinct(), dropped.toList(), older.distinct())
     }
 
     /** Oldest klib ABI the compiler reads (Kotlin 1.6.10). */

@@ -110,7 +110,7 @@ abstract class HotReloadTask : DefaultTask() {
                     "its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule(\"$build\", \"$module\") }")
             }
         }
-        return s.copy(extraKlibs = sel.klibs)
+        return s.copy(extraKlibs = sel.klibs, droppedToolchainKlibs = sel.toolchainDropped)
     }
 
     protected fun tools(s: HrSettings) = Tools.extract(File(s.workDir), logger)
@@ -355,6 +355,8 @@ abstract class CleanTask : HotReloadTask() {
         val s = settings.get()
         Daemons(s, logger).stop()
         val work = File(s.workDir)
+        // #107: the perf maps of app processes this project started (their pids are recorded under work)
+        com.solufee.cmp.hotreload.PerfMaps.clean(work, logger)
         val mb = if (work.exists()) work.walkTopDown().filter { it.isFile }.sumOf { it.length() } / (1024 * 1024) else 0
         work.deleteRecursively()
         logger.lifecycle("CMP hot reload: deleted ${work.path} ($mb MB)")

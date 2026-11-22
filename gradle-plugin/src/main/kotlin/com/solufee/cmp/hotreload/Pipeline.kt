@@ -60,7 +60,13 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * compiler adds implicitly). Everything else is linked wherever it lives, including public klibs that the
      * toolchain download put next to the dist; nothing is assumed to be in ~/.gradle.
      */
-    fun externalKlibs(): List<String> = externalKlibs(File(s.klibList).readLines(), File(s.dist)) + s.extraKlibs
+    fun externalKlibs(): List<String> = toolchainKlibs() + s.extraKlibs
+
+    /** The toolchain's klibs that are linked: the list minus those replaced by the project's newer copies (P0/B1). */
+    fun toolchainKlibs(): List<String> {
+        val dropped = s.droppedToolchainKlibs.map { File(it).canonicalPath }.toSet()
+        return externalKlibs(File(s.klibList).readLines(), File(s.dist)).filter { File(it).canonicalPath !in dropped }
+    }
 
 
     /** Longest common directory of the external klibs: caches are auto-built for everything below it. */
@@ -78,14 +84,19 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
      * directory that also holds the project's own klibs - those are compiled per file so they can be hot-swapped.
      */
     fun autoCacheRoots(): List<String> {
-        val toolchain = externalKlibs(File(s.klibList).readLines(), File(s.dist))
-        val roots = mutableListOf(autoCacheFrom(toolchain))
-        if (s.extraKlibs.isNotEmpty()) {
-            val common = autoCacheFrom(s.extraKlibs)
-            val home = File(System.getProperty("user.home")).canonicalPath
+        val home = File(System.getProperty("user.home")).canonicalPath
+        // A root above the project would cache the project's own module klibs as whole libraries (they are then hot
+        // symbols in a library cache, and the duplicate-definition tiers fail, P0 C): the same guard for the
+        // toolchain's klibs (a klib list edited to point outside the toolchain directory) as for the dependencies.
+        fun rootsFor(klibs: List<String>): List<String> {
+            val common = autoCacheFrom(klibs)
             val tooBroad = common == "/" || File(common).canonicalPath == home || File(s.rootDir).canonicalPath.startsWith(File(common).canonicalPath + "/")
-            roots += if (tooBroad) s.extraKlibs.map { File(it).parent }.distinct() else listOf(common)
+            return if (tooBroad) klibs.map { File(it).parent }.distinct() else listOf(common)
         }
+        val toolchain = toolchainKlibs()
+        val roots = mutableListOf<String>()
+        roots += if (toolchain.isEmpty()) listOf(autoCacheFrom(toolchain)) else rootsFor(toolchain)
+        if (s.extraKlibs.isNotEmpty()) roots += rootsFor(s.extraKlibs)
         return roots.distinct()
     }
 

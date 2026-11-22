@@ -45,6 +45,13 @@ class PackagerDutiesTest {
     }
 
     @Test
+    fun `the perf map is off unless asked for (#107)`() {
+        val s = settings()
+        assertFalse("SIMCTL_CHILD_KALDO_PERF_MAP" in Launcher(s, logger).appEnvironment())
+        assertEquals("1", Launcher(s.copy(perfMap = true), logger).appEnvironment()["SIMCTL_CHILD_KALDO_PERF_MAP"])
+    }
+
+    @Test
     fun `4 the host-link compile never runs cache-only, even if the caller's shell sets it`() {
         val p = Pipeline(settings(), logger)
         assertFalse("KONAN_HOT_RELOAD_CACHE_ONLY" in p.compileEnvironment(cacheOnly = false))

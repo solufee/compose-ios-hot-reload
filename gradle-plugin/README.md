@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9、0.2.10）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -115,6 +115,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `llvmHome` | 清单的 `tools.llvmTools`；没有时看 dist 旁边的 `llvm-tools/`；再没有就不设（工具自己的默认值） | 传给打包工具的 `KONAN_LLVM_HOME` |
 | `keepCompactUnwind` | `true` | 打包时导出 `KALDO_KEEP_COMPACT_UNWIND=1`（INTERFACE §3.3 第 1 条） |
 | `libsInExecutable` | `false`（`cmp.hotreload.libsInExecutable`） | 工具链 .10 起（#56）：默认热重载 `.app` 不再把约 130 MB 的库对象嵌进可执行文件，app 启动时由 libKaldo 从 `build/hotreload/app/merged-bootstrap.libs.o` 读取（打包快约 3 s，可执行文件 255 → 49 MB）；这样的 `.app` 只能在打包它的这台 Mac 上运行，删掉 `build/hotreload` 后要重新打包（`hotReloadRun` 发现文件不在时会报错）。`true` 把它嵌回可执行文件，得到可以拷走的 `.app`。只影响热重载构建，release 不受影响 |
+| `perfMap` | `false`（`cmp.hotreload.perfMap`） | #107：给 app 设 `KALDO_PERF_MAP=1`，libKaldo 把热重载代码（JIT 链接）的地址和符号名写进 `/tmp/perf-<pid>.map`，供 Instruments、lldb 等符号化这些帧，做性能分析或查崩溃时用。每次启动约 70 MB。插件记下自己启动的 app 的 pid（`build/hotreload/perf-map-pids.txt`），下一次启动（hotReloadRun、温重启）和 `hotReloadClean` 时删掉已经退出的那些进程的 map，只删记录过的。0.2.9 及以前默认就开着而且从不删，`/tmp` 里可能攒了很多 `perf-*.map`，可以手动删掉 |
 | `stableKeys` | `true`（`cmp.hotreload.stableKeys`） | 0.2.5 / 工具链 .9 起（#29/#47）：热重载构建的每一次编译（库 klib、打包、补丁、分类器的 app klib）都给 Compose 编译器加 `-P plugin:androidx.compose.compiler.plugins.kotlin:featureFlag=HotReloadStableKeys`，composable 改参数时 `remember` 保留，`remember` 形状变了安全重置。只有工具链的 Compose 编译器认得这个 flag 时才加（看插件 jar 里的 `FeatureFlag`；.8 及以前不加）；release 构建永远不加。打包时记下当时的状态，`hotReload` 发现和打包时不一致就拒绝并提示重新打包。打包日志有一行 `stable keys …: on/off/unsupported` |
 | `mainWaitMs` | `2000`（`cmp.hotreload.mainWaitMs`） | 工具链 .8 起（#27/#40）：每次 reload 在 app 主线程上执行（插件传 `KONAN_HR_RELOAD_ON_MAIN=1`）；主线程在这么多毫秒内没接手，补丁不应用（`KONAN_HR_MAIN_WAIT_MS`），`hotReload` 以非零退出并提示 “the app was busy, patch not applied”，这次的改动留到下一次重发；`hotReloadWatch -t` 里只有这一次失败，继续监听。下次启动 app 时生效 |
 | `forceRecompose` | `true`（`cmp.hotreload.forceRecompose`） | 工具链 .6 起：每次热替换成功后整个界面完整重组一次，参数没变的调用点也显示新代码，`remember` 状态保留。`false` 时传 `KONAN_HR_FORCE_RECOMPOSE=0`（.5 的行为）；下次启动 app 时生效 |
@@ -128,7 +129,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `app(":x") { bundleId }` | `infoPlist` 里的；没有 Info.plist 时为入口所在包名 + `.hotreload` | 只用于插件生成的 Info.plist（app 名为根项目名的字母数字部分） |
 | `includedModule("<build>", ":<path>") { projectDir; sourceSets; generatorTasks }` | 无 | 复合构建（0.2.2）：included build 里的 KMP 模块从源码编译、参与热重载；按依赖顺序声明。默认按 KMP 默认层级和 Compose 生成目录找源码，资源生成任务通过跨构建任务引用先跑。不声明的 included 模块用那个构建编出的 klib 链接，改动时温重启（`WARM external-klibs`）。有不在默认层级里的 `src/<set>Main/kotlin` 时打印警告并给出要声明的 `sourceSets`（0.2.3）。见 TRYOUT 第 8 节 |
 | `extraKlibs` | 空 | 另外要链进来的 klib 文件或目录；所在目录也作为自动缓存的根（`-Xauto-cache-from`） |
-| `resolveDependencyKlibs` | `true` | 从 `iosSimulatorArm64CompileKlibraries` 解析依赖 klib（KMP 模块）。工具链自带的库按 klib 的 `unique_name` 和 Maven 组件整体替换成工具链的那份；klib ABI 不在 1.6.0–2.5.0、metadata 高于 2.6.0、某个 Compose 模块比工具链里同名的那份新时打包前报错（写出拉进它的依赖）；cinterop klib 打警告（0.2.0 不支持） |
+| `resolveDependencyKlibs` | `true` | 从 `iosSimulatorArm64CompileKlibraries` 解析依赖 klib（KMP 模块）。同一个库只链一份（按 klib 的 `unique_name` 和 Maven 组件整体判断）：Compose 模块用工具链的那份，其他库取工程和工具链两者中较新的那份（0.2.10，#110），打包日志列出每个库用了哪一份；klib ABI 不在 1.6.0–2.5.0、metadata 高于 2.6.0、某个 Compose 模块比工具链里同名的那份新时打包前报错（写出拉进它的依赖）；cinterop klib 打警告（0.2.0 不支持） |
 
 `cmp.hotreload.*` 属性（`-P`、gradle.properties、local.properties）可覆盖大多数默认值，
 包括 `readyMarker`、`launchTimeoutSeconds`、`launchRetries`、`reinstall`、`keepCompactUnwind`、`probeHost`。
@@ -228,7 +229,7 @@ CMP hot reload: the toolchain does not match what plugin com.solufee.cmp.hotrelo
   `ProtocolContractTest` 会连真实的 `HrCompileDaemon` 编译一次成功、一次语法错误，
   再对一个最小监听器发送两个对象并逐字节比对；测试里钉了 `interfaceVersion`，底层改协议升版本时这组测试先失败。
 - **开关**：打包时注入 `KALDO_HOT_PACKAGES`（自动生成）、`KALDO_HOT_SYMBOLS_OUT`；启动时注入
-  `KALDO_SYNTH_EH_FRAME=1`、`KALDO_HOT_SYMBOLS`、`KONAN_ORC_RUNTIME_PATH`、`KONAN_HOT_RELOAD_PORT`、`KALDO_PERF_MAP`；
+  `KALDO_SYNTH_EH_FRAME=1`、`KALDO_HOT_SYMBOLS`、`KONAN_ORC_RUNTIME_PATH`、`KONAN_HOT_RELOAD_PORT`（`KALDO_PERF_MAP` 只在 `perfMap = true` 时注入，#107）；
   守护进程按用途分别设或不设 `KONAN_HOT_RELOAD_CACHE_ONLY`。从调用者 shell 继承来的这些开关一律先清掉，
   防止例如 `CACHE_ONLY` 漏进完整构建。
 
@@ -297,7 +298,7 @@ GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会�
 | `ProtocolContractTest` | 4 | 钉住的 `interfaceVersion`；守护进程回复解析；发送协议逐字节；连真实 `HrCompileDaemon` 编译成功和语法错误（要工具链） |
 | `CompatContractTest` | 10 | 0.2.4（#28）：`@Composable` 改签名只有带 `--force-recompose` 才 HOT 并输出 remember-reset 提示，普通顶层函数改签名 HOT（含旧脚本按名字存的基线）；分类器随 jar 分发且哈希一致；源码里的 `expect` 声明（增删一对判温重启）；非快照输入不会判成 HOT；用真实 klib 验证“只改函数体退出 0、加字段退出 3”（要工具链）；`hr-state.json` 解析；带参数启动时找 app 进程；已启动模拟器列表；dist 旁边的 klib 会被链接 |
 | `PluginFunctionalTest` | 12 | TestKit：版本不匹配和下载版旧工具链的报错、没配工具链、DSL 配错时其它任务照常、debug 开关、应用插件前后 `tasks --all` 一致、`warmRestart` 与 `--no-warm`、加在单个模块上并声明源码片段、任务都在自己的组里 |
-| `KmpTest` | 12 | 版本比较；每个 Compose 模块和工具链里同名那份比版本（写出拉进它的依赖）；cinterop klib 警告；依赖 klib 按 `unique_name` 和 Maven 组件替换、去重、比工具链新时提示；klib ABI 高于 2.5.0 / 低于 1.6.0、metadata 高于 2.6.0 的报错；`MainViewController` 入口识别；多片段编译参数；按符号归模块 |
+| `KmpTest` | 14 | 版本比较；每个 Compose 模块和工具链里同名那份比版本（写出拉进它的依赖）；cinterop klib 警告；依赖 klib 按 `unique_name` 和 Maven 组件选版本（Compose 模块用工具链的，其他取较新的一份，较新的 cinterop 组件整体替换工具链那份，Gradle 缓存路径的工具链 klib 也认得）、去重；klib ABI 高于 2.5.0 / 低于 1.6.0、metadata 高于 2.6.0 的报错；`MainViewController` 入口识别；多片段编译参数；按符号归模块 |
 | `ExpectActualCasesTest` | 5 | 增删一对 expect/actual 的用例表（0.2.4 起：类、object、接口、属性 4 例 WARM，`expect fun` 增删、改名和其余 9 例不报）；Compose 资源改动判温重启；回归：只含初始化桩的目标文件、生成的 UIKit 入口（根包）在多模块时归 app、失败编译后的待发送列表 |
 | `StableKeysTest` | 6 | 0.2.5（#47）：从 Compose 插件 jar 认出 `HotReloadStableKeys`；开着且认得时库 klib、分类器的 app klib、程序编译的参数里都有它，关掉或工具链不认得（.8）时没有；release 的编译命令里永远没有；HOT 提示随设置变化；0.2.5（#52）：编译器 jar 认得 `splitPayloadList` 时只有打包编译带它；0.2.6（#56）：认出 `splitPayloadReserve` 和 libKaldo 的清单种类 2，`libsInExecutable` 关掉文件加载，.9 编译器走原路径；release 命令里都没有 |
 | `KlibInputsTest` | 2 | 0.2.4（#21）：库 klib 的输入只随本模块源码、上游模块 klib 的字节、依赖 klib 变化；只改 app、原样保存文件、上游同样字节的重编都不算；重编原因写出变了的文件、模块或依赖 klib |

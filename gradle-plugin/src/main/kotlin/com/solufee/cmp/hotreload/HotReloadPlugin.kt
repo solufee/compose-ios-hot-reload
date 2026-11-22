@@ -65,6 +65,7 @@ class HotReloadPlugin : Plugin<Project> {
         ext.simulator.readyMarker.convention(prop("cmp.hotreload.readyMarker"))
         ext.simulator.reinstall.convention(prop("cmp.hotreload.reinstall").map { it.toBoolean() }.orElse(true))
         ext.resolveDependencyKlibs.convention(prop("cmp.hotreload.resolveDependencyKlibs").map { it.toBoolean() }.orElse(true))
+        ext.perfMap.convention(prop("cmp.hotreload.perfMap").map { it.toBoolean() }.orElse(false))
         ext.modules.configureEach {
             sourceDir.convention("src/main/kotlin")
             infoPlist.convention("Info.plist")
@@ -228,6 +229,7 @@ class HotReloadPlugin : Plugin<Project> {
                     mainWaitMs = ext.mainWaitMs.get(),
                     stableKeys = ext.stableKeys.get(),
                     libsInExecutable = ext.libsInExecutable.get(),
+                    perfMap = ext.perfMap.get(),
                     iosEntry = iosEntry,
                     composeResources = composeResources,
                     infoPlistContent = plistContent,

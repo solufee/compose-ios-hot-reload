@@ -317,7 +317,7 @@ scripts/fetch-toolchain.py https://github.com/solufee/compose-ios-hot-reload/rel
 | `KALDO_KEEP_COMPACT_UNWIND` | 关 | `merge-payloads.py` 用：保留 `__LD,__compact_unwind`，供上一条合成 FDE。 |
 | `KALDO_HOT_SYMBOLS` | 无 | 热符号集文件（第 6 节）。只有集合内的符号会被外部化成可替换 stub。 |
 | `KONAN_HOT_RELOAD_CACHE_ONLY` | 关 | 编译器在缓存构建后直接返回，跳过被丢弃的 host 生成与链接。守护进程默认打开。 |
-| `KALDO_PERF_MAP` | 关 | 写 JIT 地址到 `/tmp/perf-<pid>.map`，给 lldb 符号化用。 |
+| `KALDO_PERF_MAP` | 关 | 写 JIT 地址到 `/tmp/perf-<pid>.map`，给 lldb 符号化用。只要设置了就写，值是什么都一样（包括 `0`），每次启动约 70 MB，追加写入，不会自动删除。`run.sh`、`startup-test.sh`、`scripts/run-a.sh` 只在 `HR_PERF_MAP=1` 时才设置它，并在退出时删掉本次进程的那份（`HR_PERF_MAP_KEEP=1` 保留）。回归脚本用 `scripts/perf-map-guard.sh start/check` 在开头和结尾各数一次，多出来就判失败（Issue #108）。 |
 | `KALDO_DEBUG_SELREFS` | 关 | `=1` 时 libKaldo 把补登记的 selector 写到 `/tmp/gap-selrefs.log`（调试用；v8 起默认不写）。 |
 | `KONAN_ORC_RUNTIME_PATH` / `SIMCTL_CHILD_...` | 无 | ORC runtime 的静态库路径，`run-a.sh` 已设。 |
 | `KONAN_HOT_RELOAD_PORT` | 5567 | app 与 `reload.py` 共用的热重载端口；`run.sh` 会加 `SIMCTL_CHILD_` 前缀传给 app。 |
