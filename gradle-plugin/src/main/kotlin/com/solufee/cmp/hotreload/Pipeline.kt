@@ -15,6 +15,12 @@ import java.io.File
 /** The running app did not apply a sent patch (toolchain .8+: `HR reload: NOT applied`). hotReload fails; a watch keeps watching. */
 class PatchNotApplied(message: String) : GradleException(message)
 
+/**
+ * Issue #91: the patch cannot be linked the way the packaged app was, for the reasons in [reasons] (`WARM <category> ...`
+ * lines, e.g. it uses a name the packaged app keeps only as local copies); the hotReload task restarts warm.
+ */
+class NeedsWarm(val reasons: List<String>) : GradleException("CMP hot reload: this patch needs a warm restart:\n" + reasons.joinToString("\n"))
+
 /** What the app's log says about a sent patch (lines since sending). */
 sealed class ReloadOutcome {
     data class NotApplied(val line: String, val waitMs: Long?) : ReloadOutcome()
@@ -255,7 +261,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         } catch (e: GradleException) {
             // #76: a project compiler plugin built for another compiler version fails inside the compiler; name it.
             val jars = args.filter { it.startsWith("-Xplugin=") && it != "-Xplugin=${s.composePlugin}" }.map { File(it.removePrefix("-Xplugin=")) }
-            val hint = pluginIncompatibility((e.message ?: "") + "\n" + ((e as? CompileFailed)?.output ?: ""), jars, compilerVersion()) ?: throw e
+            val hint = pluginIncompatibility((e.message ?: "") + "\n" + ((e as? CompileFailed)?.output ?: ""), jars, compilerVersion(), s.javaHome) ?: throw e
             throw GradleException(hint + "\n" + (e.message ?: ""), e)
         }
     }
@@ -327,7 +333,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     fun libraryInputs(m: HrModule, out: File = s.klibOf(m)): List<String> {
         val lines = mutableListOf(
             "args - ${Tools.sha256(libraryArgs(m, out).joinToString("\u0000").toByteArray())}",
-            "toolchain - ${Tools.sha256("${s.compilerJar}|${s.composePlugin}|${s.klibList}".toByteArray())}",
+            // #98: the build identity (toolchain contents, plugin version, compiler plugins), not only the toolchain's paths
+            "toolchain - ${File(work, BuildIdentity.FILE).takeIf { it.isFile }?.let { BuildIdentity.digest(it.readLines().filter { l -> l.isNotBlank() }) }
+                ?: Tools.sha256("${s.compilerJar}|${s.composePlugin}|${s.klibList}".toByteArray())}",
         )
         m.sourceDirs.map(::File).filter { it.isDirectory }.forEach { d ->
             d.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { f -> lines += "source ${f.path} ${Tools.sha256(f.readBytes())}" }
@@ -412,6 +420,16 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     fun appBundle(info: AppInfo = appInfo()): File = File(work, "${info.executable}.app")
 
     /**
+     * #93: what hotReloadRun needs from a package: the .app, its hot symbol list and, when the app loads its library object
+     * from a file (#56), that file. False after hotReloadClean or before the first package.
+     */
+    fun packagedAppReady(): Boolean {
+        if (!appBundle().isDirectory || !s.hotSymbols.isFile) return false
+        val payload = packagedPayloadFile.takeIf { it.isFile }?.readText()?.trim()
+        return payload.isNullOrEmpty() || File(payload).isFile
+    }
+
+    /**
      * [daemons]: compile through the klib daemon (it never runs cache-only, INTERFACE §5), falling back to
      * kotlinc-native when it is unreachable or fails.
      */
@@ -485,7 +503,10 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         val env = mergeEnvironment(packages) + (if (usePayloadList) mapOf("KALDO_PAYLOAD_LIST" to payloadList.path) else emptyMap()) +
             (if (usePayloadList && libsSplit) mapOf("KALDO_LIB_PAYLOAD_DIRS" to File(work, "auto-cache").path) else emptyMap())
         logger.lifecycle("hot packages: ${packages.joinToString(",").ifEmpty { "<none>" }}; keep compact unwind: ${s.keepCompactUnwind}")
-        Proc.check(listOf("python3", "-I", tools.mergePayloads.path, base.path, merged.path), env, logger = logger, echo = false)
+        val mergeOut = Proc.check(listOf("python3", "-I", tools.mergePayloads.path, base.path, merged.path), env, logger = logger, echo = false)
+        // Issue #91: the three tiers for names that several libraries define, with every symbol and the reason.
+        mergeOut.lines().filter { it.startsWith("duplicate definitions") || it.startsWith("  tier") || it.startsWith("    ") }
+            .forEach { logger.lifecycle(it) }
         val tMerge = System.currentTimeMillis()
         logger.lifecycle("hot symbols: ${s.hotSymbols.readLines().count { it.isNotBlank() }}")
         val exe = File(app, "${info.executable}.kexe")
@@ -645,6 +666,11 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         // attempt does not update the digest, so the next run still compiles; resource-only changes are judged by
         // the classifier, which then asks for a warm restart.)
         if (appliedSources.isFile && appliedSources.readText() == sourcesDigest()) throw NothingChanged(s.modules.size)
+        // #98 (after "nothing changed": with nothing to send there is nothing to refuse): a patch is compiled like the app it goes into; another plugin, toolchain or compiler plugin needs a new package
+        BuildIdentity.changes(s)?.let {
+            throw GradleException("CMP hot reload: the app was packaged with another build identity ($it); a patch must be compiled " +
+                "the same way, nothing was sent. Run ./gradlew hotReloadPackage hotReloadRun.")
+        }
         // Archives are filtered by mtime (second granularity, like the reference driver) against the moment the
         // running app last got new code (package or a sent patch): what a failed attempt already compiled is
         // still sent by the next one.
@@ -681,6 +707,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         val ordered = s.modules.filter { it in objects }
         logger.lifecycle("changed objects: " + (listOf(s.app) + s.libraries).joinToString(" ") { "${it.label}=${objects[it]?.size ?: 0}" })
         val all = ordered.flatMap { objects.getValue(it) }
+        if (tools != null) patchDuplicates(tools, ordered.flatMap { m -> objects.getValue(m).map { m to it } })
         val merged = if (all.size == 1) all.single() else File(patchDir, "merged.o").also {
             Proc.check(listOf("ld", "-r") + all.map { f -> f.path } + listOf("-o", it.path), echo = false)
         }
@@ -695,6 +722,26 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         }
         if (tools != null && s.keepCompactUnwind) keepCompactUnwind(merged, tools)
         return merged
+    }
+
+    /**
+     * Issue #91, the patch side of merge-payloads' rule for names that several libraries define: a patch object that
+     * uses a name the packaged app keeps only as local copies needs a warm restart ([NeedsWarm]); a definition of such a
+     * name in the patch (a downstream module's file rebuilt) becomes local too; names that objects of two modules of this
+     * patch define get the same three tiers as at packaging. The objects are the patch's own extracted copies.
+     */
+    fun patchDuplicates(tools: Tools, objects: List<Pair<HrModule, File>>) {
+        val record = File(s.appDir, "merged-bootstrap.dups.json")
+        val cmd = listOf("python3", "-I", tools.mergePayloads.path, "--patch-dups", record.path, s.hotSymbols.path) +
+            objects.map { (m, o) -> "${m.label}=${o.path}" }
+        val r = Proc.run(cmd, s.llvmHome?.let { mapOf("KONAN_LLVM_HOME" to it) } ?: emptyMap(), echo = false)
+        r.output.lines().filter { it.startsWith("patch: ") || it.startsWith("duplicate definitions") || it.startsWith("  tier") }
+            .forEach { logger.lifecycle(it) }
+        when (r.exit) {
+            0 -> {}
+            3 -> throw NeedsWarm(r.output.lines().filter { it.startsWith("WARM ") })
+            else -> throw GradleException("CMP hot reload: merge-payloads.py --patch-dups failed (exit ${r.exit}):\n${r.output.trim().takeLast(3000)}")
+        }
     }
 
     /**
@@ -879,14 +926,48 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
          * #76: when a compile with project compiler plugins [jars] fails like a binary incompatibility (a plugin built for
          * another Kotlin version), the message that names the plugin; null when it does not look like one.
          */
-        fun pluginIncompatibility(output: String, jars: List<File>, compiler: String): String? {
-            if (jars.isEmpty() || !LINKAGE.containsMatchIn(output)) return null
+        fun pluginIncompatibility(output: String, jars: List<File>, compiler: String, javaHome: String? = null): String? {
+            if (jars.isEmpty()) return null
+            classVersionMismatch(output, jars, javaHome)?.let { return it }
+            if (!LINKAGE.containsMatchIn(output)) return null
             val named = jars.filter { j ->
                 output.contains(j.name) || registeredClasses(j).any { c -> output.contains(c.substringBeforeLast('.')) }
             }.ifEmpty { jars }
             return "CMP hot reload: the project's compiler plugin ${named.joinToString { it.name }} does not work with the toolchain's " +
                 "Kotlin/Native compiler $compiler (the hot reload compiles pass the plugins your build applies). Use a version of " +
                 "this plugin built for Kotlin $compiler, or remove the plugin from the module."
+        }
+
+        /** `UnsupportedClassVersionError: <class> has been compiled by … (class file version N), … up to M`. */
+        private val CLASS_VERSION = Regex(
+            """([\w/$.]+) has been compiled by a more recent version of the Java Runtime \(class file version (\d+)(?:\.\d+)?\), """ +
+                """this version of the Java Runtime only recognizes class file versions up to (\d+)""",
+        )
+
+        /** Java feature release of a class file major version (52 = Java 8, 61 = Java 17, 65 = Java 21). */
+        fun javaRelease(classFileVersion: Int): Int = classFileVersion - 44
+
+        /**
+         * Issue #90: a project compiler plugin compiled for a newer Java than the JDK that runs the hot reload compiler
+         * (`UnsupportedClassVersionError`): the message names the plugin jar (the one holding the failing class), the Java
+         * it needs, the JDK in use, and how to switch. Null when the output shows no such error.
+         */
+        fun classVersionMismatch(output: String, jars: List<File>, javaHome: String? = null): String? {
+            val m = CLASS_VERSION.find(output) ?: return null
+            val entry = m.groupValues[1].replace('.', '/') + ".class"
+            val need = javaRelease(m.groupValues[2].toInt())
+            val have = javaRelease(m.groupValues[3].toInt())
+            val named = jars.filter { j ->
+                try {
+                    java.util.zip.ZipFile(j).use { it.getEntry(entry) != null }
+                } catch (_: Exception) {
+                    false
+                }
+            }.ifEmpty { jars.filter { output.contains(it.name) } }.ifEmpty { jars }
+            val jdk = javaHome?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+            return "CMP hot reload: the project's compiler plugin ${named.joinToString { it.name }} needs Java $need " +
+                "(class file version ${m.groupValues[2]}), but the hot reload compiler runs on Java $have$jdk. Run Gradle with JDK " +
+                "$need or newer (JAVA_HOME), or point cmpHotReload { daemonJavaHome } at one."
         }
 
         fun composePluginKnows(jar: File, flag: String): Boolean = try {

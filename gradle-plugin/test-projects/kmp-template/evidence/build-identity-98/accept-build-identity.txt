@@ -1,0 +1,76 @@
+# accept-build-identity.py, plugin 0.2.9-test8 = fix/build-identity on 0016ad4 (+ 0.2.9-pin11h: the same with the .11 pin), toolchains .11 and .11.1, simulator HR-Plugin
+# #98 acceptance (build identity), 2026-11-22 13:52:58, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+## G1 plugin upgrade 0.2.8-main -> 0.2.9-test8, toolchain unchanged (no hotReloadClean)
+  | CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+  | klib core: compiling (no previous build)
+  | klib core: <WORK>/g1/shared/build/hotreload/klib/core/core.klib
+  | app klib (classifier): compiling (no previous build)
+  | package timing ms=124542 compile=114842 merge=7822 embed+bundle=1878 embed=902 bundle=976 baseline-wait=0
+  | CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+PASS G1 before (0.2.8-main): package + run | 137s
+PASS G1 before (0.2.8-main): one edit is HOT in the same process | 9.6s pid 3726->3726
+  | CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+  | CMP hot reload: build identity changed (no build identity recorded (state from an older plugin version)); cleared the compiled state (1697 MB) in <WORK>/g1/shared/build/hotreload
+  | klib core: compiling (no previous build)
+  | klib core: <WORK>/g1/shared/build/hotreload/klib/core/core.klib
+  | app klib (classifier): compiling (no previous build)
+  | package timing ms=122120 compile=111205 merge=9143 embed+bundle=1772 embed=849 bundle=923 baseline-wait=0
+  | CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+PASS G1 after (0.2.9-test8): package + run | 144s
+PASS G1 after (0.2.9-test8): one edit is HOT in the same process | 9.5s pid 6605->6605
+PASS G1: the upgrade clears the old state with a reason | CMP hot reload: build identity changed (no build identity recorded (state from an older plugin version)); cleared the compiled state (1697 MB) in <WORK>/g1/shar
+PASS G1: module klib recompiled
+PASS G1: the identity records the project's Kotlin Gradle plugin version | projectKotlin 2.4.21
+PASS G1: klibs equal a clean rebuild (hotReloadClean + hotReloadPackage, same plugin, same toolchain) | upgraded {'core.klib': 'd19fe5d23c9d4986', 'app.klib': '97aa19724da36b50'} clean {'core.klib': 'd19fe5d23c9d4986', 'app.klib': '97aa19724da36b50'}
+## R nothing changed: package again
+PASS R: no identity change, the module klib is not recompiled | > Task :shared:hotReloadCompileKlibCore UP-TO-DATE
+## G2 control (plugins without #98): 0.2.7-ctl on the old toolchain, then the same path with the new toolchain and 0.2.8-main
+  | CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+  | klib core: compiling (no previous build)
+  | klib core: <WORK>/g2-control/shared/build/hotreload/klib/core/core.klib
+  | app klib (classifier): compiling (no previous build)
+  | package timing ms=122307 compile=113744 merge=6857 embed+bundle=1706 embed=838 bundle=868 baseline-wait=0
+  | CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+PASS G2 control before (0.2.7-ctl): package + run | 134s
+PASS G2 control before (0.2.7-ctl): one edit is HOT in the same process | 9.0s pid 16103->16103
+  | CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+  | klib core: compiling (compiler arguments or toolchain changed)
+  | klib core: <WORK>/g2-control/shared/build/hotreload/klib/core/core.klib
+  | app klib (classifier): compiling (compiler arguments or toolchain changed)
+  | package timing ms=15191 compile=7475 merge=7089 embed+bundle=627 embed=307 bundle=320 baseline-wait=0
+  | CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+PASS G2 control after (0.2.8-main): package + run | 27s
+PASS G2 control after (0.2.8-main): one edit is HOT in the same process | 9.8s pid 17432->17432
+  control: compiler cache files from before the toolchain swap still in use: {'ic': 0, 'auto-cache': 424} (klib core recompiled)
+PASS G2 control reproduces the report: compiler caches built by the old toolchain are reused after it changed in place | {'ic': 0, 'auto-cache': 424}
+## G2 with #98: 0.2.9-pin11h on the old toolchain, then the same path with the new toolchain and 0.2.9-test8
+  | CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+  | klib core: compiling (no previous build)
+  | klib core: <WORK>/g2/shared/build/hotreload/klib/core/core.klib
+  | app klib (classifier): compiling (no previous build)
+  | package timing ms=119429 compile=108446 merge=9197 embed+bundle=1786 embed=834 bundle=952 baseline-wait=0
+  | CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+PASS G2 before (0.2.9-pin11h): package + run | 132s
+PASS G2 before (0.2.9-pin11h): one edit is HOT in the same process | 9.1s pid 20752->20752
+PASS G2: release baseline recorded on the old toolchain | 113s
+  | > CMP hot reload: the app was packaged with another build identity (plugin 0.2.9-pin11h -> 0.2.9-test8; toolchainVersion 2.5.255-hotreload.11 -> 2.5.255-hotreload.11.1; kotlin 2.5.255-SNAPSHOT 1ccbcca1cdc93dc38b5188f -> 2.5.255-SNAPSHOT 3310574899248b64a4c5cd5; compilerJar d1d9fdd3144733a19f0922f6e4
+PASS G2: hotReload alone after the toolchain change is refused, nothing cleared, the app keeps running | rc=1 pid 20752->20752
+  | CMP hot reload: toolchain OK (cached; interfaceVersion 8, Xcode 27.2 Build version 27B52)
+  | CMP hot reload: build identity changed (plugin 0.2.9-pin11h -> 0.2.9-test8; toolchainVersion 2.5.255-hotreload.11 -> 2.5.255-hotreload.11.1; kotlin 2.5.255-SNAPSHOT 1ccbcca1cdc93dc38b5188f -> 2.5.255-SNAPSHOT 3310574899248b64a4c5cd5; compilerJar d1d9fdd3144733a19f0922f6e4b589bbe827ced7 -> 6668a9a5ec
+  | klib core: compiling (no previous build)
+  | klib core: <WORK>/g2/shared/build/hotreload/klib/core/core.klib
+  | app klib (classifier): compiling (no previous build)
+  | package timing ms=118747 compile=108324 merge=8602 embed+bundle=1821 embed=800 bundle=1021 baseline-wait=0
+  | CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+  | klib core: inputs unchanged (1 source files, 1 ms to check); not recompiled
+PASS G2 after (0.2.9-test8): package + run | 129s
+PASS G2 after (0.2.9-test8): one edit is HOT in the same process | 8.7s pid 25167->25167
+PASS G2: the toolchain change in place clears the old state with a reason | CMP hot reload: build identity changed (plugin 0.2.9-pin11h -> 0.2.9-test8; toolchainVersion 2.5.255-hotreload.11 -> 2.5.255-hotreload.11.1; kotlin 2.5.255-SNAPSHOT 1ccbcca1cdc93dc38b5188f -> 2.5.255-SNAPSHOT 3310574899248b64a4c5cd5; compilerJar d1d9fdd3144733a19f0922f6e4b589bbe827ced7 -> 6668a9a5ec
+PASS G2: module klib recompiled
+PASS G2: no compiler cache file from before the swap (ic/, auto-cache/) | {'ic': 0, 'auto-cache': 0}
+PASS G2: the release baseline is kept
+  | release: the baseline was recorded with other plugin, toolchainVersion, kotlin, compilerJar, klibList; the release build is identical anyway
+PASS G2: verifying the old-toolchain baseline names the toolchain change instead of reporting a hot reload leak | rc=0 117s
+PASS G2: klibs equal a clean rebuild (hotReloadClean + hotReloadPackage, same plugin, same toolchain) | upgraded {'core.klib': '40cc32de59d1708f', 'app.klib': '39e194a3f5914aa3'} clean {'core.klib': '40cc32de59d1708f', 'app.klib': '39e194a3f5914aa3'}
+stopped org.example.kmphr.hotreload; app running: False
+summary: 26/26 PASS

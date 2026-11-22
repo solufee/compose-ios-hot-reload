@@ -73,6 +73,17 @@ abstract class HotReloadTask : DefaultTask() {
         })
     }
 
+    /** hotReloadPackage's work; also what hotReloadRun does when there is no package yet (#93). */
+    protected fun packageApp() {
+        val s = effectiveSettings()
+        val tools = tools(s)
+        val daemons = daemons(s, tools)
+        val pipeline = Pipeline(s, logger)
+        // INTERFACE §10.2: package ends with the classifier's baseline snapshots of what it built; it runs beside
+        // merge/embed/bundle (#52).
+        pipeline.packageApp(tools, daemons, beside = { Compat(s, logger, pipeline, tools).baseline(daemons) })
+    }
+
     protected fun effectiveSettings(report: Boolean = true): HrSettings {
         val s = withCompilerPlugins(settings.get())
         val ids = externalKlibIds.getOrElse(emptyList())
@@ -107,6 +118,28 @@ abstract class HotReloadTask : DefaultTask() {
         if (s.useDaemon) Daemons(s, logger).also { it.ensure(tools) } else null
 }
 
+/**
+ * #98: records what the hot reload state is compiled with (plugin version, toolchain contents, compiler plugins and
+ * options, ABI switches) and clears the compiled state when that changed. Runs before every task that compiles.
+ */
+abstract class BuildIdentityTask : HotReloadTask() {
+    /** True when this run packages or launches (the state may be cleared); false for a hot reload only (#98). */
+    @get:Input
+    abstract val clearOnChange: Property<Boolean>
+
+    init {
+        outputs.upToDateWhen { false }
+        clearOnChange.convention(true)
+    }
+
+    @TaskAction
+    fun check() {
+        val s = effectiveSettings(report = false)
+        if (clearOnChange.get()) com.solufee.cmp.hotreload.BuildIdentity.ensure(s, logger, stopDaemons = { Daemons(s, logger).stop() })
+        else com.solufee.cmp.hotreload.BuildIdentity.report(s, logger)
+    }
+}
+
 /** Compiles one library module to a klib. Up to date when its sources and dependency klibs did not change. */
 abstract class CompileKlibTask : HotReloadTask() {
     @get:Input
@@ -125,8 +158,20 @@ abstract class CompileKlibTask : HotReloadTask() {
     @get:Input
     abstract val toolchainKey: Property<String>
 
+    /** #98: the build identity file (contents: plugin version, toolchain contents, compiler plugins); a change rebuilds. */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val buildIdentity: ConfigurableFileCollection
+
     @get:OutputFile
     abstract val klib: RegularFileProperty
+
+    init {
+        // #98: hotReloadBuildIdentity (and hotReloadClean) delete klibs earlier in the same build, outside Gradle's view of
+        // this task's output; Gradle's file system state can then still list the old klib and call this task up to date.
+        // Ask the file system itself.
+        outputs.upToDateWhen { (it as CompileKlibTask).klib.get().asFile.isFile }
+    }
 
     @TaskAction
     fun compile() {
@@ -143,15 +188,7 @@ abstract class PackageTask : HotReloadTask() {
     }
 
     @TaskAction
-    fun pkg() {
-        val s = effectiveSettings()
-        val tools = tools(s)
-        val daemons = daemons(s, tools)
-        val pipeline = Pipeline(s, logger)
-        // INTERFACE §10.2: package ends with the classifier's baseline snapshots of what it built; it runs beside
-        // merge/embed/bundle (#52).
-        pipeline.packageApp(tools, daemons, beside = { Compat(s, logger, pipeline, tools).baseline(daemons) })
-    }
+    fun pkg() = packageApp()
 }
 
 /**
@@ -221,7 +258,8 @@ abstract class ReloadTask : HotReloadTask() {
         }
         // #76: generated code that gains or loses declarations, or class annotations that project compiler plugins read,
         // change what was built at start: a warm restart, whatever the classifier and the patch compile saw.
-        val extra = listOfNotNull(com.solufee.cmp.hotreload.GeneratedDeclarations.changed(s), com.solufee.cmp.hotreload.PluginAnnotations.changed(s))
+        val extra = listOfNotNull(com.solufee.cmp.hotreload.GeneratedDeclarations.changed(s), com.solufee.cmp.hotreload.PluginAnnotations.changed(s)) +
+            ((patchError as? com.solufee.cmp.hotreload.NeedsWarm)?.reasons ?: emptyList())
         val r = if (extra.isEmpty()) r0 else r0.copy(verdict = Compat.Verdict.WARM, reasons = r0.reasons + extra)
         val waited = System.currentTimeMillis() - tReady
         if (r.verdict == Compat.Verdict.HOT) {
@@ -283,6 +321,13 @@ abstract class RunTask : HotReloadTask() {
     @TaskAction
     fun run() {
         val s = settings.get()
+        // #93: after hotReloadClean (or before the first package) there is nothing to launch; package once first. An
+        // existing package is launched as it is (hotReloadPackage is never up to date, so depending on it would repackage
+        // on every run).
+        if (!Pipeline(s, logger).packagedAppReady()) {
+            logger.lifecycle("CMP hot reload: no packaged app in ${s.workDir} (hotReloadClean, or never packaged); packaging it first")
+            packageApp()
+        }
         Launcher(s, logger).launch(Pipeline(s, logger), appArgs.get().trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
     }
 }

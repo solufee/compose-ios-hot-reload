@@ -73,6 +73,19 @@ object Kmp {
 
     const val COMPILE_TASK = "compileKotlinIosSimulatorArm64"
 
+    /**
+     * #98: the Kotlin Gradle plugin version the project builds with (e.g. 2.4.21), read through reflection from the
+     * applied Kotlin plugin (any KGP); null when it cannot be read.
+     */
+    fun kotlinPluginVersion(p: Project): String? {
+        for (id in listOf("org.jetbrains.kotlin.multiplatform", "org.jetbrains.kotlin.jvm", "org.jetbrains.kotlin.android")) {
+            val plugin = p.plugins.findPlugin(id) ?: continue
+            (runCatching { call(plugin, "getPluginVersion") }.getOrNull() as? String)?.let { return it }
+            plugin.javaClass.`package`?.implementationVersion?.let { return it }
+        }
+        return null
+    }
+
     private fun call(target: Any, method: String): Any? =
         target.javaClass.methods.firstOrNull { it.name == method && it.parameterCount == 0 }?.invoke(target)
 

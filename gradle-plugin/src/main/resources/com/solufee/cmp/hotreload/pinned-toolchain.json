@@ -1,11 +1,11 @@
 {
   "comment": "The one toolchain this plugin version supports: public base commit + patch sha256 (docs/INTERFACE.md). Bump together with interfaceVersion.",
   "interfaceVersion": 8,
-  "toolchainVersion": "2.5.255-hotreload.11.1",
+  "toolchainVersion": "2.5.255-hotreload.11.2",
   "kotlin": {
     "version": "2.5.255-SNAPSHOT",
     "baseCommit": "8e53ee99fbc08e264828ab082aee3e448194eca8",
-    "patchSha256": "3310574899248b64a4c5cd5c9672311bf86152cfc0605e093e50e6b67e58f2a4"
+    "patchSha256": "5636546a13d29e7c4b15516335165ca716d0821a5de197b937f44dff59d8b689"
   },
   "compose": {
     "version": "1.13.0-rc01",
@@ -14,7 +14,7 @@
   },
   "llvm": {
     "baseCommit": "2f8844c2b35557baced9106c50b9b8758fa6a0de",
-    "patchSha256": "81fa2129b97ef4eb42869489315b03346e052615de06a476f99e50c2f89fed7d"
+    "patchSha256": "51f675ae0fac49f1fc1317d66ecec5448ba31daf6417b3c70720ba9aad9dd63f"
   },
   "host": {
     "xcode": "Xcode 27.2 Build version 27B52",

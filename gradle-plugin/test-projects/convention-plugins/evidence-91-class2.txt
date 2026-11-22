@@ -1,0 +1,680 @@
+# Issue #91 class 2 (toolchain): accept-dup-91.py --same-package --rounds 40 (script in PR #100) on the convention-plugin project,
+# plugin of PR #100 (local 0.2.9-dev91 build), toolchain 2.5.255-hotreload.11.2-dev91 (.11.1 + #80 B + this patch; manifest keeps .11.1's pinned identity so the plugin accepts it), simulator iPhone Air.
+# --same-package: FeaturesModule in AppModule's file and package (Koin generates two `module` functions whose lambdas are both module$1) + LamA.kt/LamB.kt (two files, each a function named `module` with a lambda).
+
+# #91 duplicate names across modules, 2026-11-22 12:47:19, simulator C64AEF9B-3337-4817-B869-114EFA3021D4, same package: True
+RESULT 1) clean package: rc=0 120s
+  | duplicate definitions across libraries (packaging): tier 1 local=3 tier 2 weak=0 tier 3 conflict=0; same library=0
+  |   tier 1 local: _kfun:androidx.compose.ui.text.<get-DefaultCacheSize>#internal
+  |     copies: org.jetbrains.compose.ui:ui-text (liborg.jetbrains.compose.ui:ui-text-cache.a); org.jetbrains.compose.ui:ui (liborg.jetbrains.compose.ui:ui-cache.a)
+  |     basis: unreferenced: no input object, the host image or a hot symbol uses it
+  |   tier 1 local: _kfun:org.koin.plugin.hints#componentscan_org_example_core_CoreModule_single(org.example.core.ServerStore){}
+  |     copies: core (org.koin.plugin.hints.l86r6r); domain (org.koin.plugin.hints.l86r6r); 643598ed0c9acc3c (org.koin.plugin.hints.l86r6r)
+  |     basis: unreferenced: no input object, the host image or a hot symbol uses it
+  |   tier 1 local: _kfun:org.koin.plugin.hints#configuration_default(org.example.core.CoreModule){}
+  |     copies: core (org.koin.plugin.hints.-gptp2h); domain (org.koin.plugin.hints.l86r6r); 643598ed0c9acc3c (org.koin.plugin.hints.l86r6r)
+  |     basis: unreferenced: no input object, the host image or a hot symbol uses it
+  PASS 1) hotReloadPackage rc=0
+  PASS 1) tier counts printed (duplicate definitions across libraries (packaging): tier 1 local=3 tier 2 weak=0 tier 3 conflict=0; same library=0)
+  PASS 1) no conflict (duplicate definitions across libraries (packaging): tier 1 local=3 tier 2 weak=0 tier 3 conflict=0; same library=0)
+  PASS 1) org.koin.plugin.hints#configuration_default(org.example.core.CoreModule): tier 1 local (  tier 1 local: _kfun:org.koin.plugin.hints#configuration_default(org.example.core.CoreModule){})
+  PASS 1) org.koin.plugin.hints#componentscan_org_example_core_CoreModule_single: tier 1 local (  tier 1 local: _kfun:org.koin.plugin.hints#componentscan_org_example_core_CoreModule_single(org.example.core.ServerStore){})
+  PASS 1) <get-DefaultCacheSize>#internal: tier 1 local (  tier 1 local: _kfun:androidx.compose.ui.text.<get-DefaultCacheSize>#internal)
+## 2) cold start
+RESULT 2) cold start: rc=0 gradle 10.8s seen 10.8s verdict=- pid None->24582 new BOTAS lines=1
+  app: BOTAS ui=u1 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d1 feat=f1 lam=a1/b1
+  | CMP hot reload: app started (attempt 1, pid 24582, 8.8 s, ready: first frame (toolchain marker), launch -> first frame 8624 ms, port 5596, log <PROJECT>/shared/launch.log)
+  PASS 2) cold start: gradle rc=0
+  PASS 2) cold start: app shows the expected state (BOTAS ui=u1 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d1 feat=f1 lam=a1/b1)
+## 3) UI edit
+RESULT 3) UI edit: rc=0 gradle 8.7s seen 8.7s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d1 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 1096 ms
+  | compile: daemon compile OK 6396 ms
+  | patch: 2 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 1188 ms, waited 2 ms after the patch was ready)
+  PASS 3) UI edit: gradle rc=0
+  PASS 3) UI edit: verdict HOT (got HOT)
+  PASS 3) UI edit: process kept (24582->24582)
+  PASS 3) UI edit: app shows the expected state (BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d1 feat=f1 lam=a1/b1)
+## 4) :domain (the placeholder module) body edit
+RESULT 4) :domain (the placeholder module) body edit: rc=0 gradle 5.3s seen 5.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | compile: daemon klib OK 215 ms
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon compile OK 3295 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 51 ms, waited 2 ms after the patch was ready)
+  PASS 4) :domain (the placeholder module) body edit: gradle rc=0
+  PASS 4) :domain (the placeholder module) body edit: verdict HOT (got HOT)
+  PASS 4) :domain (the placeholder module) body edit: process kept (24582->24582)
+  PASS 4) :domain (the placeholder module) body edit: app shows the expected state (BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 5) :core body edit (the module whose @Configuration hints are regenerated downstream)
+RESULT 5) :core body edit (the module whose @Configuration hints are regenerated downstream): rc=0 gradle 5.6s seen 5.6s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | klib core: compiling (sources changed: CoreDi.kt)
+  | compile: daemon klib OK 245 ms
+  | klib core: <PROJECT>/shared/build/hotreload/klib/core/core.klib
+  | compile: daemon klib OK 210 ms
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon compile OK 3358 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 54 ms, waited 1 ms after the patch was ready)
+  PASS 5) :core body edit (the module whose @Configuration hints are regenerated downstream): gradle rc=0
+  PASS 5) :core body edit (the module whose @Configuration hints are regenerated downstream): verdict HOT (got HOT)
+  PASS 5) :core body edit (the module whose @Configuration hints are regenerated downstream): process kept (24582->24582)
+  PASS 5) :core body edit (the module whose @Configuration hints are regenerated downstream): app shows the expected state (BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.1) UI text u91-0
+RESULT 6.1) UI text u91-0: rc=0 gradle 4.4s seen 4.4s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r0 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 717 ms
+  | compile: daemon compile OK 2748 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 799 ms, waited 1 ms after the patch was ready)
+  PASS 6.1) UI text u91-0: gradle rc=0
+  PASS 6.1) UI text u91-0: verdict HOT (got HOT)
+  PASS 6.1) UI text u91-0: process kept (24582->24582)
+  PASS 6.1) UI text u91-0: app shows the expected state (BOTAS ui=r0 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.2) :shared GreeterImpl body
+RESULT 6.2) :shared GreeterImpl body: rc=0 gradle 4.8s seen 4.8s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r0 greet=g91 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 712 ms
+  | compile: daemon compile OK 3002 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 802 ms, waited 1 ms after the patch was ready)
+  PASS 6.2) :shared GreeterImpl body: gradle rc=0
+  PASS 6.2) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.2) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.2) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r0 greet=g91 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.3) UI text u91-2
+RESULT 6.3) UI text u91-2: rc=0 gradle 4.4s seen 4.4s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r2 greet=g91 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 992 ms
+  | compile: daemon compile OK 2836 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 1071 ms, waited 1 ms after the patch was ready)
+  PASS 6.3) UI text u91-2: gradle rc=0
+  PASS 6.3) UI text u91-2: verdict HOT (got HOT)
+  PASS 6.3) UI text u91-2: process kept (24582->24582)
+  PASS 6.3) UI text u91-2: app shows the expected state (BOTAS ui=r2 greet=g91 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.4) :shared GreeterImpl body
+RESULT 6.4) :shared GreeterImpl body: rc=0 gradle 4.9s seen 4.9s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r2 greet=g93 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 621 ms
+  | compile: daemon compile OK 2785 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 702 ms, waited 1 ms after the patch was ready)
+  PASS 6.4) :shared GreeterImpl body: gradle rc=0
+  PASS 6.4) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.4) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.4) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r2 greet=g93 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.5) UI text u91-4
+RESULT 6.5) UI text u91-4: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r4 greet=g93 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 665 ms
+  | compile: daemon compile OK 2593 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 746 ms, waited 3 ms after the patch was ready)
+  PASS 6.5) UI text u91-4: gradle rc=0
+  PASS 6.5) UI text u91-4: verdict HOT (got HOT)
+  PASS 6.5) UI text u91-4: process kept (24582->24582)
+  PASS 6.5) UI text u91-4: app shows the expected state (BOTAS ui=r4 greet=g93 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.6) :shared GreeterImpl body
+RESULT 6.6) :shared GreeterImpl body: rc=0 gradle 4.6s seen 4.6s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r4 greet=g95 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 858 ms
+  | compile: daemon compile OK 2810 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 934 ms, waited 1 ms after the patch was ready)
+  PASS 6.6) :shared GreeterImpl body: gradle rc=0
+  PASS 6.6) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.6) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.6) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r4 greet=g95 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.7) UI text u91-6
+RESULT 6.7) UI text u91-6: rc=0 gradle 4.1s seen 4.1s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r6 greet=g95 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 652 ms
+  | compile: daemon compile OK 2529 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 724 ms, waited 1 ms after the patch was ready)
+  PASS 6.7) UI text u91-6: gradle rc=0
+  PASS 6.7) UI text u91-6: verdict HOT (got HOT)
+  PASS 6.7) UI text u91-6: process kept (24582->24582)
+  PASS 6.7) UI text u91-6: app shows the expected state (BOTAS ui=r6 greet=g95 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.8) :shared GreeterImpl body
+RESULT 6.8) :shared GreeterImpl body: rc=0 gradle 4.4s seen 4.4s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r6 greet=g97 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 603 ms
+  | compile: daemon compile OK 2682 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 677 ms, waited 1 ms after the patch was ready)
+  PASS 6.8) :shared GreeterImpl body: gradle rc=0
+  PASS 6.8) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.8) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.8) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r6 greet=g97 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.9) UI text u91-8
+RESULT 6.9) UI text u91-8: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r8 greet=g97 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 803 ms
+  | compile: daemon compile OK 2448 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 873 ms, waited 2 ms after the patch was ready)
+  PASS 6.9) UI text u91-8: gradle rc=0
+  PASS 6.9) UI text u91-8: verdict HOT (got HOT)
+  PASS 6.9) UI text u91-8: process kept (24582->24582)
+  PASS 6.9) UI text u91-8: app shows the expected state (BOTAS ui=r8 greet=g97 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.10) :shared GreeterImpl body
+RESULT 6.10) :shared GreeterImpl body: rc=0 gradle 4.4s seen 4.4s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r8 greet=g99 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 645 ms
+  | compile: daemon compile OK 2683 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 720 ms, waited 2 ms after the patch was ready)
+  PASS 6.10) :shared GreeterImpl body: gradle rc=0
+  PASS 6.10) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.10) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.10) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r8 greet=g99 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.11) UI text u91-10
+RESULT 6.11) UI text u91-10: rc=0 gradle 4.1s seen 4.1s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r10 greet=g99 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 568 ms
+  | compile: daemon compile OK 2583 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 641 ms, waited 1 ms after the patch was ready)
+  PASS 6.11) UI text u91-10: gradle rc=0
+  PASS 6.11) UI text u91-10: verdict HOT (got HOT)
+  PASS 6.11) UI text u91-10: process kept (24582->24582)
+  PASS 6.11) UI text u91-10: app shows the expected state (BOTAS ui=r10 greet=g99 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.12) :shared GreeterImpl body
+RESULT 6.12) :shared GreeterImpl body: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r10 greet=g911 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 855 ms
+  | compile: daemon compile OK 2608 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 927 ms, waited 1 ms after the patch was ready)
+  PASS 6.12) :shared GreeterImpl body: gradle rc=0
+  PASS 6.12) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.12) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.12) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r10 greet=g911 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.13) UI text u91-12
+RESULT 6.13) UI text u91-12: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r12 greet=g911 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 570 ms
+  | compile: daemon compile OK 2477 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 641 ms, waited 1 ms after the patch was ready)
+  PASS 6.13) UI text u91-12: gradle rc=0
+  PASS 6.13) UI text u91-12: verdict HOT (got HOT)
+  PASS 6.13) UI text u91-12: process kept (24582->24582)
+  PASS 6.13) UI text u91-12: app shows the expected state (BOTAS ui=r12 greet=g911 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.14) :shared GreeterImpl body
+RESULT 6.14) :shared GreeterImpl body: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r12 greet=g913 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 619 ms
+  | compile: daemon compile OK 2657 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 688 ms, waited 1 ms after the patch was ready)
+  PASS 6.14) :shared GreeterImpl body: gradle rc=0
+  PASS 6.14) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.14) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.14) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r12 greet=g913 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.15) UI text u91-14
+RESULT 6.15) UI text u91-14: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r14 greet=g913 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 838 ms
+  | compile: daemon compile OK 2482 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 908 ms, waited 2 ms after the patch was ready)
+  PASS 6.15) UI text u91-14: gradle rc=0
+  PASS 6.15) UI text u91-14: verdict HOT (got HOT)
+  PASS 6.15) UI text u91-14: process kept (24582->24582)
+  PASS 6.15) UI text u91-14: app shows the expected state (BOTAS ui=r14 greet=g913 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.16) :shared GreeterImpl body
+RESULT 6.16) :shared GreeterImpl body: rc=0 gradle 4.2s seen 4.2s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r14 greet=g915 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 520 ms
+  | compile: daemon compile OK 2596 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 591 ms, waited 1 ms after the patch was ready)
+  PASS 6.16) :shared GreeterImpl body: gradle rc=0
+  PASS 6.16) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.16) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.16) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r14 greet=g915 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.17) UI text u91-16
+RESULT 6.17) UI text u91-16: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r16 greet=g915 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 604 ms
+  | compile: daemon compile OK 2441 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 674 ms, waited 2 ms after the patch was ready)
+  PASS 6.17) UI text u91-16: gradle rc=0
+  PASS 6.17) UI text u91-16: verdict HOT (got HOT)
+  PASS 6.17) UI text u91-16: process kept (24582->24582)
+  PASS 6.17) UI text u91-16: app shows the expected state (BOTAS ui=r16 greet=g915 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.18) :shared GreeterImpl body
+RESULT 6.18) :shared GreeterImpl body: rc=0 gradle 4.2s seen 4.2s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r16 greet=g917 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 791 ms
+  | compile: daemon compile OK 2621 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 866 ms, waited 1 ms after the patch was ready)
+  PASS 6.18) :shared GreeterImpl body: gradle rc=0
+  PASS 6.18) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.18) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.18) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r16 greet=g917 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.19) UI text u91-18
+RESULT 6.19) UI text u91-18: rc=0 gradle 4.1s seen 4.1s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r18 greet=g917 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 615 ms
+  | compile: daemon compile OK 2552 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 687 ms, waited 1 ms after the patch was ready)
+  PASS 6.19) UI text u91-18: gradle rc=0
+  PASS 6.19) UI text u91-18: verdict HOT (got HOT)
+  PASS 6.19) UI text u91-18: process kept (24582->24582)
+  PASS 6.19) UI text u91-18: app shows the expected state (BOTAS ui=r18 greet=g917 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.20) :shared GreeterImpl body
+RESULT 6.20) :shared GreeterImpl body: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r18 greet=g919 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 561 ms
+  | compile: daemon compile OK 2612 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 633 ms, waited 1 ms after the patch was ready)
+  PASS 6.20) :shared GreeterImpl body: gradle rc=0
+  PASS 6.20) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.20) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.20) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r18 greet=g919 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.21) UI text u91-20
+RESULT 6.21) UI text u91-20: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r20 greet=g919 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 823 ms
+  | compile: daemon compile OK 2458 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 895 ms, waited 1 ms after the patch was ready)
+  PASS 6.21) UI text u91-20: gradle rc=0
+  PASS 6.21) UI text u91-20: verdict HOT (got HOT)
+  PASS 6.21) UI text u91-20: process kept (24582->24582)
+  PASS 6.21) UI text u91-20: app shows the expected state (BOTAS ui=r20 greet=g919 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.22) :shared GreeterImpl body
+RESULT 6.22) :shared GreeterImpl body: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r20 greet=g921 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 577 ms
+  | compile: daemon compile OK 2615 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 662 ms, waited 1 ms after the patch was ready)
+  PASS 6.22) :shared GreeterImpl body: gradle rc=0
+  PASS 6.22) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.22) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.22) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r20 greet=g921 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.23) UI text u91-22
+RESULT 6.23) UI text u91-22: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r22 greet=g921 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 554 ms
+  | compile: daemon compile OK 2506 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 628 ms, waited 1 ms after the patch was ready)
+  PASS 6.23) UI text u91-22: gradle rc=0
+  PASS 6.23) UI text u91-22: verdict HOT (got HOT)
+  PASS 6.23) UI text u91-22: process kept (24582->24582)
+  PASS 6.23) UI text u91-22: app shows the expected state (BOTAS ui=r22 greet=g921 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.24) :shared GreeterImpl body
+RESULT 6.24) :shared GreeterImpl body: rc=0 gradle 4.4s seen 4.4s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r22 greet=g923 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 842 ms
+  | compile: daemon compile OK 2694 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 913 ms, waited 1 ms after the patch was ready)
+  PASS 6.24) :shared GreeterImpl body: gradle rc=0
+  PASS 6.24) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.24) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.24) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r22 greet=g923 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.25) UI text u91-24
+RESULT 6.25) UI text u91-24: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r24 greet=g923 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 540 ms
+  | compile: daemon compile OK 2482 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 612 ms, waited 1 ms after the patch was ready)
+  PASS 6.25) UI text u91-24: gradle rc=0
+  PASS 6.25) UI text u91-24: verdict HOT (got HOT)
+  PASS 6.25) UI text u91-24: process kept (24582->24582)
+  PASS 6.25) UI text u91-24: app shows the expected state (BOTAS ui=r24 greet=g923 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.26) :shared GreeterImpl body
+RESULT 6.26) :shared GreeterImpl body: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r24 greet=g925 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 616 ms
+  | compile: daemon compile OK 2638 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 687 ms, waited 1 ms after the patch was ready)
+  PASS 6.26) :shared GreeterImpl body: gradle rc=0
+  PASS 6.26) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.26) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.26) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r24 greet=g925 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.27) UI text u91-26
+RESULT 6.27) UI text u91-26: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r26 greet=g925 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 813 ms
+  | compile: daemon compile OK 2519 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 889 ms, waited 1 ms after the patch was ready)
+  PASS 6.27) UI text u91-26: gradle rc=0
+  PASS 6.27) UI text u91-26: verdict HOT (got HOT)
+  PASS 6.27) UI text u91-26: process kept (24582->24582)
+  PASS 6.27) UI text u91-26: app shows the expected state (BOTAS ui=r26 greet=g925 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.28) :shared GreeterImpl body
+RESULT 6.28) :shared GreeterImpl body: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r26 greet=g927 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 601 ms
+  | compile: daemon compile OK 2568 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 677 ms, waited 1 ms after the patch was ready)
+  PASS 6.28) :shared GreeterImpl body: gradle rc=0
+  PASS 6.28) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.28) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.28) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r26 greet=g927 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.29) UI text u91-28
+RESULT 6.29) UI text u91-28: rc=0 gradle 4.2s seen 4.2s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r28 greet=g927 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 593 ms
+  | compile: daemon compile OK 2564 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 675 ms, waited 2 ms after the patch was ready)
+  PASS 6.29) UI text u91-28: gradle rc=0
+  PASS 6.29) UI text u91-28: verdict HOT (got HOT)
+  PASS 6.29) UI text u91-28: process kept (24582->24582)
+  PASS 6.29) UI text u91-28: app shows the expected state (BOTAS ui=r28 greet=g927 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.30) :shared GreeterImpl body
+RESULT 6.30) :shared GreeterImpl body: rc=0 gradle 4.6s seen 4.6s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r28 greet=g929 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 765 ms
+  | compile: daemon compile OK 2796 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 839 ms, waited 2 ms after the patch was ready)
+  PASS 6.30) :shared GreeterImpl body: gradle rc=0
+  PASS 6.30) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.30) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.30) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r28 greet=g929 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.31) UI text u91-30
+RESULT 6.31) UI text u91-30: rc=0 gradle 4.1s seen 4.1s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r30 greet=g929 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 617 ms
+  | compile: daemon compile OK 2538 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 689 ms, waited 1 ms after the patch was ready)
+  PASS 6.31) UI text u91-30: gradle rc=0
+  PASS 6.31) UI text u91-30: verdict HOT (got HOT)
+  PASS 6.31) UI text u91-30: process kept (24582->24582)
+  PASS 6.31) UI text u91-30: app shows the expected state (BOTAS ui=r30 greet=g929 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.32) :shared GreeterImpl body
+RESULT 6.32) :shared GreeterImpl body: rc=0 gradle 5.0s seen 5.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r30 greet=g931 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 530 ms
+  | compile: daemon compile OK 2637 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 605 ms, waited 2 ms after the patch was ready)
+  PASS 6.32) :shared GreeterImpl body: gradle rc=0
+  PASS 6.32) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.32) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.32) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r30 greet=g931 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.33) UI text u91-32
+RESULT 6.33) UI text u91-32: rc=0 gradle 4.5s seen 4.5s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r32 greet=g931 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 825 ms
+  | compile: daemon compile OK 2598 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 903 ms, waited 3 ms after the patch was ready)
+  PASS 6.33) UI text u91-32: gradle rc=0
+  PASS 6.33) UI text u91-32: verdict HOT (got HOT)
+  PASS 6.33) UI text u91-32: process kept (24582->24582)
+  PASS 6.33) UI text u91-32: app shows the expected state (BOTAS ui=r32 greet=g931 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.34) :shared GreeterImpl body
+RESULT 6.34) :shared GreeterImpl body: rc=0 gradle 5.0s seen 5.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r32 greet=g933 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 550 ms
+  | compile: daemon compile OK 2613 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 627 ms, waited 2 ms after the patch was ready)
+  PASS 6.34) :shared GreeterImpl body: gradle rc=0
+  PASS 6.34) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.34) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.34) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r32 greet=g933 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.35) UI text u91-34
+RESULT 6.35) UI text u91-34: rc=0 gradle 4.4s seen 4.4s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r34 greet=g933 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 660 ms
+  | compile: daemon compile OK 2644 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 737 ms, waited 2 ms after the patch was ready)
+  PASS 6.35) UI text u91-34: gradle rc=0
+  PASS 6.35) UI text u91-34: verdict HOT (got HOT)
+  PASS 6.35) UI text u91-34: process kept (24582->24582)
+  PASS 6.35) UI text u91-34: app shows the expected state (BOTAS ui=r34 greet=g933 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.36) :shared GreeterImpl body
+RESULT 6.36) :shared GreeterImpl body: rc=0 gradle 4.5s seen 4.5s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r34 greet=g935 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 782 ms
+  | compile: daemon compile OK 2707 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 866 ms, waited 2 ms after the patch was ready)
+  PASS 6.36) :shared GreeterImpl body: gradle rc=0
+  PASS 6.36) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.36) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.36) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r34 greet=g935 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.37) UI text u91-36
+RESULT 6.37) UI text u91-36: rc=0 gradle 4.2s seen 4.2s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r36 greet=g935 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 553 ms
+  | compile: daemon compile OK 2583 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 649 ms, waited 2 ms after the patch was ready)
+  PASS 6.37) UI text u91-36: gradle rc=0
+  PASS 6.37) UI text u91-36: verdict HOT (got HOT)
+  PASS 6.37) UI text u91-36: process kept (24582->24582)
+  PASS 6.37) UI text u91-36: app shows the expected state (BOTAS ui=r36 greet=g935 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.38) :shared GreeterImpl body
+RESULT 6.38) :shared GreeterImpl body: rc=0 gradle 4.5s seen 4.5s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r36 greet=g937 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 628 ms
+  | compile: daemon compile OK 2726 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 707 ms, waited 1 ms after the patch was ready)
+  PASS 6.38) :shared GreeterImpl body: gradle rc=0
+  PASS 6.38) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.38) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.38) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r36 greet=g937 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.39) UI text u91-38
+RESULT 6.39) UI text u91-38: rc=0 gradle 4.1s seen 4.1s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r38 greet=g937 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 792 ms
+  | compile: daemon compile OK 2527 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 864 ms, waited 1 ms after the patch was ready)
+  PASS 6.39) UI text u91-38: gradle rc=0
+  PASS 6.39) UI text u91-38: verdict HOT (got HOT)
+  PASS 6.39) UI text u91-38: process kept (24582->24582)
+  PASS 6.39) UI text u91-38: app shows the expected state (BOTAS ui=r38 greet=g937 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+## 6.40) :shared GreeterImpl body
+RESULT 6.40) :shared GreeterImpl body: rc=0 gradle 4.3s seen 4.3s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r38 greet=g939 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 596 ms
+  | compile: daemon compile OK 2593 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 667 ms, waited 1 ms after the patch was ready)
+  PASS 6.40) :shared GreeterImpl body: gradle rc=0
+  PASS 6.40) :shared GreeterImpl body: verdict HOT (got HOT)
+  PASS 6.40) :shared GreeterImpl body: process kept (24582->24582)
+  PASS 6.40) :shared GreeterImpl body: app shows the expected state (BOTAS ui=r38 greet=g939 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b1)
+RESULT 6) 40 rounds: end-to-end median 4.30s max 5.03s (Gradle start -> new BOTAS line)
+  PASS 6) end-to-end median <= 6 s (4.30s)
+  PASS 6) end-to-end max <= 10 s (5.03s)
+## 7a) only the lambda in LamB.module (module$1 of LamB.kt): LamA's lambda stays
+RESULT 7a) only the lambda in LamB.module (module$1 of LamB.kt): LamA's lambda stays: rc=0 gradle 4.0s seen 4.0s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r38 greet=g939 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b2
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 521 ms
+  | compile: daemon compile OK 2421 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 593 ms, waited 2 ms after the patch was ready)
+  PASS 7a) only the lambda in LamB.module (module$1 of LamB.kt): LamA's lambda stays: gradle rc=0
+  PASS 7a) only the lambda in LamB.module (module$1 of LamB.kt): LamA's lambda stays: verdict HOT (got HOT)
+  PASS 7a) only the lambda in LamB.module (module$1 of LamB.kt): LamA's lambda stays: process kept (24582->24582)
+  PASS 7a) only the lambda in LamB.module (module$1 of LamB.kt): LamA's lambda stays: app shows the expected state (BOTAS ui=r38 greet=g939 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a1/b2)
+## 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays
+RESULT 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays: rc=0 gradle 4.1s seen 4.1s verdict=HOT pid 24582->24582 new BOTAS lines=1
+  app: BOTAS ui=r38 greet=g939 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a2/b2
+  | dependency klibs: hot reload compiles against the toolchain's older copies of org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-iossimulatorarm64 2.11.0 -> 2.9.6, org.jetbrains.kotlinx:kotlinx-serialization-core-iossimulatorarm64 1.13.0 -> 1.7.3, org.jetbrains.kotlinx:kotlinx-coroutines-core-iossimulatorarm64 1.10.2 -> 1.9.0, org.jetbrains.kotlinx:atomicfu-iossimulatorarm64 0.29.0 -> 0.28.0; code that uses API added after those versions does not compile here
+  | compile: daemon klib OK 809 ms
+  | compile: daemon compile OK 2486 ms
+  | patch: 0 definition(s) of names the packaged app keeps local, made local
+  | duplicate definitions across libraries (patch): tier 1 local=0 tier 2 weak=0 tier 3 conflict=0; same library=0
+  | patch unwind info: renamed b'__LD',b'__compact_unwind' -> b'__KALDO',b'__kaldo_cu' (1)
+  | compat: HOT (classifier 880 ms, waited 1 ms after the patch was ready)
+  PASS 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays: gradle rc=0
+  PASS 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays: verdict HOT (got HOT)
+  PASS 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays: process kept (24582->24582)
+  PASS 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays: app shows the expected state (BOTAS ui=r38 greet=g939 extra=none rpc=ping server={"host":"h1","name":"n1"}|91|SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d2 feat=f1 lam=a2/b2)
+# app and compile daemons stopped
+summary: 190/190 PASS
+
+# bisect that found the first version's side effect (steps 1-5, class-1 shape, every step must keep Koin's objects):
+## dev112 (.11.1 + #80 B, without this patch)
+RESULT 3) UI edit: rc=0 gradle 10.0s seen 10.0s verdict=HOT pid 14026->14026 new BOTAS lines=1
+  app: BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d1 feat=f1
+summary: 20/20 PASS
+## dev91, first version (non-absolute paths qualified with the module's unique name)
+RESULT 3) UI edit: rc=0 gradle 8.9s seen 8.9s verdict=HOT pid 12815->12815 new BOTAS lines=1
+  app: BOTAS ui=u91 ERR:ClassCastException:class org.example.kmphr.di.GreeterImpl cannot be cast to class org.example.kmphr.di.Greeter domain=d1 feat=ERR
+summary: 19/20 PASS
+## dev91, this version (file path only)
+RESULT 3) UI edit: rc=0 gradle 9.2s seen 9.2s verdict=HOT pid 21268->21268 new BOTAS lines=1
+  app: BOTAS ui=u91 greet=g1 extra=none rpc=ping server={"host":"h1","name":"n1"}/SavedServer(host=h1, name=n1) nav={"type":"org.example.kmphr.NavKey.Detail","id":3} domain=d1 feat=f1
+summary: 20/20 PASS

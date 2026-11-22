@@ -47,6 +47,8 @@ def main():
                     help="gen-external-klibs.py output: externalKlibs are downloaded by fetch-toolchain.py "
                          "from their repositories, bundledKlibs come with the bundled-klibs component")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--no-repro-gate", action="store_true",
+                    help="local tests only: accept a packaging manifest that scripts/repro-gate.sh did not verify")
     a = ap.parse_args()
 
     pk = json.load(open(a.packaging))
@@ -59,6 +61,12 @@ def main():
     if pk["kaldoIossimSha256"] != want:
         sys.exit(f"gen-bundle-manifest: packed libKaldo sha256 {pk['kaldoIossimSha256']} != "
                  f"identity llvm.kaldoIossimSha256 {want}; repack or regenerate the identity manifest")
+
+    # Release gate (Issue #96): two independent builds of the same input gave the same bytes for every archive.
+    gate = pk.get("reproducibility")
+    if a.channel == "release" and not a.no_repro_gate and (not gate or gate.get("result") != "identical"):
+        sys.exit("gen-bundle-manifest: the packaging manifest has no passing reproducibility gate "
+                 "(scripts/repro-gate.sh); a release needs one")
 
     ver = pk["toolchainVersion"]
     tag = f"toolchain-{ver}"
@@ -73,7 +81,8 @@ def main():
                   "url": f"https://github.com/{a.repo}/releases/download/{tag}/{c['file']}"}
         else:
             dl = maven(maven_url, c["id"], ver, "tar.zst")
-        components.append({k: c[k] for k in ("id", "file", "extractDir", "bytes", "rawBytes", "sha256")}
+        components.append({k: c[k] for k in ("id", "file", "extractDir", "bytes", "rawBytes", "sha256",
+                                             "contentDigest", "reusedFrom", "reuseReason") if k in c}
                           | {"download": dl})
 
     kd = L["kotlinDist"]
@@ -81,7 +90,8 @@ def main():
         "interfaceVersion": 8,
         "layout": "bundle",
         "toolchainVersion": ver,
-        "generatedAt": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        # From the packaging manifest (SOURCE_DATE_EPOCH), so the same input gives the same manifest bytes.
+        "generatedAt": pk.get("generatedAt") or datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "kotlin": {
             "version": ident["kotlin"]["version"],
             "dist": kd,
@@ -113,6 +123,8 @@ def main():
         "runtime": ident["runtime"],
         "components": components,
     }
+    if gate:
+        doc["reproducibility"] = gate
     for key in ("llvmTools", "orcRuntime", "uikitUtils"):
         if key in L:
             doc.setdefault("tools", {})[key] = L[key]

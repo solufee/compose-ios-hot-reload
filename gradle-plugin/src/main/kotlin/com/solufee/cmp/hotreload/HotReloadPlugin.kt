@@ -1,5 +1,6 @@
 package com.solufee.cmp.hotreload
 
+import com.solufee.cmp.hotreload.tasks.BuildIdentityTask
 import com.solufee.cmp.hotreload.tasks.CheckToolchainTask
 import com.solufee.cmp.hotreload.tasks.CleanTask
 import com.solufee.cmp.hotreload.tasks.CompileKlibTask
@@ -119,6 +120,8 @@ class HotReloadPlugin : Plugin<Project> {
             // No Info.plist in the app module (the KMP template keeps it in the Xcode project): generate one.
             val generatedPlist = File(workDir, "generated/Info.plist")
             val appProject = app?.let { project.findProject(it.path) }
+            // #98: read here, not inside the settings provider (a Project cannot be stored in the configuration cache)
+            val projectKotlinVersion: String? = appProject?.let { Kmp.kotlinPluginVersion(it) } ?: Kmp.kotlinPluginVersion(project)
             val infoPlist = when {
                 declaredPlist == null -> ""
                 declaredPlist.isFile -> declaredPlist.path
@@ -216,6 +219,7 @@ class HotReloadPlugin : Plugin<Project> {
                     launchLog = ext.simulator.launchLog.get().asFile.path,
                     readyMarker = ext.simulator.readyMarker.orNull,
                     toolchainReadyMarker = tc["readyMarker"],
+                    projectKotlinVersion = projectKotlinVersion,
                     launchTimeoutSec = ext.simulator.launchTimeoutSeconds.get(),
                     launchRetries = ext.simulator.launchRetries.get(),
                     reinstall = ext.simulator.reinstall.get(),
@@ -268,6 +272,8 @@ class HotReloadPlugin : Plugin<Project> {
             }
             project.tasks.withType(HotReloadTask::class.java).configureEach {
                 if (this !is DaemonStopTask && this !is CleanTask) {
+                    // #93: `hotReloadClean hotReloadRun` (or any task) in one command cleans first
+                    mustRunAfter("hotReloadClean")
                     externalKlibFiles.from(depKlibs)
                     externalKlibIds.set(allIds)
                     fromSourceModules.set(included.map { it.fromSource })
@@ -285,6 +291,18 @@ class HotReloadPlugin : Plugin<Project> {
             }
             val toolchainKey: Provider<String> = manifest.map { "${it["compilerJar"]}|${it["pluginJar"]}|${it["klibList"]}" }
 
+            // #98: before anything compiles, check what the state in build/hotreload was compiled with
+            val identity = project.tasks.register("hotReloadBuildIdentity", BuildIdentityTask::class.java) {
+                description = "Clear the hot reload build state when the plugin, the toolchain or the compiler plugins changed (#98)"
+                this.settings.set(settings)
+            }
+            val identityFile = File(workDir, BuildIdentity.FILE)
+            // #98: only a run that packages or launches clears the state; a hot reload alone must not delete the running app's package
+            project.gradle.taskGraph.whenReady(org.gradle.api.Action<org.gradle.api.execution.TaskExecutionGraph> {
+                val graph = this
+                val packs = listOf("hotReloadPackage", "hotReloadRun").mapNotNull { project.tasks.findByName(it) }.any { graph.hasTask(it) }
+                identity.get().clearOnChange.set(packs)
+            })
             val klibTasks = libraries.associate { m ->
                 m.path to project.tasks.register("hotReloadCompileKlib" + taskSuffix(m), CompileKlibTask::class.java) {
                     group = GROUP
@@ -293,6 +311,8 @@ class HotReloadPlugin : Plugin<Project> {
                     modulePath.set(m.path)
                     sources.from(m.sourceDirs)
                     this.toolchainKey.set(toolchainKey)
+                    dependsOn(identity)
+                    buildIdentity.from(identityFile)
                     klib.set(File(workDir, "klib/${m.label}/${m.label}.klib"))
                 }
             }
@@ -306,6 +326,7 @@ class HotReloadPlugin : Plugin<Project> {
                 group = GROUP
                 description = "Compile every library module to a klib"
                 dependsOn(klibTasks.values)
+                dependsOn(identity)   // also when there is no library module
             }
             project.tasks.register("hotReloadPackage", PackageTask::class.java) {
                 group = GROUP
@@ -336,6 +357,10 @@ class HotReloadPlugin : Plugin<Project> {
                 // #76: `./gradlew hotReloadPackage hotReloadRun` (what the plugin's own messages recommend) must launch the
                 // new package; without an order Gradle may run hotReloadRun first and launch the previous .app.
                 mustRunAfter("hotReloadPackage")
+                // #93: when there is no package (hotReloadClean), hotReloadRun packages first, so the klibs must be built
+                dependsOn(allKlibs)
+                // #98: a package built by another plugin version or toolchain is cleared, not launched
+                dependsOn(identity)
             }
             project.tasks.register("hotReloadVerifyRelease", VerifyReleaseTask::class.java) {
                 group = GROUP

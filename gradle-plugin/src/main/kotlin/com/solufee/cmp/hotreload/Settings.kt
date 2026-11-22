@@ -107,6 +107,8 @@ data class HrSettings(
     val infoPlistContent: String? = null,
     /** #62 (INTERFACE §6.1): the toolchain's first-frame ready marker (runtime.readyMarker, .11+); null on older toolchains. */
     val toolchainReadyMarker: String? = null,
+    /** #98: the project's Kotlin Gradle plugin version (part of the build identity). */
+    val projectKotlinVersion: String? = null,
 ) : java.io.Serializable {
     val app: HrModule get() = modules.single { it.kind == ModuleKind.APP }
     val libraries: List<HrModule> get() = modules.filter { it.kind == ModuleKind.LIBRARY }

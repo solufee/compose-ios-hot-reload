@@ -32,16 +32,16 @@
 
 ## 2. 下载工具链
 
-工具链版本：**2.5.255-hotreload.11.1**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
+工具链版本：**2.5.255-hotreload.11.2**。用仓库里的下载脚本，它会逐个校验 sha256、解包，并把路径本地化：
 
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.11.1/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.11.2/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.11.1/`（下文记作 `<TOOLCHAIN>`）：
+完成后得到 `~/Library/Caches/compose-ios-hot-reload/toolchains/2.5.255-hotreload.11.2/`（下文记作 `<TOOLCHAIN>`）：
 
 | 目录 | 内容 |
 |---|---|
@@ -102,7 +102,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.8"
+    id("com.solufee.cmp.hotreload") version "0.2.9"
 }
 
 cmpHotReload {
@@ -397,10 +397,16 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 
 编译守护进程闲着时不占 CPU，下次 `hotReload` 会自动复用；只有换了工具链或插件版本时，插件才会自己重启它们。
 
+升级插件、换工具链（包括把新版工具链解压到同一个目录）、改编译器插件或它们的参数、改工程的 Kotlin 版本以后，**不用跑 `hotReloadClean`**（#98）：
+每次打包或启动前，插件把这些东西按内容算成一份构建指纹（`build/hotreload/build-identity.txt`），和上次的比；不一样就停掉编译守护进程、
+清掉旧的编译状态（模块 klib、编译器缓存、merge 缓存、分类器快照和打包好的 app），日志里有一行
+`CMP hot reload: build identity changed (<哪一项从什么变成什么>); cleared the compiled state (N MB)`，然后照常从头打包（约 2 分钟）。
+解压出来的工具和 release 基线保留。什么都没变时不清、不重编。
+
 ## 5. 已知限制
 
 - 只支持 iOS 模拟器（arm64）和 Apple Silicon 主机；真机不支持。
-- 工具链版本固定，插件只认 2.5.255-hotreload.11.1。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
+- 工具链版本固定，插件只认 2.5.255-hotreload.11.2。Xcode、模拟器 runtime 不对时，插件会拒绝运行，并说明哪里不对。
 - 热替换延迟：在我们的测试机上，只改 ui 约 5 s、只改 app 约 4 s（保存到新画面）。
 - 工具链 .10 起，热重载 `.app` 启动时从 `build/hotreload/app/merged-bootstrap.libs.o`（约 130 MB 的库对象）读取库代码，不再把它嵌进可执行文件，
   所以打包更快，但这个 `.app` 只能在打包它的这台 Mac 上运行，删掉 `build/hotreload` 后要重新打包（`hotReloadRun` 会提示）。
@@ -498,7 +504,7 @@ pluginManagement {
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.8"
+    id("com.solufee.cmp.hotreload") version "0.2.9"
 }
 ```
 

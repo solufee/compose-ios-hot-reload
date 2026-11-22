@@ -132,6 +132,7 @@ class ReleaseCheck(private val s: HrSettings, private val logger: Logger) {
      */
     fun run(recordBaseline: Boolean, runs: Int = 1) {
         val baselineFile = File(dir, "baseline.fingerprint")
+        val identityFile = File(dir, "baseline.identity")
         if (recordBaseline) {
             val out = File(dir, "baseline")
             var first: Fingerprint? = null
@@ -146,6 +147,8 @@ class ReleaseCheck(private val s: HrSettings, private val logger: Logger) {
                 logger.lifecycle("release baseline build $run/$runs: __text digest ${fp.textDigest?.take(12)} (raw __text ${fp.textSha.take(12)})")
             }
             baselineFile.writeText(first!!.render())
+            // #98: what the baseline was built with; a later toolchain or plugin change is named instead of reported as a leak
+            identityFile.writeText(BuildIdentity.lines(s).joinToString("\n", postfix = "\n"))
             File(dir, "baseline.text-hashes").delete()
             logger.lifecycle("release baseline recorded: ${baselineFile.path} (${first.symbolCount} symbols, ${first.sections.size} sections, " +
                 "__text digest ${first.textDigest?.take(12)})")
@@ -161,15 +164,30 @@ class ReleaseCheck(private val s: HrSettings, private val logger: Logger) {
                 "record it again: hotReloadVerifyRelease -Pcmp.hotreload.releaseBaseline=true")
         }
         val diffs = diffs(base, fp)
+        val changed = identityFile.takeIf { it.isFile }?.let { identityChanges(it.readLines(), BuildIdentity.lines(s)) }
+        if (diffs.isNotEmpty() && !changed.isNullOrEmpty()) {
+            // another compiler builds other code: the comparison says nothing about hot reload
+            throw GradleException("CMP hot reload: the release baseline was recorded with another toolchain or plugin (" +
+                changed.joinToString(", ") + "), so it cannot be compared with this build:\n" + diffs.joinToString("\n") { "  - $it" } +
+                "\n  record it again before any hot reload activity: hotReloadVerifyRelease -Pcmp.hotreload.releaseBaseline=true")
+        }
         if (diffs.isNotEmpty()) {
             throw GradleException("CMP hot reload: release build changed:\n" + diffs.joinToString("\n") { "  - $it" } +
                 "\n  baseline ${baselineFile.path}, current ${File(out, "fingerprint.txt").path}")
         }
+        if (!changed.isNullOrEmpty()) logger.lifecycle("release: the baseline was recorded with other ${changed.joinToString(", ")}; the release build is identical anyway")
         logger.lifecycle("release unchanged: ${fp.symbolCount} symbols, ${fp.sections.size} section sizes and the __text digest " +
             "${fp.textDigest?.take(12)} identical to the baseline (raw __text ${base.textSha.take(12)} -> ${fp.textSha.take(12)}, recorded only)")
     }
 
     companion object {
+        /** Identity keys (the first word of each line) whose values differ; keys that only describe hot reload builds are left out. */
+        fun identityChanges(baseline: List<String>, current: List<String>): List<String> {
+            val hotReloadOnly = setOf("abi", "packaging", "kaldo", "llvm")
+            val old = baseline.filter { it.isNotBlank() }.associateBy { it.substringBefore(' ') }
+            return current.filter { it.substringBefore(' ') !in hotReloadOnly && old[it.substringBefore(' ')] != it }.map { it.substringBefore(' ') }
+        }
+
         /** What differs between two release fingerprints: sizes, symbols, __text digest (raw __text hash not judged). */
         fun diffs(base: Fingerprint, fp: Fingerprint): List<String> = buildList {
             if (base.textDigest != fp.textDigest) add("__TEXT,__text digest ${base.textDigest?.take(12)} -> ${fp.textDigest?.take(12)}")

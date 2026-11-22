@@ -1,0 +1,23 @@
+# #7/#8 acceptance, 2026-11-22 11:36:01, plugin 0.2.8-dev93, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+ax saved: App=0 AX=0
+PASS package | 120s
+PASS run | pid 33104
+## one-shot hotReload
+PASS no edit: exit 0, 'nothing changed', nothing sent | 1.5s; nothing changed (1 hot module checked); nothing sent
+PASS an edit: HOT, on screen | 8.8s
+PASS a compile error: the task fails with the compiler's message |   shared/src/commonMain/kotlin/org/example/kmphr/GreetingUtil.kt:3:12: error: syntax error: Expecting ')'.
+PASS after the fix: the next hotReload succeeds | 1.9s
+## hotReloadWatch -t
+PASS watch: first run succeeds ('nothing changed'), then waits | hotReloadWatch: watching 11 source and resource files of the hot modules; save a change to reload, Ctrl-C to stop
+PASS watch: a saved edit -> HOT, on screen without taps | modified: <WORK>/KmpHr/shared/src/commonMain/kotlin/org/example/kmphr/App.kt; Change detected, executing build...; compat: HOT (classifier
+PASS watch: touching a file without changing it sends nothing | re-run: nothing changed
+PASS watch: a Compose resource edit -> WARM (compose-resources) | WARM compose-resources: 1 file(s) changed since packaging (composeResources/kmphr.shared.generated.resources/drawable/compose-multiplatform.xml); resources are copied into the app when it is packaged; WARM OK ms=10656 ms
+PASS watch: a compile error fails that run, the watch keeps going
+PASS watch: the fix reloads (HOT)
+PASS watch: configuration cache reused on the re-runs, no problems | 5 reuses
+PASS watch: Ctrl-C (SIGINT) stops it | exit 130
+PASS after the watch: a plain hotReload works | 4.7s
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+PASS no Gradle build is left running in the project after Ctrl-C (no build lock held) | 0 locks held
+PASS simulator accessibility switch written back (sim-ax-keys.sh restore: read back == value before describe-ui) | ax restored: App=0 AX=0 (before describe-ui: App=0 AX=0)
+summary: 17/17 PASS

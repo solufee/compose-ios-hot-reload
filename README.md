@@ -20,7 +20,7 @@ picks up the change without restarting. Navigation and `remember` state are kept
 ```bash
 git clone https://github.com/solufee/compose-ios-hot-reload.git
 python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
-  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.11.1/toolchain.json \
+  https://github.com/solufee/compose-ios-hot-reload/releases/download/toolchain-2.5.255-hotreload.11.2/toolchain.json \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
@@ -41,7 +41,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.8"
+    id("com.solufee.cmp.hotreload") version "0.2.9"
 }
 ```
 
@@ -49,7 +49,7 @@ plugins {
 from step 1, written as an absolute path:
 
 ```properties
-cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.11.1/kotlin-native
+cmp.hotreload.toolchainDir=<cache>/2.5.255-hotreload.11.2/kotlin-native
 ```
 
 Add `<module>/.hr/` and `<module>/launch.log` to `.gitignore`. No source changes are needed: source sets,
@@ -155,6 +155,15 @@ Since plugin 0.2.8, the hot reload compiles use the Kotlin compiler plugins your
 (kotlinx-serialization, the Koin compiler plugin, ...), and KSP output is compiled too. Adding or removing a Koin
 definition (an annotation such as `@Single`, or a KSP-generated definition) restarts the app (warm restart), because the
 DI container is built at start; edits inside classes stay hot.
+
+Since plugin 0.2.9 (toolchain .11.2), names defined more than once no longer stop the package with `duplicate symbol`:
+the same name in several libraries (for example what the Koin compiler plugin generates in each module) and local
+classes or lambdas with the same name in two files of one package (for example `module$1` of two Koin `@Module`
+classes) are both handled. The package log lists what it did with each such name.
+
+Since plugin 0.2.9, upgrading the plugin or the toolchain needs no `hotReloadClean`: the next package notices the change
+(`build identity changed (...)`), clears what the old version compiled and builds from scratch once. A plain
+`hotReload` after such a change sends nothing and asks for `hotReloadPackage hotReloadRun`.
 
 Minimal sample (iosMain):
 

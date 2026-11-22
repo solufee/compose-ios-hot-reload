@@ -1,0 +1,31 @@
+ok   batched nm == per-file nm (7 files, one unreadable)
+ok   unreadable file gets no lines
+ok   single-file batch (nm prints no header)
+ok   batches of 2 give the same result
+ok   hot symbols come from the user module only
+ok   no user module -> no hot symbols
+ok   key depends on the archive bytes
+ok   key depends on the flags and hot packages
+ok   miss on an empty cache
+ok   put then get round-trips
+ok   entry without its .json is a miss
+ok   prune keeps used entries and foreign files only
+ok   clang object has __LD,__compact_unwind
+ok   renamed to __KALDO,__kaldo_cu, exit 0
+ok   second run: exit 0, object unchanged (idempotent)
+ok   object without compact unwind: rename_compact_unwind False, unchanged
+ok   #91 tier 1: unreferenced, different code -> local
+ok   #91 tier 1: ld -r links, both copies kept as local symbols
+ok   #91 control: the same archives without the rule stop on a duplicate symbol
+ok   #91 tier 2: used, byte-identical -> weak, basis printed
+ok   #91 tier 2: ld -r links, one strong definition
+ok   #91 tier 3: used, different -> exit 1, names both libraries and caches, asks for a human decision
+ok   #91 hot symbol: identical copies still a conflict (never weakened)
+ok   #91 used data symbol -> conflict (not comparable code)
+ok   #91 two files of one library -> error, nothing localized or weakened
+ok   #91 weak definitions are not duplicates
+ok   #91 patch uses a name kept local -> exit 3, WARM duplicate-declaration
+ok   #91 patch defines a name kept local -> exit 0, the copy is local
+ok   #91 patch with the same name from two modules: duplicate before, tier 1 local after, ld -r links
+ok   #91 patch: two modules, different code, used inside the patch -> exit 1 with the conflict error
+all merge-payloads tests passed

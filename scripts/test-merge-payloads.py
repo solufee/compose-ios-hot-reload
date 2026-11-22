@@ -155,9 +155,178 @@ def main():
               m.rename_compact_unwind(plain) is False and open(plain, "rb").read() == data2)
     finally:
         subprocess.run(["rm", "-rf", t])
+
+    # 5. Issue #91: names that several libraries define (three tiers), and the patch side (--patch-dups).
+    t = tempfile.mkdtemp(prefix="merge-test-dups-")
+    try:
+        test_duplicates(t)
+    finally:
+        subprocess.run(["rm", "-rf", t])
     if fails == 0:
         print("all merge-payloads tests passed")
     return 1 if fails else 0
+
+
+def fn(name, body):
+    """A C function under a Kotlin-like symbol name."""
+    c = "f_" + str(abs(hash(name)))
+    return f'int {c}(void) __asm__("{name}");\nint {c}(void){{ {body} }}\n'
+
+
+def cache_archive(root, lib, cache, source):
+    """<root>/ic/<lib>-per-file-cache/<cache>/bin/lib<cache>.a with one member compiled from [source]."""
+    d = os.path.join(root, "ic", f"{lib}-per-file-cache", cache, "bin")
+    os.makedirs(d, exist_ok=True)
+    obj = cc(d, f"lib{cache}.a", source)  # member name like the compiler's: lib<cache>.a.o
+    a = os.path.join(d, f"lib{cache}.a")
+    subprocess.run(["ar", "rcs", a, os.path.basename(obj)], cwd=d, check=True)
+    os.remove(obj)
+    return a
+
+
+def ld_r(inputs, out):
+    cmd = ["ld", "-r", "-arch", "arm64", "-platform_version", "macos", "13.0", "13.0", "-o", out]
+    for p in inputs:
+        cmd += ["-force_load", p] if p.endswith(".a") else [p]
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def nm_kinds(path, name):
+    """['external' | 'non-external' | 'weak external', ...] of the definitions of [name] in [path]."""
+    out = subprocess.run(["nm", "-m", path], capture_output=True, text=True).stdout
+    kinds = []
+    for line in out.splitlines():
+        if line.endswith(" " + name) and "(undefined)" not in line:
+            for k in ("weak external", "non-external", "external"):
+                if k in line:
+                    kinds.append(k)
+                    break
+    return kinds
+
+
+def run_resolve(m, inputs, hot, work):
+    import contextlib
+    import io
+    tables = {p: m.nm_table(p) for p in inputs}
+    buf = io.StringIO()
+    replaced = {}
+    os.makedirs(work, exist_ok=True)
+    with contextlib.redirect_stdout(buf):
+        copies, refs = m.collect_copies(inputs, tables, {}, set())
+        plan = m.plan_duplicates(copies, refs, set(hot), work)
+        ok = m.report_duplicates(plan, "test")
+        if ok:
+            replaced = m.apply_duplicate_plan(plan, work)
+    return (0 if ok else 1), replaced, plan, buf.getvalue()
+
+
+def test_duplicates(t):
+    m = load({})
+    llvm = os.environ.get("KONAN_LLVM_HOME")
+    if not llvm or not os.path.isfile(os.path.join(llvm, "bin", "llvm-objcopy")):
+        print("FAIL #91 tests need KONAN_LLVM_HOME with bin/llvm-objcopy (the toolchain's llvm-tools)")
+        global fails
+        fails += 1
+        return
+    HINT, SAME, DIFF, DATA = "_kfun:hint#h(){}", "_kfun:same#s(){}", "_kfun:diff#d(){}", "_kvar:data#v"
+
+    # tier 1: two libraries, different code, nobody uses it -> every copy local, nothing dropped
+    a = cache_archive(t, "liba", "hints.aaa", fn(HINT, "return 1;"))
+    b = cache_archive(t, "libb", "hints.aaa", fn(HINT, "return 2;"))
+    code, replaced, plan, out = run_resolve(m, [a, b], [], os.path.join(t, "w1"))
+    check("#91 tier 1: unreferenced, different code -> local", code == 0 and list(plan["local"]) == [HINT]
+          and "tier 1 local=1" in out and "unreferenced" in out, out)
+    merged = os.path.join(t, "t1.o")
+    r = ld_r([replaced.get(a, a), replaced.get(b, b)], merged)
+    check("#91 tier 1: ld -r links, both copies kept as local symbols", r.returncode == 0
+          and nm_kinds(merged, HINT) == ["non-external", "non-external"], (r.stderr, nm_kinds(merged, HINT)))
+    r0 = ld_r([a, b], os.path.join(t, "t1-before.o"))
+    check("#91 control: the same archives without the rule stop on a duplicate symbol",
+          r0.returncode != 0 and "duplicate symbol" in r0.stderr, r0.stderr[-300:])
+
+    # tier 2: identical code, used by a third object -> one strong copy, the others weak
+    c1 = cache_archive(t, "liba", "same.bbb", fn(SAME, "return 7;"))
+    c2 = cache_archive(t, "libb", "same.bbb", fn(SAME, "return 7;"))
+    user = cache_archive(t, "app", "main.ccc", f'extern int s(void) __asm__("{SAME}");\n' + fn("_kfun:app#u(){}", "return s();"))
+    code, replaced, plan, out = run_resolve(m, [c1, c2, user], [], os.path.join(t, "w2"))
+    check("#91 tier 2: used, byte-identical -> weak, basis printed", code == 0 and list(plan["weak"]) == [SAME]
+          and "tier 2 weak=1" in out and "identical:" in out and "sha256" in out and "bytes" in out, out)
+    merged = os.path.join(t, "t2.o")
+    r = ld_r([replaced.get(p, p) for p in (c1, c2, user)], merged)
+    check("#91 tier 2: ld -r links, one strong definition", r.returncode == 0 and nm_kinds(merged, SAME) == ["external"],
+          (r.stderr, nm_kinds(merged, SAME)))
+
+    # tier 3: different code and used -> explicit error naming the copies, nothing linked
+    d1 = cache_archive(t, "liba", "diff.ddd", fn(DIFF, "return 1;"))
+    d2 = cache_archive(t, "libb", "diff.ddd", fn(DIFF, "return 2;"))
+    user3 = cache_archive(t, "app", "main3.eee", f'extern int d(void) __asm__("{DIFF}");\n' + fn("_kfun:app#u3(){}", "return d();"))
+    code, replaced, plan, out = run_resolve(m, [d1, d2, user3], [], os.path.join(t, "w3"))
+    check("#91 tier 3: used, different -> exit 1, names both libraries and caches, asks for a human decision",
+          code == 1 and "tier 3 conflict=1" in out and "liba (cache diff.ddd)" in out and "libb (cache diff.ddd)" in out
+          and "semantic conflict that needs a human decision" in out, out)
+
+    # a hot symbol is never weakened or localized, even when the copies are identical
+    code, replaced, plan, out = run_resolve(m, [c1, c2, user], [SAME], os.path.join(t, "w4"))
+    check("#91 hot symbol: identical copies still a conflict (never weakened)", code == 1 and list(plan["conflict"]) == [SAME]
+          and "hot symbol" in out, out)
+
+    # a data symbol that is used cannot be compared byte for byte -> conflict
+    v1 = cache_archive(t, "liba", "data.fff", f'int v1 __asm__("{DATA}") = 1;\n')
+    v2 = cache_archive(t, "libb", "data.fff", f'int v2 __asm__("{DATA}") = 1;\n')
+    userv = cache_archive(t, "app", "mainv.ggg", f'extern int v __asm__("{DATA}");\n' + fn("_kfun:app#uv(){}", "return v;"))
+    code, replaced, plan, out = run_resolve(m, [v1, v2, userv], [], os.path.join(t, "w5"))
+    check("#91 used data symbol -> conflict (not comparable code)", code == 1 and list(plan["conflict"]) == [DATA]
+          and "not code" in out, out)
+
+    # two files of ONE library -> not a tier: an error that points at the toolchain (distinct declarations)
+    s1 = cache_archive(t, "libs", "pkg.one", fn("_kfun:pkg.module$1#invoke(){}", "return 1;"))
+    s2 = cache_archive(t, "libs", "pkg.two", fn("_kfun:pkg.module$1#invoke(){}", "return 2;"))
+    code, replaced, plan, out = run_resolve(m, [s1, s2], [], os.path.join(t, "w6"))
+    check("#91 two files of one library -> error, nothing localized or weakened", code == 1
+          and list(plan["same_library"]) == ["_kfun:pkg.module$1#invoke(){}"] and not plan["local"] and not plan["weak"]
+          and "two files of one library" in out, out)
+
+    # weak definitions never clash and are not counted
+    w1 = cache_archive(t, "liba", "weak.hhh", '__attribute__((weak)) int wk(void) __asm__("_kfun:weak#w(){}");\nint wk(void){return 1;}\n')
+    w2 = cache_archive(t, "libb", "weak.hhh", '__attribute__((weak)) int wk(void) __asm__("_kfun:weak#w(){}");\nint wk(void){return 2;}\n')
+    code, replaced, plan, out = run_resolve(m, [w1, w2], [], os.path.join(t, "w7"))
+    check("#91 weak definitions are not duplicates", code == 0 and not any(plan[k] for k in plan), out)
+
+    # --patch-dups: a patch that uses a name the packaged app keeps local -> exit 3 with a WARM line
+    record = os.path.join(t, "merged-bootstrap.dups.json")
+    open(record, "w").write('{"local": ["%s"], "weak": []}' % HINT)
+    hot = os.path.join(t, "hot-symbols.txt")
+    open(hot, "w").write("_kfun:app#u(){}\n")
+    pd = os.path.join(t, "patch")
+    os.makedirs(pd)
+    uses = cc(pd, "uses", f'extern int h(void) __asm__("{HINT}");\n' + fn("_kfun:core#caller(){}", "return h();"))
+    r = subprocess.run([sys.executable, TOOL, "--patch-dups", record, hot, f"core={uses}"], capture_output=True, text=True)
+    check("#91 patch uses a name kept local -> exit 3, WARM duplicate-declaration", r.returncode == 3
+          and f"WARM duplicate-declaration {HINT}:" in r.stdout, (r.returncode, r.stdout, r.stderr))
+
+    # --patch-dups: a patch that defines such a name (downstream file rebuilt) -> its copy becomes local too
+    defines = cc(pd, "defines", fn(HINT, "return 3;"))
+    r = subprocess.run([sys.executable, TOOL, "--patch-dups", record, hot, f"domain={defines}"], capture_output=True, text=True)
+    check("#91 patch defines a name kept local -> exit 0, the copy is local", r.returncode == 0
+          and nm_kinds(defines, HINT) == ["non-external"] and "1 definition(s)" in r.stdout, (r.returncode, r.stdout, nm_kinds(defines, HINT)))
+
+    # --patch-dups: two modules of one patch define the same new name (e.g. both modules' hint files rebuilt)
+    NEW = "_kfun:hint#fresh(){}"
+    p1 = cc(pd, "p1", fn(NEW, "return 1;"))
+    p2 = cc(pd, "p2", fn(NEW, "return 2;"))
+    r0 = ld_r([p1, p2], os.path.join(pd, "before.o"))
+    r = subprocess.run([sys.executable, TOOL, "--patch-dups", record, hot, f"core={p1}", f"domain={p2}"], capture_output=True, text=True)
+    r1 = ld_r([p1, p2], os.path.join(pd, "after.o"))
+    check("#91 patch with the same name from two modules: duplicate before, tier 1 local after, ld -r links",
+          r0.returncode != 0 and r.returncode == 0 and "tier 1 local=1" in r.stdout and r1.returncode == 0
+          and nm_kinds(os.path.join(pd, "after.o"), NEW) == ["non-external", "non-external"], (r.stdout, r1.stderr))
+    q1 = cc(pd, "q1", fn("_kfun:hint#q(){}", "return 1;"))
+    q2 = cc(pd, "q2", fn("_kfun:hint#q(){}", "return 2;"))
+    q3 = cc(pd, "q3", 'extern int q(void) __asm__("_kfun:hint#q(){}");\n' + fn("_kfun:core#useq(){}", "return q();"))
+    r = subprocess.run([sys.executable, TOOL, "--patch-dups", record, hot, f"core={q1}", f"domain={q2}", f"core={q3}"],
+                       capture_output=True, text=True)
+    check("#91 patch: two modules, different code, used inside the patch -> exit 1 with the conflict error",
+          r.returncode == 1 and "semantic conflict that needs a human decision" in r.stdout, (r.returncode, r.stdout))
 
 
 if __name__ == "__main__":

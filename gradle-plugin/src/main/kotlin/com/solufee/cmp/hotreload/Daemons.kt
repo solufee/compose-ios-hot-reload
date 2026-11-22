@@ -29,7 +29,8 @@ class Daemons(private val s: HrSettings, private val logger: Logger) {
         if (sockets.any(::alive)) logger.lifecycle("CMP hot reload: restarting compile daemons (toolchain, tools or health changed)")
         stop()
         ensurePrivateDir(File(s.socketDir))
-        val classes = File(s.socketDir, "classes-" + (tools.shas["HrCompileDaemon.java"] ?: "x").take(12))
+        // #90: the daemon's classes are compiled by this JDK's javac; another JDK gets its own copy
+        val classes = File(s.socketDir, "classes-" + (tools.shas["HrCompileDaemon.java"] ?: "x").take(12) + "-" + Tools.sha256(s.javaHome.toByteArray()).take(8))
         if (!File(classes, "HrCompileDaemon.class").isFile) {
             classes.mkdirs()
             Proc.check(listOf("${s.javaHome}/bin/javac", "-d", classes.path, tools.daemonSource.path), logger = logger)
@@ -43,8 +44,7 @@ class Daemons(private val s: HrSettings, private val logger: Logger) {
         logger.lifecycle("CMP hot reload: compile daemons ready ${pids()}")
     }
 
-    private fun state(tools: Tools) =
-        "jar=${s.compilerJar}\ndist=${s.dist}\nsource=${tools.shas["HrCompileDaemon.java"]}\n"
+    private fun state(tools: Tools) = stateOf(s, tools.shas["HrCompileDaemon.java"])
 
     private fun start(sock: String, log: File, cacheOnly: Boolean, xmx: String, classes: File) {
         val cmd = listOf(
@@ -118,6 +118,13 @@ class Daemons(private val s: HrSettings, private val logger: Logger) {
     }
 
     companion object {
+        /**
+         * What the running daemons were started with; any difference restarts them. #90: the JDK is part of it (a
+         * daemon on the old JDK would keep failing on a plugin that needs the new one after the user switched JDK).
+         */
+        fun stateOf(s: HrSettings, daemonSourceSha: String?): String =
+            "jar=${s.compilerJar}\ndist=${s.dist}\nsource=$daemonSourceSha\njava=${s.javaHome}\n"
+
         /** Health check: the daemon answers when its socket accepts a connection. */
         fun alive(socket: String): Boolean {
             val f = File(socket)

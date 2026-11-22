@@ -5513,19 +5513,24 @@ index 74c9ba2310f..513ce9218e9 100644
  
      val objcExportExplicitMethodFamily by booleanOption()
 diff --git a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt
-index 79293309497..f85c903f665 100644
+index 79293309497..fa29f7ce7df 100644
 --- a/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt
 +++ b/kotlin-native/backend.native/compiler/ir/backend.native/src/org/jetbrains/kotlin/backend/konan/llvm/BinaryInterface.kt
-@@ -165,7 +165,7 @@ internal fun IrSimpleFunction.computeSymbolName(
+@@ -164,8 +164,11 @@ internal fun IrSimpleFunction.computeSymbolName(
+         computeSymbolName()
      else {
          internalSymbolNameBuilder() ?: run {
-             val containerName = parentClassOrNull?.fqNameForIrSerialization?.asString()
+-            val containerName = parentClassOrNull?.fqNameForIrSerialization?.asString()
 -                ?: this@computeSymbolName.file.path
-+                ?: perFileCachePrivateContainer(context, this@computeSymbolName.file.path)
++            val parentClass = parentClassOrNull
++            val containerName = if (parentClass == null)
++                perFileCachePrivateContainer(context, this@computeSymbolName.file.path)
++            else
++                perFileCacheClassContainer(context, parentClass, this@computeSymbolName.file.path)
              computePrivateSymbolName(containerName)
          }
      }
-@@ -187,5 +187,16 @@ internal val IrClass.typeInfoHasVtableAttached: Boolean
+@@ -187,5 +190,33 @@ internal val IrClass.typeInfoHasVtableAttached: Boolean
  internal val String.moduleConstructorName
      get() = "_Konan_init_${this}"
  
@@ -5538,6 +5543,23 @@ index 79293309497..f85c903f665 100644
 +internal fun perFileCachePrivateContainer(context: NativeBackendContext, path: String): String {
 +    val uniqueName = context.config.libraryToCache?.klib?.uniqueName
 +    return if (context.config.producePerFileCache && uniqueName != null && !path.startsWith("/")) "$uniqueName:$path" else path
++}
++
++/**
++ * Container of a non-exported function of [parentClass] (Issue #91). Its private symbol name is normally qualified with
++ * the class's fqName only. A class that is not exported (a local class, e.g. a lambda, or a private class) is unique
++ * only within its file: a lambda is named after its function (`module$1`), so two files of one package whose functions
++ * have the same name give two classes with the same fqName. In a whole-program build their symbols are internal; per-file
++ * caches keep them global, so per-file caches qualify such a class with its file's path, which is unique within a module.
++ * Only the path: the library's unique name that [perFileCachePrivateContainer] adds to non-absolute paths is not stable
++ * for the program's own module (a different hash in the packaging compile and in a patch compile), and the packaged app
++ * and every patch must agree on these names. The same file gives the same name in every compile. Exported classes and
++ * other builds keep their names.
++ */
++internal fun perFileCacheClassContainer(context: NativeBackendContext, parentClass: IrClass, path: String): String {
++    val fqName = parentClass.fqNameForIrSerialization.asString()
++    if (!context.config.producePerFileCache || parentClass.isExported()) return fqName
++    return "$path:$fqName"
 +}
 +
  internal val KotlinLibrary.moduleConstructorName

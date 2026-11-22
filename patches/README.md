@@ -22,7 +22,7 @@
 
 本项目在它们之上的改动（原理见 `docs/TECHNICAL-NOTES.md`）：eh_frame 合成、
 `-Xhot-reload` 的 cache-only 分支、稳定的中间 klib 名、用户模块 per-file 缓存、
-ObjC selector 修复的 runtime 侧配合，以及首帧就绪标记用的 `kotlin.native.runtime.isHotReloadBinary()` / `HotReload.isEnabled`（工具链 .11，`CompilerConstants.cpp` 里的 `Kotlin_native_runtime_HotReload_isEnabled`）等。补丁共 107 个文件、约 3.1k 行新增；逐文件缓存里非绝对路径（编译器插件生成的文件）的私有符号和缓存自身的构造函数带上模块名（#77，`perFileCachePrivateContainer`）。
+ObjC selector 修复的 runtime 侧配合，以及首帧就绪标记用的 `kotlin.native.runtime.isHotReloadBinary()` / `HotReload.isEnabled`（工具链 .11，`CompilerConstants.cpp` 里的 `Kotlin_native_runtime_HotReload_isEnabled`）等。补丁共 107 个文件、约 3.1k 行新增；逐文件缓存里非绝对路径（编译器插件生成的文件）的私有符号和缓存自身的构造函数带上模块名（#77，`perFileCachePrivateContainer`）。逐文件缓存里非导出类（本地类如 lambda、private 类）的成员带上所在文件（#91，`perFileCacheClassContainer`）：两个文件里同名函数的 lambda 都叫 `<包>.<函数>$1`，整程序构建里它们是内部符号，逐文件缓存里是全局符号，不加文件就重名；名字只由文件路径决定，release 和其它构建不变。
 
 ## 应用
 
@@ -83,6 +83,8 @@ $ git -C /tmp/verify-compose apply --check patches/compose-multiplatform-core-bu
 ```
 
 Issue #78（HOT 补丁后“X cannot be cast to X”，2026-11-22）：`kotlin-native-hot-reload.patch` sha256 `33105748…`。只改热重载 runtime `StateTransfer.cpp`（进 `hot_reload.bc`，release 链接 `noop_hot_reload`）：遍历旧实例之前 `ThreadRegistry::PublishAll()`，把各线程还没发布的全局变量和外部引用写进注册表；外部引用（StableRef、ObjC 持有的对象）也当作根，迁移后同步改写。验证见 `gradle-plugin/test-projects/kmp-template/accept-typeinfo.py` 和 REPORT §46。
+
+Issue #80（补丁代码里的异常接不住，2026-11-22）：`llvm-kaldo.patch` sha256 `51f675ae…`。只改 `Kaldo.cpp` 里插件的注册顺序：`CompactUnwindToEHFramePlugin` 改到 `EHFrameRegistrationPlugin` 之后注册。两者都把 pre-prune pass 插到最前面，后注册的先跑；`EHFrameRegistrationPlugin` 的 pass 会删掉 `__LD,__compact_unwind`，原来的顺序下热重载补丁（普通 `ld -r`，段名没改）就一个 FDE 也没有，异常穿过补丁代码时进程终止。用 main 的补丁源码编出的 libKaldo.iossim 与发布版一致（`6340abfe`），加上这处改动后是 `3c379047`。验证见 `gradle-plugin/test-projects/kmp-template/accept-eh-patch.py` 和 REPORT §48。
 
 Issue #77（多模块同路径文件，2026-11-22）：`kotlin-native-hot-reload.patch` sha256 `1772fd13…`。改动是 `BinaryInterface.kt` 新增 `perFileCachePrivateContainer`（只在 `producePerFileCache` 时把非绝对路径加上被缓存库的 unique name），`LlvmDeclarations.kt` / `ContextUtils.kt` 的私有 typeinfo 名和 `IrToBitcode.kt` 里逐文件缓存自身的构造函数名一起用它；release 构建的 `__text` 摘要不变（f6537d95）。验证见 `example-gradle/accept-dup-private-77.txt`。
 

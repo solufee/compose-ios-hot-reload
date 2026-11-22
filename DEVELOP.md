@@ -122,6 +122,12 @@ cp build-iossim/lib/libKaldo.iossim.dylib $KALDO_INSTALL/lib/
   清单里有库文件的 sha256，对不上会拒绝打包。所以每次重建 libKaldo 后都要重跑 `scripts/gen-toolchain.sh`。
 - `ninja -C build-macos install` 会把 `libKaldo.dylib` 也装进 `install-macos/lib`；装完删掉它
   （`rm ../install-macos/lib/libKaldo*.dylib`），保证链接只能从 `<KALDO_INSTALL>` 找到。
+- 发布或验收用的 libKaldo 一律从 main 的 `patches/llvm-kaldo.patch` 取源码：在基线上 `git apply` 之后再编，不要直接用某个
+  长期存在的工作树（工作树里可能带着别的分支还没合并的改动）。编完先核对：不改源码时编出的 `libKaldo.iossim.dylib` 应与清单里
+  的 `llvm.kaldoIossimSha256` 一致（同一台机器、同一份构建目录可复现），再加自己的改动（Issue #80 就是这样做的，REPORT §48）。
+- 改动 `CMakeLists.txt`（或用 rsync/cp 换掉 kaldo 目录导致它的时间戳变化）会触发 CMake 重新配置，iOS 模拟器构建的 `build.ninja`
+  会被加上 Apple ld 不认识的 `-Wl,--gc-sections`，链接报 `ld: unknown options: --gc-sections`；从 `build-iossim/build.ninja`
+  里删掉这个选项再编（REPORT §9.12）。
 
 ### 2. Kotlin/Native 工具链
 

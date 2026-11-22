@@ -143,3 +143,40 @@ scripts/publish-toolchain.py --dist-dir <WORKSPACE>/toolchain-dist --manifest <W
 
 `COMPOSE_KLIB_CACHE` 是 `compose-source-jbmain/` 这一层，每个子目录是一个已解包的 klib
 （`default/manifest`、`default/ir`、`default/linkdata`），打包时保留原目录名。
+
+## 7. 可复现打包（Issue #96，自 `2.5.255-hotreload.11.2` 起）
+
+### 7.1 `.11` → `.11.1` 的差异来源
+
+逐个组件解包后比较了文件内容、tar 头和 zstd 参数。结论：zstd 不是差异来源。`zstd -19 -T0`（1.5.7）压缩同一条管道输入，
+结果是确定的，与线程数无关：把两版的 8 个 tar 各自经管道重新压缩，得到的字节和已发布归档完全一致。所以归档 sha256 只由 tar 流决定。
+
+| 组件 | 文件内容 | tar 头 | 处理 |
+|---|---|---|---|
+| kaldo-iossim、kaldo-macos | 不变 | mtime 不同 | 内容改了才重打，tar 头固定 |
+| orc-runtime、llvm-tools、cmp-uikit-utils | 不变 | mtime 不同 | 沿用上一版归档 |
+| compose-compiler-plugin（3 个文件）、compose-klibs（2025 个文件） | 不变 | mtime 不同 | 沿用上一版归档 |
+| kotlin-native | 3952 个文件不变；3 个文件真实变化（`compiler.fingerprint`、编译器 jar、`hot_reload.bc`，来自 #77/#78） | mtime 不同 | 重打，tar 头固定 |
+
+每个 tar 头还带着打包机器的本地用户名、组名和 uid。这些不影响功能，但属于本机信息，所以一并去掉。
+打包内容本身已经是确定的：编译器 jar 的条目时间已统一为 1980-02-01，静态库成员的属主是 0/0、日期是 1970
+（只有 cmp-uikit-utils 的 `__.SYMDEF` 例外，它是沿用的，不重新生成）。
+
+### 7.2 做法
+
+- `scripts/repro-pack.py tar`：条目按路径字节序排列（目录在其内容之前，和 `tar -C DIR -cf - .` 一样带 `./` 前缀），
+  mtime 全部取 `SOURCE_DATE_EPOCH`，uid/gid 为 0，用户名和组名为空，目录及可执行文件的权限为 0755、其余为 0644，
+  保留符号链接，不写扩展属性，只在 ustar 放不下时才写 PAX 头。然后经管道交给 `zstd -q -19 -T0`。
+- `SOURCE_DATE_EPOCH` 同时用作两份清单的 `generatedAt`，因此同一输入得到的 `packaging-manifest.json` 和 `toolchain.json` 也逐字节相同。
+  默认值是打包仓库 HEAD 的提交时间；发布时设为补丁所在提交的时间（`.11.2` 用 main `0016ad4`）。
+- 沿用（`REUSE_FROM=<上一版 dist 目录>`）：比较组件的内容摘要（路径、类型、可执行位、文件字节、链接目标），
+  如果和上一版归档解出来的一样，就逐字节复制上一版归档（只改文件名里的版本号）。
+  清单为该组件记录 `reusedFrom` 和 `reuseReason`；每个组件都记录 `contentDigest`。
+- 自检：每个新打出的归档都要解出来，核对内容摘要和暂存目录一致，否则打包失败。
+- 发布门禁 `scripts/repro-gate.sh`：用同一份输入，在两个独立的工作目录里并行打包两次
+  （各自的 cwd、`TMPDIR`、输出目录都分开），所有文件的 sha256 必须一致，否则失败，`OUT_DIR` 里什么都不写。
+  通过后，在打包清单里写入 `reproducibility` 记录，`gen-bundle-manifest.py` 把它带进 `toolchain.json`。
+  `--channel release` 遇到没有通过记录的清单会拒绝生成（`--no-repro-gate` 只用于本地测试）。
+
+已知遗留：沿用的归档是 `.11.1` 的原字节，它们的 tar 头里仍有旧的本机用户名和 mtime（`.11.1` 已经公开发布过），
+要等这些组件下次真正变化、重新打包时才会消失。

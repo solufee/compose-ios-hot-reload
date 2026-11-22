@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.1**（插件 0.2.8）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -84,8 +84,24 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `hotReloadRun` | 安装并启动；就绪判定：你配了 `readyMarker` 就等这一行；否则工具链 .11 起看到 app 的首帧标记 `HR READY first-frame`（`toolchain.json` 的 `runtime.readyMarker`），或 Kotlin main 运行满 3 s，哪个先到算哪个。失败最多重试 3 次。`--args="..."` 传给 app（如 `--hr-state=2,3`） |
 | `hotReloadWatch` | 和 `hotReload` 相同，配合 `-t` 使用：Gradle 监视热模块的源码和 composeResources（下文“输入与 up-to-date”），每次保存重跑；某次失败不结束监视；不加 `-t` 时只跑一次并提示 |
 | `hotReloadDaemonStart` / `hotReloadDaemonStop` | 启动或复用、停止本项目的两个编译守护进程 |
-| `hotReloadClean` | 停掉本项目的守护进程，删除 `build/hotreload/`（app、编译缓存、merge 缓存、分类器快照）；下次 `hotReloadPackage` 从头建 |
+| `hotReloadClean` | 停掉本项目的守护进程，删除 `build/hotreload/`（app、编译缓存、merge 缓存、分类器快照）；下次 `hotReloadPackage` 从头建。升级插件或工具链后不用手动跑，见下文“构建指纹” |
 | `hotReloadVerifyRelease` | release 零改动校验：见下文 |
+
+### 构建指纹（#98）
+
+`build/hotreload/` 里编出来的东西（模块 klib、编译器的 `ic/` 和 `auto-cache/`、`merge-cache/`、分类器快照、打包好的 app）
+都依赖编译它们时用的插件和工具链。每次 klib 编译、打包、启动、热替换之前，`hotReloadBuildIdentity` 把下面这些算出来，和
+`build/hotreload/build-identity.txt` 里记的上次比较：插件版本；`toolchain.json` 里的工具链、Kotlin fork、Compose fork 版本和补丁 sha；
+工程自己的 Kotlin Gradle 插件版本；编译器 jar、Compose 编译器插件、klib 清单、libKaldo、打包用的 `llvm-objcopy`/`llvm-nm` 的 sha256（按内容，
+同一路径换了内容也算变；按大小和修改时间缓存，不会每次读 60 MB 的 jar）；工程用到的编译器插件 jar 的 sha256 和它们的参数；
+会改变生成代码或打包产物的开关 `stableKeys`、`keepCompactUnwind`、`libsInExecutable`。
+任何一项变了（或者目录里有旧插件留下的编译状态却没有指纹），就停掉本工程的编译守护进程，删除 `build/hotreload/` 里除
+`tools/`（按内容寻址的工具）、`release/`（release 基线，见下文）和 `generated/` 以外的东西，并打印变了哪一项。
+什么都没变时这一步不删任何东西，klib 也不会因为它重编。
+只有要打包或启动的那次运行（命令里有 `hotReloadPackage` 或 `hotReloadRun`）才会清理；单独跑 `hotReload` / `hotReloadWatch` 时，
+正在运行的 app 是按上次记下的指纹编的，所以什么都不删、也不改记录，补丁拒绝发送并提示
+`the app was packaged with another build identity (…); … nothing was sent. Run ./gradlew hotReloadPackage hotReloadRun`
+（源码没改时照旧是 “nothing changed”）。
 
 ## DSL
 
@@ -246,6 +262,9 @@ bundle 检查（`Pipeline.verifyBundle`）每次 `hotReloadPackage` 都跑，任
 GOT 顺序不同的两次构建得到同一个值，改一个代码字节就会变（`ReleaseDigestTest` 用真实的 arm64 二进制验证这两点）。
 所以记基线只构建一次（`cmp.hotreload.releaseBaselineRuns` 可以设成多次，用来确认几次构建彼此一致）。0.1.x 记的基线没有摘要，0.2.0 会要求重记一次。
 同时写出 `build/hotreload/release/<label>/commands.sh`，可以脱离 Gradle 用 `env -i` 复现同一构建再比对。
+基线旁边还记着当时的构建指纹（`release/baseline.identity`，#98）。换了工具链、插件版本、编译器插件或工程的 Kotlin 版本以后，
+编译器本身产出的代码就可能不同，这时旧基线比不出热重载有没有影响 release：比对仍然一致就通过，并注明基线是用别的什么记的；
+不一致则报“基线是用别的工具链或插件记的”，列出变了的指纹项，请重新记基线，而不是报 release 被改动。
 
 > 固定 `-module-name` 的原因：不指定时，程序的模块名每次构建都会变，而它会进入 cinterop 桥接符号名
 > （`…_kncfunN`），符号排序随之改变，进而让数据槽顺序和 `__text` 字节不同；与热重载无关。

@@ -416,7 +416,9 @@ JIT 代码用不了 compact unwind：libunwind 通过 Mach-O 镜像头找到 `__
 
 **构建侧**（`KALDO_KEEP_COMPACT_UNWIND=1`）：`merge-payloads.py` 保留 `__LD,__compact_unwind`，但把它改名为
 `__KALDO,__kaldo_cu`（直接改 Mach-O section 头，因为 `llvm-objcopy --rename-section` 的参数里写不了带逗号的 segment,section 名），
-这样 JITLink 自己的 compact unwind 处理不会去要求 FDE。
+这样 JITLink 自己的 compact unwind 处理不会去要求 FDE。热重载补丁走普通 `ld -r`，段名还是 `__LD,__compact_unwind`：libKaldo 的
+插件也认这个名字，但要在 LLVM 的 `EHFrameRegistrationPlugin` 删掉这个段之前跑，所以必须在它之后注册（两者都把 pass 插到最前面，
+后注册的先跑；Issue #80，`Kaldo.cpp`）。补丁路径另外也改名（`merge-payloads.py --rename-compact-unwind`），两者同时在时只处理一份。
 
 **运行侧**（`KALDO_SYNTH_EH_FRAME`，未设、空串、`0` 为关，其他值为开）：libKaldo 的 plugin 遍历 compact unwind 记录
 （每条 32 字节），只为图里**定义**的函数生成 FDE（外部函数沿用 host 自己的 unwind 信息）。Kotlin/Native 编译时用

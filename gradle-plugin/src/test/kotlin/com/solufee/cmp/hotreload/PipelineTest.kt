@@ -135,4 +135,31 @@ class PipelineTest {
         p.keepCompactUnwind(data, tools)   // nothing to move: left as it is, no error
         assertTrue(dataBefore.contentEquals(data.readBytes()))
     }
+
+    @Test
+    fun `a package is ready for hotReloadRun only with the app, its hot symbols and its library object file (#93)`(@TempDir dir: File) {
+        val src = File(dir, "app/src").apply { mkdirs() }
+        val app = HrModule(":app", ModuleKind.APP, src.path, emptyList())
+        val plist = File(dir, "Info.plist").apply {
+            writeText("<plist><dict><key>CFBundleExecutable</key><string>ComposeHR</string><key>CFBundleIdentifier</key><string>a.b</string></dict></plist>")
+        }
+        val st = HrSettings(
+            rootDir = dir.path, workDir = File(dir, "w").path, dist = "/nonexistent", kotlinc = "/nonexistent/kotlinc-native", compilerJar = "/c.jar",
+            composePlugin = "/p.jar", klibList = "/k.txt", kaldoDylib = "/l.dylib", kaldoSha256 = null, target = "ios_simulator_arm64",
+            orcRuntime = "/o.a", objcUtilsLib = "/u.a", llvmHome = null, useDaemon = false, socketDir = "/s", javaHome = "/j",
+            modules = listOf(app), infoPlist = plist.path, linkerOptions = emptyList(), keepCompactUnwind = true, port = 5567, udid = "booted",
+            launchLog = "/l", readyMarker = null, launchTimeoutSec = 1, launchRetries = 1, reinstall = true, warmRestart = true,
+        )
+        val p = Pipeline(st, org.gradle.api.logging.Logging.getLogger("t"))
+        assertTrue(!p.packagedAppReady(), "nothing packaged (after hotReloadClean)")
+        p.appBundle().mkdirs()
+        assertTrue(!p.packagedAppReady(), "no hot symbols")
+        st.hotSymbols.apply { parentFile.mkdirs(); writeText("_kfun:x\n") }
+        assertTrue(p.packagedAppReady())
+        val libs = File(dir, "w/app/merged-bootstrap.libs.o")
+        p.packagedPayloadFile.writeText(libs.path)
+        assertTrue(!p.packagedAppReady(), "the library object the app loads at start is gone")
+        libs.apply { parentFile.mkdirs(); writeText("o") }
+        assertTrue(p.packagedAppReady())
+    }
 }

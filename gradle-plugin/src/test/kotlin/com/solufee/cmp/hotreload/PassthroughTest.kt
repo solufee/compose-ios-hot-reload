@@ -193,4 +193,36 @@ class PassthroughTest {
         // a short output is returned as it is
         assertEquals("e: x.kt:1 unresolved\n", Proc.failureText("e: x.kt:1 unresolved\n"))
     }
+
+    @Test
+    fun `a plugin built for a newer Java is named with the Java it needs, the JDK in use and how to switch (#90)`() {
+        fun jar(name: String, vararg entries: String) = File(tmp, name).also { f ->
+            java.util.zip.ZipOutputStream(f.outputStream()).use { z -> entries.forEach { z.putNextEntry(java.util.zip.ZipEntry(it)); z.closeEntry() } }
+        }
+        val needs21 = jar("acme-compiler-plugin-1.18.0.jar", "org/acme/compiler/AcmeRegistrar.class")
+        val other = jar("zeta-compiler-plugin-2.0.jar", "org/zeta/ZetaRegistrar.class")
+        val out = "exception: java.lang.UnsupportedClassVersionError: org/acme/compiler/AcmeRegistrar has been compiled by a more recent " +
+            "version of the Java Runtime (class file version 65.0), this version of the Java Runtime only recognizes class file versions up to 61.0\n" +
+            "\tat java.base/java.lang.ClassLoader.defineClass1(Native Method)"
+        val msg = Pipeline.classVersionMismatch(out, listOf(other, needs21), "/jdks/jdk-17")
+        assertTrue(msg != null && msg.contains("acme-compiler-plugin-1.18.0.jar") && !msg.contains("zeta-compiler-plugin"), msg)
+        assertTrue(msg!!.contains("needs Java 21 (class file version 65)") && msg.contains("runs on Java 17 (/jdks/jdk-17)"), msg)
+        assertTrue(msg.contains("Run Gradle with JDK 21 or newer (JAVA_HOME)") && msg.contains("daemonJavaHome"), msg)
+        assertEquals(8, Pipeline.javaRelease(52))
+        assertEquals(17, Pipeline.javaRelease(61))
+        // the same message through the general entry point the compile failure handler calls
+        assertEquals(msg, Pipeline.pluginIncompatibility(out, listOf(other, needs21), "2.5.255-SNAPSHOT", "/jdks/jdk-17"))
+        // no such error: not this kind of failure; a linkage error keeps the earlier message
+        assertNull(Pipeline.classVersionMismatch("e: Unresolved reference 'x'", listOf(needs21)))
+        val linkage = Pipeline.pluginIncompatibility("NoClassDefFoundError: org/jetbrains/kotlin/ir/Foo", listOf(needs21), "2.5.255-SNAPSHOT")
+        assertTrue(linkage != null && linkage.contains("does not work with the toolchain's Kotlin/Native compiler"), linkage)
+    }
+
+    @Test
+    fun `the compile daemons restart when the JDK changes (#90)`() {
+        val s17 = settings(emptyList()).copy(javaHome = "/jdks/jdk-17")
+        val s21 = s17.copy(javaHome = "/jdks/jdk-21")
+        assertTrue(Daemons.stateOf(s17, "abc") != Daemons.stateOf(s21, "abc"))
+        assertEquals(Daemons.stateOf(s17, "abc"), Daemons.stateOf(s17.copy(), "abc"))
+    }
 }

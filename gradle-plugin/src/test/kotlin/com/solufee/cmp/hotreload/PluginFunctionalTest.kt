@@ -190,6 +190,52 @@ include("app", "ui")
     }
 
     @Test
+    fun `hotReloadRun alone builds the klibs first, so it can package after hotReloadClean (#93)`() {
+        setup(null)
+        File(project, "app/src/main/kotlin").mkdirs()
+        File(project, "app/src/main/kotlin/main.kt").writeText("fun main() {}\n")
+        File(project, "ui/src/main/kotlin").mkdirs()
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\n")
+        val r = runner("hotReloadRun", "--dry-run").build()
+        val order = r.output.lines().filter { it.startsWith(":hotReload") }.map { it.substringBefore(' ') }
+        val klib = order.indexOfFirst { it.startsWith(":hotReloadCompileKlib") }
+        assertTrue(klib in 0 until order.indexOf(":hotReloadRun"), order.toString())
+        assertTrue(":hotReloadPackage" !in order, "an existing package is launched as it is: $order")
+        // in one command, whatever the order on the command line, the clean comes first
+        val both = runner("hotReloadRun", "hotReloadClean", "--dry-run").build().output.lines()
+            .filter { it.startsWith(":hotReload") }.map { it.substringBefore(' ') }
+        assertTrue(both.indexOf(":hotReloadClean") in 0 until both.indexOfFirst { it.startsWith(":hotReloadCompileKlib") }, both.toString())
+    }
+
+    @Test
+    fun `the build identity is checked before anything compiles or launches (#98)`() {
+        setup(null)
+        File(project, "app/src/main/kotlin").mkdirs()
+        File(project, "app/src/main/kotlin/main.kt").writeText("fun main() {}\n")
+        File(project, "ui/src/main/kotlin").mkdirs()
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\n")
+        val pkg = runner("hotReloadPackage", "--dry-run").build().output.lines().filter { it.startsWith(":hotReload") }.map { it.substringBefore(' ') }
+        val id = pkg.indexOf(":hotReloadBuildIdentity")
+        assertTrue(id in 0 until pkg.indexOfFirst { it.startsWith(":hotReloadCompileKlib") }, pkg.toString())
+        val run = runner("hotReloadRun", "--dry-run").build().output.lines().filter { it.startsWith(":hotReload") }.map { it.substringBefore(' ') }
+        assertTrue(run.indexOf(":hotReloadBuildIdentity") in 0 until run.indexOf(":hotReloadRun"), run.toString())
+    }
+
+    @Test
+    fun `the hot reload tasks store in the configuration cache (no Project captured by the settings, #98)`() {
+        // a toolchain manifest, so the settings provider has a value to compute (the check task then fails on it)
+        val tc = File(project, "tc").apply { mkdirs() }
+        File(tc, TOOLCHAIN_MANIFEST).writeText("""{ "interfaceVersion": 99, "kotlin": {}, "compose": {}, "llvm": {}, "host": {}, "runtime": {} }""")
+        setup(tc)
+        File(project, "app/src/main/kotlin").mkdirs()
+        File(project, "app/src/main/kotlin/main.kt").writeText("fun main() {}\n")
+        File(project, "ui/src/main/kotlin").mkdirs()
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\n")
+        val out = runner("hotReloadBuildIdentity", "hotReloadRun").buildAndFail().output
+        assertTrue("cannot serialize" !in out && "Configuration cache problems" !in out, out)
+    }
+
+    @Test
     fun `editing a source file keeps the configuration cache (the entry detection is a ValueSource)`() {
         setup(null)
         File(project, "app/src/main/kotlin").mkdirs()

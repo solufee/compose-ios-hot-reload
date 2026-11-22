@@ -37,7 +37,8 @@ echo "== pass 1: base host with per-cache payloads =="
 "$KC" "${COMMON[@]}" -o "$PWD/ComposeHR-base.kexe" "${ARGS[@]}" "$PWD/main.kt"
 
 echo "== merge payloads =="
-python3 "$PWD/merge-payloads.py" "$PWD/ComposeHR-base.kexe" "$PWD/merged-bootstrap.o"
+# The one merge-payloads.py (the plugin ships the same file); this directory has no copy of its own (Issue #91).
+python3 "$(cd "$(dirname "$0")" && pwd)/../example-gradle/tools/merge-payloads.py" "$PWD/ComposeHR-base.kexe" "$PWD/merged-bootstrap.o"
 
 echo "== embed merged guest object =="
 python3 "$PWD/embed-merged.py" "$PWD/ComposeHR-base.kexe" "$PWD/merged-bootstrap.o" "$PWD/ComposeHR.kexe"

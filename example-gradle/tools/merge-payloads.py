@@ -8,6 +8,7 @@ result is embedded as the only payload; reloads still send per-file user objects
 
 Usage: merge-payloads.py <kexe> <out.o>
        merge-payloads.py --rename-compact-unwind <object>...   (hot reload patch objects, Issue #80)
+       merge-payloads.py --patch-dups <out.dups.json> <hot-symbols.txt> <module>=<object>...   (patch objects, Issue #91)
 """
 import hashlib
 import json
@@ -24,11 +25,13 @@ LLVM_HOME = os.environ.get("KONAN_LLVM_HOME",
 LLVM_OBJCOPY = os.path.join(LLVM_HOME, "bin", "llvm-objcopy")
 LLVM_NM = os.path.join(LLVM_HOME, "bin", "llvm-nm")
 
-# Only known cross-cache duplicate in Compose 1.10.0: ui and ui-text both
-# define this internal getter. The ui copy is made weak so `ld -r` keeps the
-# ui-text definition (both are the same code).
-DUP_SYMBOL = "_kfun:androidx.compose.ui.text.<get-DefaultCacheSize>#internal"
-DUP_ARCHIVE_MARKER = "ui-cache.a"
+# Issue #91: exported symbols that the caches of two or more libraries define. A whole-program link deserializes library
+# declarations from roots, so a signature is linked at most once (an unreferenced one not at all); per-file and library
+# caches compile every declaration of their library, so `ld -r` sees one definition per library. Examples: a compiler
+# plugin that emits the same declaration in every module downstream of the one it describes (Koin's hints), or two
+# libraries that define the same internal declaration (Compose ui and ui-text: <get-DefaultCacheSize>#internal). Each such
+# symbol gets one of three tiers (see plan_duplicates); there is no list of known symbols.
+DUPS_RECORD_SUFFIX = ".dups.json"
 
 
 # Optional (#32): a file listing the payload paths, written by the compiler with -Xbinary=splitPayloadList=<file>.
@@ -132,6 +135,310 @@ def weaken_macho_symbol(path, symbol):
     if hit:
         open(path, "wb").write(d)
     return hit
+
+
+# ---------------------------------------------------------------- Issue #91: one exported name, several libraries
+
+_PER_FILE_CACHE = re.compile(r"/([^/]+)-per-file-cache/([^/]+)/")
+_LIBRARY_CACHE = re.compile(r"/([^/]+)-cache/")
+_NM_SYMBOL = re.compile(r"^\s*(?:[0-9a-f]+\s+)?\(([^)]*)\)\s+((?:weak |private )*(?:external|non-external))((?: \[[^\]]*\])*) (.+)$")
+
+
+def library_of(src):
+    """(library, cache) of a payload: <library>-per-file-cache/<file>/... or <uniqueName>-cache/... (else the file)."""
+    m = _PER_FILE_CACHE.search(src)
+    if m:
+        return m.group(1), m.group(2)
+    libs = _LIBRARY_CACHE.findall(src)  # the last one: the path also has e.g. ".../auto-cache/..."
+    if libs:
+        return libs[-1], os.path.basename(src)
+    return src, os.path.basename(src)
+
+
+def nm_table(path):
+    """External symbols of an archive or object: {"def": {name: member}, "weak": [names], "undef": [names]}.
+
+    `nm -m` (not -P) because only it tells a weak definition from a strong one; weak definitions never clash."""
+    d, base = os.path.split(os.path.abspath(path))
+    out = subprocess.run(["nm", "-m", "-A", base], cwd=d, capture_output=True, text=True, errors="replace").stdout
+    defs, weak, undef = {}, set(), set()
+    prefix = base + ":"
+    for line in out.splitlines():
+        if not line.startswith(prefix):
+            continue
+        rest = line[len(prefix):]
+        member = ""
+        if path.endswith(".a"):
+            i = rest.find(": ")
+            if i < 0:
+                continue
+            member, rest = rest[:i], rest[i + 2:]
+        m = _NM_SYMBOL.match(rest)
+        if not m:
+            continue
+        where, attrs, name = m.group(1), m.group(2), m.group(4)
+        if attrs.endswith("non-external"):
+            continue
+        if where == "undefined":
+            undef.add(name)
+        elif attrs.startswith("weak"):
+            weak.add(name)
+        else:
+            defs.setdefault(name, member)
+    return {"def": defs, "weak": sorted(weak), "undef": sorted(undef)}
+
+
+def cached_nm_table(path, key):
+    """nm_table, kept in the merge cache next to the processed archive of the same key."""
+    if not (MERGE_CACHE and key):
+        return nm_table(path)
+    f = os.path.join(MERGE_CACHE, key + ".syms.json")
+    try:
+        return json.load(open(f))
+    except (OSError, ValueError):
+        pass
+    t = nm_table(path)
+    tmp = f"{f}.{os.getpid()}.tmp"
+    with open(tmp, "w") as out:
+        json.dump(t, out)
+    os.replace(tmp, f)
+    return t
+
+
+def extract_member(archive, member, work):
+    """Path of [member] of [archive] (or the object itself), extracted once into the work directory."""
+    if not archive.endswith(".a"):
+        return archive
+    d = os.path.join(work, "members", hashlib.sha256(archive.encode()).hexdigest()[:16])
+    if not os.path.isdir(d):
+        os.makedirs(d)
+        subprocess.run(["ar", "x", archive], cwd=d, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return os.path.join(d, member)
+
+
+_INSN = re.compile(r"^\s*([0-9a-f]+):\s+([0-9a-f]{8})\s")
+_RELOC = re.compile(r"^\s+([0-9a-f]+):\s+(ARM64_RELOC_\w+)\s+(.+?)\s*$")
+_START = re.compile(r"^([0-9a-f]+) <(.*)>:$")
+
+
+def symbol_body(obj, name):
+    """The code of [name] in [obj] for an equality test: instruction words and (offset, type, target) of each relocation,
+    offsets relative to the symbol, so the same code at another address compares equal. None for a non-code symbol."""
+    out = subprocess.run(["xcrun", "objdump", "-d", "-r", "--disassemble-symbols=" + name, obj],
+                         capture_output=True, text=True, errors="replace").stdout
+    start, words, relocs = None, [], []
+    for line in out.splitlines():
+        m = _START.match(line)
+        if m:
+            if start is not None:
+                break  # the next symbol
+            start = int(m.group(1), 16)
+            continue
+        if start is None:
+            continue
+        m = _RELOC.match(line)
+        if m:
+            relocs.append((int(m.group(1), 16) - start, m.group(2), m.group(3)))
+            continue
+        m = _INSN.match(line)
+        if m:
+            words.append(m.group(2))
+    if not words:
+        return None
+    return tuple(words), tuple(relocs)
+
+
+def body_digest(body):
+    return hashlib.sha256(repr(body).encode()).hexdigest()[:16]
+
+
+def plan_duplicates(copies_by_name, refs, hot, work):
+    """Tiers for the names that several libraries define strongly. copies_by_name: {name: [(input, member, library,
+    cache)]}; refs: names some input object or the host image leaves undefined; hot: the hot symbol names.
+
+      1 local    nothing references the name and it is not hot: every copy becomes a local symbol of its own object
+                 (nothing dropped, nothing merged; the name is not linked, as in the whole-program link, where an
+                 unreferenced declaration is never deserialized);
+      2 weak     referenced, not hot, and all copies byte-identical (instruction words + relocation targets, offsets
+                 relative to the symbol): the first copy stays strong, the others become weak, so `ld -r` keeps one;
+      3 conflict referenced or hot, and the copies differ or cannot be compared: a semantic conflict that needs a human
+                 decision; nothing is picked by link order.
+    Two copies in ONE library (two files of a module) are distinct declarations that share a name: 'same_library'."""
+    plan = {"local": {}, "weak": {}, "conflict": {}, "same_library": {}}
+    for name in sorted(copies_by_name):
+        copies = copies_by_name[name]
+        libs = [c[2] for c in copies]
+        if len(set(libs)) < len(libs):
+            plan["same_library"][name] = (copies, None)
+        elif name not in refs and name not in hot:
+            plan["local"][name] = (copies, "unreferenced: no input object, the host image or a hot symbol uses it")
+        elif name in hot:
+            plan["conflict"][name] = (copies, "hot symbol (hot symbols are never weakened or localized)")
+        else:
+            bodies = [symbol_body(extract_member(c[0], c[1], work), name) for c in copies]
+            if any(b is None for b in bodies):
+                plan["conflict"][name] = (copies, "referenced, and not code that can be compared byte for byte")
+            elif any(b != bodies[0] for b in bodies[1:]):
+                plan["conflict"][name] = (copies, "referenced, and the copies differ: " + ", ".join(
+                    f"{c[2]} {len(b[0]) * 4} bytes sha {body_digest(b)}" for c, b in zip(copies, bodies)))
+            else:
+                b = bodies[0]
+                plan["weak"][name] = (copies, f"identical: {len(b[0])} instructions ({len(b[0]) * 4} bytes), "
+                                              f"{len(b[1])} relocation(s), sha256 {body_digest(b)} in all {len(copies)} copies")
+    return plan
+
+
+def apply_duplicate_plan(plan, work):
+    """Rewrites the archives that hold a copy (into the work directory; the payloads and the merge cache stay as they
+    are). Returns {original input: rewritten input}."""
+    edits = {}  # input -> member -> [("local"|"weak", name)]
+    for name, (copies, _) in plan["local"].items():
+        for inp, member, _lib, _cache in copies:
+            edits.setdefault(inp, {}).setdefault(member, []).append(("local", name))
+    for name, (copies, _) in plan["weak"].items():
+        for inp, member, _lib, _cache in copies[1:]:
+            edits.setdefault(inp, {}).setdefault(member, []).append(("weak", name))
+    replaced = {}
+    for inp, members in edits.items():
+        tag = hashlib.sha256(inp.encode()).hexdigest()[:16]
+        if inp.endswith(".a"):
+            d = os.path.join(work, "dups", tag)
+            os.makedirs(d)
+            order = subprocess.check_output(["ar", "t", inp], text=True, errors="replace").splitlines()
+            subprocess.run(["ar", "x", inp], cwd=d, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            d = os.path.join(work, "dups", tag)
+            os.makedirs(d)
+            shutil.copyfile(inp, os.path.join(d, os.path.basename(inp)))
+            order = [os.path.basename(inp)]
+        for member, ops in members.items():
+            obj = os.path.join(d, member or os.path.basename(inp))
+            local = [n for kind, n in ops if kind == "local"]
+            if local:
+                cmd = [LLVM_OBJCOPY] + [f"--localize-symbol={n}" for n in local] + [obj]
+                r = subprocess.run(cmd, capture_output=True, text=True)
+                if r.returncode != 0:
+                    raise SystemExit(f"merge-payloads: llvm-objcopy --localize-symbol failed on {obj}: {r.stderr.strip()}")
+            for kind, n in ops:
+                if kind == "weak" and weaken_macho_symbol(obj, n) != 1:
+                    raise SystemExit(f"merge-payloads: could not make {n} weak in {obj}")
+        if inp.endswith(".a"):
+            out = os.path.join(work, "dups", tag + "-" + os.path.basename(inp))
+            members_in_order = [m for m in order if not m.startswith("__.SYMDEF")]
+            subprocess.run(["ar", "rcs", out] + members_in_order, cwd=d, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            out = os.path.join(d, os.path.basename(inp))
+        replaced[inp] = out
+    return replaced
+
+
+def report_duplicates(plan, where):
+    """Prints the tier counts and every symbol with its copies and the reason; returns True when linking may go on."""
+    n = {k: len(v) for k, v in plan.items()}
+    print(f"duplicate definitions across libraries ({where}): tier 1 local={n['local']} tier 2 weak={n['weak']} "
+          f"tier 3 conflict={n['conflict']}; same library={n['same_library']}")
+    for tier, label in (("local", "tier 1 local"), ("weak", "tier 2 weak"), ("conflict", "tier 3 conflict")):
+        for name, (copies, why) in plan[tier].items():
+            print(f"  {label}: {name}")
+            print(f"    copies: " + "; ".join(f"{lib} ({cache})" for _i, _m, lib, cache in copies))
+            print(f"    basis: {why}")
+    for name, (copies, why) in plan["conflict"].items():
+        print(f"error: {name} is defined by several libraries with different code and is used: "
+              + "; ".join(f"{lib} (cache {cache})" for _i, _m, lib, cache in copies)
+              + ". This is a semantic conflict that needs a human decision: hot reload links per file and will not pick "
+                "one copy by link order the way a whole-program link silently would.")
+    for name, (copies, _) in plan["same_library"].items():
+        print(f"error: {name} is defined by two files of one library: "
+              + "; ".join(f"{lib} (cache {cache})" for _i, _m, lib, cache in copies)
+              + ". These are distinct declarations that only share a name (for example lambdas named after a function "
+                "that two files of one package both have); the toolchain must name them per file (Issue #91).")
+    return not plan["conflict"] and not plan["same_library"]
+
+
+def collect_copies(inputs, tables, src_of, extra_refs):
+    """({name: copies} for the names more than one input defines strongly, names some input or [extra_refs] uses)."""
+    copies_by_name, refs = {}, set(extra_refs)
+    for inp in inputs:
+        t = tables.get(inp)
+        if not t:
+            continue
+        lib, cache = library_of(src_of.get(inp, inp))
+        for name, member in t["def"].items():
+            copies_by_name.setdefault(name, []).append((inp, member, lib, cache))
+        refs.update(t["undef"])
+    return {k: v for k, v in copies_by_name.items() if len(v) > 1}, refs
+
+
+def resolve_duplicates(inputs, tables, src_of, extra_refs, hot, work, where):
+    """Plans, reports and applies the tiers for one set of inputs; returns (replacements, plan) or exits on a conflict."""
+    copies_by_name, refs = collect_copies(inputs, tables, src_of, extra_refs)
+    plan = plan_duplicates(copies_by_name, refs, hot, work)
+    if not report_duplicates(plan, where):
+        raise SystemExit(1)
+    return apply_duplicate_plan(plan, work), plan
+
+
+def patch_dups(record_path, hot_path, labelled):
+    """--patch-dups: the patch path's counterpart of the packaging rule (Issue #91). [labelled]: (module, object) pairs.
+
+    1. A patch object that uses a name the packaged app keeps only as local copies (tier 1) cannot be linked the way the
+       whole-program link would: print `WARM duplicate-declaration ...` and exit 3 (the plugin restarts warm).
+    2. A patch object that defines such a name (a downstream module's file was rebuilt) gets a local copy too, so the
+       name stays unlinked, as in the packaged app.
+    3. Names that objects of two or more modules of this patch define: the same three tiers as for packaging.
+    Objects are rewritten in place (they are the patch's own extracted copies)."""
+    record = {}
+    if os.path.isfile(record_path):
+        record = json.load(open(record_path))
+    local_names = set(record.get("local", []))
+    hot = set(l.strip() for l in open(hot_path)) if os.path.isfile(hot_path) else set()
+    tables = {obj: nm_table(obj) for _m, obj in labelled}
+    used = []
+    for module, obj in labelled:
+        for name in tables[obj]["undef"]:
+            if name in local_names:
+                used.append((name, module))
+    if used:
+        for name, module in used:
+            print(f"WARM duplicate-declaration {name}: the patch of {module} uses it, but the packaged app keeps only "
+                  "local copies of it (several libraries define it differently and nothing used it at packaging); "
+                  "a warm restart links it again")
+        return 3
+    localize = {}
+    for module, obj in labelled:
+        for name in tables[obj]["def"]:
+            if name in local_names:
+                localize.setdefault(obj, []).append(name)
+    for obj, names in localize.items():
+        r = subprocess.run([LLVM_OBJCOPY] + [f"--localize-symbol={n}" for n in names] + [obj], capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"error: llvm-objcopy --localize-symbol failed on {obj}: {r.stderr.strip()}")
+            return 1
+        tables[obj] = nm_table(obj)
+    print(f"patch: {sum(len(v) for v in localize.values())} definition(s) of names the packaged app keeps local, made local")
+    copies_by_name, refs = {}, set()
+    for module, obj in labelled:
+        for name, member in tables[obj]["def"].items():
+            copies_by_name.setdefault(name, []).append((obj, member, module, os.path.basename(obj)))
+        refs.update(tables[obj]["undef"])
+    copies_by_name = {k: v for k, v in copies_by_name.items() if len(v) > 1}
+    work = tempfile.mkdtemp(prefix="kaldo-patch-dups-")
+    try:
+        plan = plan_duplicates(copies_by_name, refs, hot, work)
+        if not report_duplicates(plan, "patch"):
+            return 1
+        for name, (copies, _) in plan["local"].items():
+            for obj, _m, _l, _c in copies:
+                subprocess.run([LLVM_OBJCOPY, f"--localize-symbol={name}", obj], check=True)
+        for name, (copies, _) in plan["weak"].items():
+            for obj, _m, _l, _c in copies[1:]:
+                if weaken_macho_symbol(obj, name) != 1:
+                    print(f"error: could not make {name} weak in {obj}")
+                    return 1
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return 0
 
 
 # ObjC sources of CMPUIKitObjcUtils are force-loaded into the app cache archive.
@@ -334,12 +641,12 @@ def dedup_archive(src, dst):
 
 # Per-archive result cache (KALDO_MERGE_CACHE_DIR, off when unset). Library
 # cache archives are identical from one package to the next; their processed
-# form (deduplicated, ui duplicate weakened) and hot symbols are kept under
+# form (ObjC/C++ members the host provides removed) and hot symbols are kept under
 # sha256(this script, flags, archive bytes). Archives whose processing looked at
 # the host image (ObjC members) are never cached. After a successful merge,
 # entries this merge did not use are removed, so the cache holds one app's set.
 MERGE_CACHE = os.environ.get("KALDO_MERGE_CACHE_DIR", "")
-CACHE_ENTRY = re.compile(r"^[0-9a-f]{64}\.(a|json|o)$")
+CACHE_ENTRY = re.compile(r"^[0-9a-f]{64}\.(a|json|o|syms\.json)$")
 
 
 def cache_key(data):
@@ -436,6 +743,15 @@ def main():
             if not rename_compact_unwind(path):
                 print(f"compact unwind: nothing to rename in {path}")
         return 0
+    if len(sys.argv) >= 5 and sys.argv[1] == "--patch-dups":
+        labelled = []
+        for arg in sys.argv[4:]:
+            module, sep, obj = arg.partition("=")
+            if not sep:
+                print(f"--patch-dups: expected <module>=<object>, got {arg}")
+                return 2
+            labelled.append((module, obj))
+        return patch_dups(sys.argv[2], sys.argv[3], labelled)
     if len(sys.argv) != 3:
         print(__doc__)
         return 2
@@ -505,8 +821,8 @@ def _merge(kexe, out, work):
         inputs.append(shim)
         lib_inputs.add(shim)
         print(f"shim: {shim}")
-    weakened = 0
     used, reused = set(), 0
+    src_of, key_of = {}, {}  # input -> payload it came from / merge-cache key (Issue #91)
     for p in payloads:
         if p.endswith(".a"):
             key = keys.get(p)
@@ -514,8 +830,9 @@ def _merge(kexe, out, work):
             if hit:
                 cached, meta = hit
                 write_hot_symbols(meta["hot"], p)
-                weakened += meta["weakened"]
                 inputs.append(cached)
+                src_of[cached] = sources[payloads.index(p)] if sources else p
+                key_of[cached] = key
                 used.add(key)
                 reused += 1
                 if is_lib(p):
@@ -525,39 +842,41 @@ def _merge(kexe, out, work):
             dedup = os.path.join(work, f"d{payloads.index(p):02d}-" + os.path.basename(p))
             hot, host_used = dedup_archive(p, dedup)
             write_hot_symbols(hot, p)
-            weak_here = 0
-            # Patch the duplicate in the ui cache's member object.
-            members = subprocess.check_output(["ar", "t", dedup]).decode("utf-8", "replace")
-            if any(DUP_ARCHIVE_MARKER in m for m in members.splitlines()):
-                tmp = tempfile.mkdtemp(prefix="weak-", dir=work)
-                subprocess.run(["ar", "x", dedup], cwd=tmp, check=True)
-                for m in os.listdir(tmp):
-                    if m.endswith(".o"):
-                        weak_here += weaken_macho_symbol(os.path.join(tmp, m), DUP_SYMBOL)
-                members = sorted(m for m in os.listdir(tmp) if not m.startswith("__.SYMDEF"))
-                subprocess.run(["ar", "rcs", dedup] + members, cwd=tmp, check=True)
-                shutil.rmtree(tmp)
-            weakened += weak_here
             if key and not host_used:
-                dedup = cache_put(key, dedup, {"hot": hot, "weakened": weak_here})
+                dedup = cache_put(key, dedup, {"hot": hot})
                 used.add(key)
+                key_of[dedup] = key
                 if is_lib(p):
                     lib_inputs.add(dedup)
                     lib_keys.append(key)
             # A library archive that cannot be cached (processing looked at the host image, e.g. ui-uikit with its
             # CMP* ObjC members) is reprocessed every time anyway; it goes into the user object.
             inputs.append(dedup)
+            src_of[dedup] = sources[payloads.index(p)] if sources else p
         else:
             inputs.append(p)
+            src_of[p] = p
     if MERGE_CACHE:
         print(f"merge cache: {reused}/{len(keys)} archives reused ({MERGE_CACHE})")
 
-    print(f"weakened symbols: {weakened}")
+    # Issue #91: names that the caches of several libraries define, over every input (library object and user object).
+    tables = {inp: cached_nm_table(inp, key_of.get(inp)) for inp in inputs}
+    host_refs = set(subprocess.run(["nm", "-u", "-j", kexe], capture_output=True, text=True).stdout.split())
+    hot_names = set(l.strip() for l in open(HOT_SYMBOLS_OUT) if l.strip())
+    replaced, plan = resolve_duplicates(inputs, tables, src_of, host_refs, hot_names, work, "packaging")
+    lib_plan = sorted(n for tier in ("local", "weak") for n, (copies, _) in plan[tier].items()
+                      if any(c[0] in lib_inputs for c in copies))
+    inputs = [replaced.get(p, p) for p in inputs]
+    lib_inputs = {replaced.get(p, p) for p in lib_inputs}
+    with open(os.path.splitext(out)[0] + DUPS_RECORD_SUFFIX, "w") as f:
+        json.dump({"local": sorted(plan["local"]), "weak": sorted(plan["weak"])}, f, indent=1)
+
     if split_ok and lib_keys:
         h = hashlib.sha256()
         h.update(open(os.path.abspath(__file__), "rb").read())
         h.update(repr((os.environ.get("KALDO_KEEP_COMPACT_UNWIND"), "libs")).encode())
         h.update("".join(lib_keys).encode())
+        h.update(repr(lib_plan).encode())  # the tiers applied to library archives depend on the user objects' uses
         lkey = h.hexdigest()
         cached_libs = os.path.join(MERGE_CACHE, lkey + ".o")
         used.add(lkey)

@@ -67,3 +67,21 @@ and rpc's `$rpcServiceStub`, and `:shared` holds `componentscan_org_example_kmph
 and 10 of `GreeterImpl` (`:shared`, `@Factory`), alternating: every one HOT, the same process (one PID for all 21), the
 new value on screen each time. Group E's c4 on dev78 (`compat-koin/evidence-76/dev78-group-E.txt`): HOT, same process,
 `extra=x2` (it ended the app on .11 and dev77).
+
+## Issue #91: one name in several modules (`accept-dup-91.py`)
+
+The user's shape on top of this project: a `:domain` module with only a placeholder file, `@Configuration` modules (Koin's
+compiler plugin then emits the same `org.koin.plugin.hints` functions in `:core`, `:domain` and `:shared`), `AppModule`
+including `FeaturesModule`. `--same-package` puts `FeaturesModule` into AppModule's package and adds two files whose
+functions are both called `module` and hold a lambda (`module$1` twice: needs the toolchain part of #91).
+
+```
+python3 setup.py P --plugin-repo … --plugin-version … --toolchain … --udid <simulator>
+python3 accept-dup-91.py P --udid <simulator> [--rounds 40] [--same-package]
+```
+
+Checks: clean package with the tier counts (hints and Compose's `<get-DefaultCacheSize>#internal` in tier 1, no conflict),
+cold start, HOT edits in the UI, `:domain` and `:core`, N latency rounds (median <= 6 s, max <= 10 s), and with
+`--same-package` a change of only one of the two `module$1` lambdas, then only the other. The patch-side cases
+(a patch that uses a name kept local -> WARM, a patch that defines it -> made local, two modules in one patch) are in
+`scripts/test-merge-payloads.py`, section 5.

@@ -1,0 +1,9 @@
+# Simulator regression, fix/build-identity on 0016ad4 published as 0.2.9-test8, toolchain .11.1, simulator HR-Plugin
+14:14:40 start fix/build-identity working tree (rebased on 0016ad4) as 0.2.9-test8 on .11.1
+14:15:02 unit rc=0 128 tests
+14:19:35 clean-run rc=0 summary: 4/4 PASS
+14:22:58 watch rc=0 summary: 17/17 PASS
+14:34:54 kmp rc=0 summary: 65/65 PASS
+14:50:04 composite rc=0 summary: 51/51 PASS
+14:53:38 relaunch rc=0 summary: 28/28 checks passed
+14:53:38 end

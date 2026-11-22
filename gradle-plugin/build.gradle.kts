@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.solufee.cmp"
-version = "0.2.8"
+version = "0.2.9"
 
 gradlePlugin {
     plugins {
@@ -89,6 +89,8 @@ val toolsResDir = layout.buildDirectory.dir("generated/hotreload-tools")
 val bundleTools = tasks.register("bundleTools") {
     val sources = bundledTools.mapValues { file(it.value) }
     inputs.files(sources.values)
+    val pluginVersion = project.version.toString()
+    inputs.property("pluginVersion", pluginVersion)
     outputs.dir(toolsResDir)
     doLast {
         val out = toolsResDir.get().dir("com/solufee/cmp/hotreload/tools").asFile
@@ -102,6 +104,8 @@ val bundleTools = tasks.register("bundleTools") {
             manifest.append("$name=$sha\n")
         }
         File(out, "tools-manifest.properties").writeText(manifest.toString())
+        // #98: the build identity records which plugin version compiled the hot reload state
+        File(out.parentFile, "plugin-version.properties").writeText("version=$pluginVersion\n")
     }
 }
 sourceSets.main {

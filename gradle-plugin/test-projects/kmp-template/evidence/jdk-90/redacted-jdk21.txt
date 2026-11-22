@@ -1,0 +1,5 @@
+## the same project, hotReloadPackage under JDK 21 (daemons restart because the JDK changed)
+CMP hot reload: restarting compile daemons (toolchain, tools or health changed)
+CMP hot reload: compile daemons ready [60410, 60412]
+package timing ms=6169 compile=5015 merge=547 embed+bundle=607 embed=296 bundle=311 baseline-wait=0
+BUILD SUCCESSFUL in 8s

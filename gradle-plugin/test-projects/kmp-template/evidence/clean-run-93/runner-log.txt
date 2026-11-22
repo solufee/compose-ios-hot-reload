@@ -1,0 +1,8 @@
+11:30:59 start fix/run-after-clean working tree as 0.2.8-dev93 on .11.1
+11:35:39 clean-run rc=0 summary: 4/4 PASS
+11:36:01 unit rc=0
+11:39:12 watch rc=0 summary: 17/17 PASS
+11:50:01 kmp rc=0 summary: 65/65 PASS
+12:03:27 composite rc=0 summary: 51/51 PASS
+12:05:17 relaunch rc=0 summary: 28/28 checks passed
+12:05:17 end

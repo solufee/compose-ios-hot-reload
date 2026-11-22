@@ -1,0 +1,10 @@
+# #93 acceptance (hotReloadRun after hotReloadClean), plugin 0.2.8-dev93, 2026-11-22 11:30:59, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+## 1. hotReloadClean, then hotReloadRun alone
+PASS hotReloadClean | 3s
+PASS hotReloadRun with no package: packages first, then the app starts | 134s pid 21350
+## 2. hotReloadRun again
+PASS hotReloadRun with a package: launched as it is (no packaging), the app starts | 6s pid 22032
+## 3. hotReloadClean hotReloadRun in one command
+PASS hotReloadClean hotReloadRun: packages first again, the app starts | 135s pid 27610
+stopped org.example.kmphr.hotreload and the compile daemons; app running: False
+summary: 4/4 PASS

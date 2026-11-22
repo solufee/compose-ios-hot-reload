@@ -20,6 +20,16 @@
 #                        form a closed set (check-klib-deps.py).
 #   OUT_DIR              output dir (default: <repo>/../toolchain-dist)
 #   TOOLCHAIN_VERSION    version string (default: 2.5.255-hotreload.1)
+#   SOURCE_DATE_EPOCH    time (seconds) written as every archive entry's mtime and as generatedAt
+#                        (default: commit time of this repo's HEAD)
+#   REUSE_FROM           a previous dist dir (packaging-manifest.json + archives): a component whose
+#                        files are the same as there (repro-pack.py content digest) reuses that
+#                        archive byte for byte; the manifest records reusedFrom and the reason
+#
+# Reproducible archives (Issue #96): the tar stream is written by scripts/repro-pack.py
+# (sorted entries, fixed mtime, owner 0/0 without names, normalized modes, no xattrs) and
+# compressed by `zstd -19 -T0` from a pipe, so the same files give the same archive bytes.
+# scripts/repro-gate.sh packs twice in separate dirs and fails unless every sha matches.
 #
 # The Kotlin bundle is the minimal subset needed to build and link an
 # ios_simulator_arm64 app: bin/, konan/{lib,nativelib,targets,platformDef,
@@ -42,6 +52,16 @@ LLVM_TOOLS_FROM=${LLVM_TOOLS_FROM:-}
 OUT_DIR=${OUT_DIR:-$REPO_ROOT/../toolchain-dist}
 TOOLCHAIN_VERSION=${TOOLCHAIN_VERSION:-2.5.255-hotreload.1}
 ZSTD_LEVEL=${ZSTD_LEVEL:-19}
+REUSE_FROM=${REUSE_FROM:-}
+if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+  SOURCE_DATE_EPOCH=$(git -C "$REPO_ROOT" log -1 --format=%ct 2>/dev/null) || {
+    echo "pack: set SOURCE_DATE_EPOCH (not a git checkout)" >&2; exit 1; }
+fi
+export SOURCE_DATE_EPOCH
+REPRO="python3 $REPO_ROOT/scripts/repro-pack.py"
+if [ -n "$REUSE_FROM" ] && [ ! -f "$REUSE_FROM/packaging-manifest.json" ]; then
+  echo "pack: REUSE_FROM=$REUSE_FROM has no packaging-manifest.json" >&2; exit 1
+fi
 
 # Every component carries the project's LICENSE and NOTICE (in a folder with a
 # unique name, so it never clashes with license files of the packed software).
@@ -53,12 +73,24 @@ done
 mkdir -p "$OUT_DIR"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/hr-pack.XXXXXX")
 trap 'rm -rf "$STAGE"' EXIT
-LIST=$STAGE/.components.tsv   # id  file  extractDir  rawKB  channel
+LIST=$STAGE/.components.tsv   # id  file  extractDir  rawBytes  channel  contentDigest  reusedFrom
 : > "$LIST"
 
 pack() { # pack <stage-dir> <out-file>
   local src=$1 out=$2
-  tar -C "$src" -cf - . | zstd -q -f -"$ZSTD_LEVEL" -T0 -o "$out"
+  $REPRO tar "$src" | zstd -q -f -"$ZSTD_LEVEL" -T0 -o "$out"
+}
+
+# prev_component <id>: "<file> <rawBytes> <version>" of the component in REUSE_FROM, or nothing
+prev_component() {
+  [ -n "$REUSE_FROM" ] || return 0
+  python3 - "$REUSE_FROM/packaging-manifest.json" "$1" <<'PYP'
+import json, sys
+m = json.load(open(sys.argv[1]))
+for c in m["components"]:
+    if c["id"] == sys.argv[2]:
+        print(c["file"], c["rawBytes"], m["toolchainVersion"])
+PYP
 }
 
 leak_check() { # leak_check <stage-dir>: no local home paths in text files
@@ -89,12 +121,27 @@ component() { # component <id> <stage-subdir> <extractDir> <channel> [file-suffi
   cp "$REPO_ROOT/LICENSE" "$REPO_ROOT/NOTICE" "$STAGE/$dir/licenses-compose-ios-hot-reload/"
   leak_check "$STAGE/$dir"
   binary_gate "$STAGE/$dir"
-  local raw out
-  raw=$(du -sk "$STAGE/$dir" | cut -f1)
+  local raw out dig prev reused=""
+  raw=$($REPRO raw-bytes "$STAGE/$dir")
+  dig=$($REPRO digest "$STAGE/$dir")
   out=$OUT_DIR/$id-$TOOLCHAIN_VERSION$suffix.tar.zst
-  pack "$STAGE/$dir" "$out"
+  prev=$(prev_component "$id")
+  if [ -n "$prev" ]; then
+    set -- $prev   # file rawBytes version
+    if [ "$($REPRO digest-archive "$REUSE_FROM/$1")" = "$dig" ]; then
+      cp "$REUSE_FROM/$1" "$out"
+      raw=$2 reused=$3
+      echo "  $id: same files as $3 (content digest ${dig%% *}), archive reused byte for byte"
+    fi
+  fi
+  if [ -z "$reused" ]; then
+    pack "$STAGE/$dir" "$out"
+    # The archive must extract to exactly the staged files.
+    [ "$($REPRO digest-archive "$out")" = "$dig" ] || { echo "pack: $id: archive content differs from the staged files" >&2; exit 1; }
+    echo "  $id: packed (content digest ${dig%% *})"
+  fi
   rm -rf "${STAGE:?}/$dir"
-  printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$(basename "$out")" "$extract" "$raw" "$channel" >> "$LIST"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$(basename "$out")" "$extract" "$raw" "$channel" "$dig" "$reused" >> "$LIST"
 }
 
 stage_kotlin() {
@@ -218,23 +265,30 @@ PY2
   fi
 fi
 
+ZSTD_VERSION=$(zstd -V | sed -n 's/.* v\([0-9.]*\).*/\1/p')
 python3 - "$OUT_DIR" "$TOOLCHAIN_VERSION" "$LIST" "$PLUGIN_JAR_NAME" \
-  "$KALDO_IOSSIM_SHA" "$ORC_NAME" "$UIKIT_NAME" <<'PY'
+  "$KALDO_IOSSIM_SHA" "$ORC_NAME" "$UIKIT_NAME" "$SOURCE_DATE_EPOCH" "$ZSTD_VERSION" "$ZSTD_LEVEL" <<'PY'
 import hashlib, json, os, sys, datetime
-out, ver, listfile, plugin_jar, kaldo_sha, orc_name, uikit_name = sys.argv[1:]
+out, ver, listfile, plugin_jar, kaldo_sha, orc_name, uikit_name, sde, zstd_ver, zstd_level = sys.argv[1:]
 components = []
 for line in open(listfile):
-    cid, fname, extract, raw_kb, channel = line.rstrip("\n").split("\t")
+    cid, fname, extract, raw, channel, dig, reused = line.rstrip("\n").split("\t")
     path = os.path.join(out, fname)
-    components.append({
+    c = {
         "id": cid,
         "file": fname,
         "extractDir": extract,
-        "rawBytes": int(raw_kb) * 1024,
+        "rawBytes": int(raw),
         "bytes": os.path.getsize(path),
         "sha256": hashlib.sha256(open(path, "rb").read()).hexdigest(),
         "channel": channel,
-    })
+        "contentDigest": dig.split()[0],
+    }
+    if reused:
+        c["reusedFrom"] = reused
+        c["reuseReason"] = (f"same files as the {cid} component of {reused} (content digest: path, type, "
+                            f"execute bit and bytes of {dig.split()[1]} entries); its archive is reused byte for byte")
+    components.append(c)
 ids = {c["id"] for c in components}
 layout = {
     "kotlinDist": "kotlin-native",
@@ -252,7 +306,9 @@ if uikit_name:
 doc = {
     "schema": 3,
     "toolchainVersion": ver,
-    "generatedAt": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+    "generatedAt": datetime.datetime.fromtimestamp(int(sde), datetime.timezone.utc).isoformat(timespec="seconds"),
+    "sourceDateEpoch": int(sde),
+    "packer": {"tar": "scripts/repro-pack.py", "zstd": zstd_ver, "zstdLevel": int(zstd_level)},
     "published": False,
     "layout": layout,
     "kaldoIossimSha256": kaldo_sha,
@@ -267,5 +323,6 @@ total_packed = sum(c["bytes"] for c in components)
 print(f"manifest: {outpath}")
 print(f"total raw: {total_raw/2**20:.1f} MiB, packed: {total_packed/2**20:.1f} MiB")
 for c in components:
-    print(f"  {c['id']:<26} raw {c['rawBytes']/2**20:8.1f} MiB  packed {c['bytes']/2**20:8.1f} MiB  {c['sha256'][:16]}...")
+    note = f"  reused from {c['reusedFrom']}" if "reusedFrom" in c else ""
+    print(f"  {c['id']:<26} raw {c['rawBytes']/2**20:8.1f} MiB  packed {c['bytes']/2**20:8.1f} MiB  {c['sha256'][:16]}...{note}")
 PY

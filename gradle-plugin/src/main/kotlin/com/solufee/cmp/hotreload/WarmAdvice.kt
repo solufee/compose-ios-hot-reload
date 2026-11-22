@@ -54,6 +54,7 @@ object WarmAdvice {
             "expect-actual" -> "a new or removed expect/actual class, object, interface or property changes a type or a global on every platform; expect/actual functions stay hot"
             "compose-resources" -> "resources are copied into the app when it is packaged, so a resource change always reinstalls the app"
             "external-klibs" -> "the app is linked against this klib as a whole; a changed klib needs a new link"
+            "duplicate-declaration" -> "several libraries define this name with different code and nothing used it when the app was packaged, so the app keeps only local copies; code that now uses it is linked by a warm restart"
             else -> GENERIC
         }
     }

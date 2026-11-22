@@ -12,7 +12,7 @@
 | `../daemon/reload-c.sh` | 通过常驻守护进程编译（约 1.3 s）并发送 | 同上 + `HRC_SOCKET` |
 | `../daemon/daemon-start.sh` | 启动/检查编译守护进程 | `KOTLIN_DIST`、`HRC_SOCKET_DIR` |
 | `../daemon/compile-daemon.sh` | 只编译，不发送（给调试用） | 同上 |
-| `merge-payloads.py` | 把 base 二进制里的 cache payload 合成一个 guest 对象；`KALDO_KEEP_COMPACT_UNWIND=1` 时保留 compact unwind | — |
+| `../example-gradle/tools/merge-payloads.py` | 把 base 二进制里的 cache payload 合成一个 guest 对象；`KALDO_KEEP_COMPACT_UNWIND=1` 时保留 compact unwind。全仓库只有这一份（插件随包带的也是它），`build-a.sh` 直接调它 | — |
 | `embed-merged.py` | 把合并后的对象写进 `__TEXT,__kaldo_boot` 的 `KALD0` manifest | — |
 | `verify-klibs.py` | 编译前检查 klib 列表的版本指纹，防止复用旧 Compose klib | — |
 | `accept-matrix.py` | 4 类改动 × N 次热重载，检查 `RENDER <tag> page=2 count=3`、PID、p50/p90 | `RELOAD`、`START_TAG` |

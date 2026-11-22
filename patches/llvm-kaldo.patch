@@ -280,7 +280,7 @@ index a848f54aee63..deb2c347dd51 100644
          plugins/WeakSymbolFallbackGenerator.cpp
  )
 diff --git a/llvm/tools/kaldo/Kaldo.cpp b/llvm/tools/kaldo/Kaldo.cpp
-index 9acf22f299ba..9c939d6a5eb9 100644
+index 9acf22f299ba..e5dee04b3c29 100644
 --- a/llvm/tools/kaldo/Kaldo.cpp
 +++ b/llvm/tools/kaldo/Kaldo.cpp
 @@ -1,3 +1,5 @@
@@ -326,7 +326,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
                  return std::move(OLL);
                })
            .setNotifyCreatedCallback([&](llvm::orc::LLJIT &J) -> llvm::Error {
-@@ -179,6 +182,35 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
+@@ -179,6 +182,43 @@ llvm::kaldo::SymbolsOrchestrator::create(const Config &Config) {
                  std::make_unique<orc::plugin::KotlinSymbolExternalizerPlugin>(
                      *StubsJD));
  
@@ -334,10 +334,6 @@ index 9acf22f299ba..9c939d6a5eb9 100644
 +            // this, C++/Kotlin exceptions cannot unwind through JIT frames:
 +            // catches never run and a cancellation exception escapes to the
 +            // unhandled-exception hook (Compose node detach).
-+            // Synthesize __eh_frame from compact unwind before the registration
-+            // plugin sees the section (hot-reload builds only).
-+            JOL->addPlugin(std::make_shared<
-+                llvm::kaldo::orc::plugin::CompactUnwindToEHFramePlugin>());
 +
 +            if (auto EHFramePlugin =
 +                    llvm::orc::EHFrameRegistrationPlugin::Create(J.getExecutionSession())) {
@@ -346,6 +342,18 @@ index 9acf22f299ba..9c939d6a5eb9 100644
 +              reportLlvmError(EHFramePlugin.takeError(),
 +                              "EHFrameRegistrationPlugin");
 +            }
++
++            // Synthesize __eh_frame from compact unwind (hot-reload builds only).
++            // Registered AFTER EHFrameRegistrationPlugin on purpose: both insert
++            // their pre-prune pass at the front, so the plugin registered later
++            // runs first, and EHFrameRegistrationPlugin's pass deletes
++            // __LD,__compact_unwind. Objects whose section is still named that
++            // way (hot reload patches made with plain `ld -r`) then had no FDE
++            // at all and an exception unwinding through patch code ended the
++            // app (Issue #80). __KALDO,__kaldo_cu (renamed by merge-payloads.py)
++            // is untouched by that pass and is preferred when both exist.
++            JOL->addPlugin(std::make_shared<
++                llvm::kaldo::orc::plugin::CompactUnwindToEHFramePlugin>());
 +
 +            JOL->addPlugin(
 +                std::make_shared<
@@ -362,7 +370,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
  #if defined(__APPLE__)
              ObjCInteropManager =
                  std::make_unique<llvm::kaldo::objc::ObjCInteropManager>(J);
-@@ -222,7 +254,15 @@ llvm::Error llvm::kaldo::SymbolsOrchestrator::loadBootstrapPayloads(
+@@ -222,7 +262,15 @@ llvm::Error llvm::kaldo::SymbolsOrchestrator::loadBootstrapPayloads(
    auto &OLL = JIT->getObjLinkingLayer();
    auto &ES = JIT->getExecutionSession();
  
@@ -378,7 +386,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
  
      llvm::StringRef Bytes(
          reinterpret_cast<const char *>(Manifest.StartData + Entry.Offset),
-@@ -231,8 +271,23 @@ llvm::Error llvm::kaldo::SymbolsOrchestrator::loadBootstrapPayloads(
+@@ -231,8 +279,23 @@ llvm::Error llvm::kaldo::SymbolsOrchestrator::loadBootstrapPayloads(
      switch (Entry.Kind) {
  
      case manifest::PayloadKind::kObject: {
@@ -404,7 +412,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
        LoadedSymbols +=
            KotlinHotSymbols::createFrom(*Buffer, ES.getSymbolStringPool());
        if (auto Err = JIT->addObjectFile(TargetJD, std::move(Buffer)))
-@@ -301,6 +356,16 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -301,6 +364,16 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    auto &BootstrapJD = *BootstrapJDOrErr;
  
@@ -421,7 +429,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    auto Cleanup = llvm::make_scope_exit([&] {
      if (Succeeded)
        return;
-@@ -316,6 +381,12 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -316,6 +389,12 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    BootstrapJD.addToLinkOrder(StubsJD); // StubsJD
    BootstrapJD.addToLinkOrder(MainJD);
@@ -434,7 +442,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
  
    BootstrapJD.addGenerator(
        std::make_unique<
-@@ -361,6 +432,23 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -361,6 +440,23 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
      return tl::make_unexpected(dumpLlvmErrorToString(std::move(RedirectErr)));
    }
  
@@ -458,7 +466,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    if (auto ConstErr =
            callKonanConstructors(ES, JIT->getDataLayout(), BootstrapJD)) {
      return tl::make_unexpected(dumpLlvmErrorToString(std::move(ConstErr)));
-@@ -368,6 +456,14 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -368,6 +464,14 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    RuntimeInit();
  
@@ -473,7 +481,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    if (ObjCInteroManager) {
      auto InitPrefixOrErr =
          ObjCInteroManager->initializeObjCUniquePrefixFromJIT(BootstrapJD);
-@@ -376,14 +472,6 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -376,14 +480,6 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
      }
  
      ObjCUniquePrefixInit(*InitPrefixOrErr);
@@ -488,7 +496,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    }
  
    auto BootstrapHandle = llvm::kaldo::ReloadUnitHandle::getBootstrapHandle();
-@@ -397,6 +485,8 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
+@@ -397,6 +493,8 @@ llvm::kaldo::SymbolsOrchestrator::loadBootstrap(
  
    llvm::dbgs() << "[kaldo] :: bootstrap objects loaded with success!\n";
  
@@ -497,7 +505,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    return BootstrapHandle;
  }
  
-@@ -409,7 +499,32 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -409,7 +507,32 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
  
    auto Succeeded = false;
  
@@ -530,7 +538,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    auto ReloadDylibName = KReloadJdName + std::to_string(ReloadUnits.size() - 1);
    auto &StubsJD = SymRedirector->getStubsJD();
    auto &MainJD = JIT->getMainJITDylib();
-@@ -432,11 +547,14 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -432,11 +555,14 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
      }
    });
  
@@ -545,7 +553,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
  
    ReloadedJD.addToLinkOrder(StubsJD);
    ReloadedJD.addToLinkOrder(MainJD);
-@@ -445,7 +563,7 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -445,7 +571,7 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
    // during materialization (generators on linked JITDylibs may not fire).
    if (auto HostGenOrErr = orc::plugin::MachOHostDataSymbolGenerator::
            createForCurrentProcess()) {
@@ -554,7 +562,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    } else {
      return tl::make_unexpected("Could not add MachOHostDataGenerator: " +
                                 dumpLlvmErrorToString(HostGenOrErr.takeError()));
-@@ -455,13 +573,15 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -455,13 +581,15 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
  
    if (auto DlsymGenOrErr =
            llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(GP)) {
@@ -571,7 +579,7 @@ index 9acf22f299ba..9c939d6a5eb9 100644
    auto &OLL = JIT->getObjLinkingLayer();
    auto LoadedSyms = KotlinHotSymbols::create();
  
-@@ -516,15 +636,37 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
+@@ -516,15 +644,37 @@ llvm::kaldo::SymbolsOrchestrator::reloadObjects(
      }
    }
  
