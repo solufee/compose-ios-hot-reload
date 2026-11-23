@@ -24,16 +24,22 @@ python3 compose-ios-hot-reload/scripts/fetch-toolchain.py \
   --cache ~/Library/Caches/compose-ios-hot-reload/toolchains
 ```
 
-**2. Add the plugin repository** to `settings.gradle.kts`, first in the list:
+**2. Add the plugin repository** to `settings.gradle.kts`, first in the list (only the plugin's own group is looked up there):
 
 ```kotlin
 pluginManagement {
     repositories {
-        maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") }
+        exclusiveContent {
+            forRepository { maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") } }
+            filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") }
+        }
         // your existing google(), mavenCentral(), gradlePluginPortal()
     }
 }
 ```
+
+The filter matters: for a path it does not have, GitHub Pages sometimes answers 5xx instead of 404, and Gradle then
+gives up instead of asking the next repository, so other plugins (Android, Kotlin) would fail at random.
 
 **3. Apply the plugin** to the module that contains `MainViewController()` (`shared` or `composeApp` in the
 Kotlin Multiplatform wizard template):
@@ -41,7 +47,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.10"
+    id("com.solufee.cmp.hotreload") version "0.2.11"
 }
 ```
 
@@ -70,6 +76,26 @@ Check the setup with `./gradlew hotReloadCheckToolchain`.
 
 `hotReload` with nothing changed prints `nothing changed` and succeeds; compile errors fail the run
 (in watch mode only that run, the watch keeps going).
+
+**Saves in a row feel slow? Check `~/.gradle/kotlin-profile`.** This only matters when that directory is large. The
+Kotlin Gradle plugin keeps build statistics there (one directory shared by all your Kotlin builds, never pruned) and
+goes through all of them at the end of every build. To see how many files it holds:
+
+```bash
+find ~/.gradle/kotlin-profile -maxdepth 1 -type f | wc -l
+```
+
+With a few thousand files you will not notice anything. With tens of thousands (30,000 on one of our machines) Gradle
+stays busy for 5–10 s after each hot reload: the patch is already on screen, but the next save waits. In that case
+either switch the statistics off in `gradle.properties` (the project's or `~/.gradle/gradle.properties`):
+
+```properties
+kotlin.internal.collectFUSMetrics=false
+```
+
+or delete the old files in `~/.gradle/kotlin-profile` yourself. Since 0.2.11, `hotReloadRun` and `hotReloadWatch` print
+a warning once when that directory holds more than 5000 files and the property is not `false`; the plugin changes
+neither the directory nor the property.
 
 - Function bodies in `commonMain` or `iosMain` are swapped in place (`compat: HOT`).
 - Since 0.2.4, signature changes of top-level functions and of final members (final class, object, companion) are
@@ -183,6 +209,27 @@ delete yours that are more than 7 days old:
 ```bash
 find /tmp -maxdepth 1 -type f -name 'perf-*.map' -user "$USER" -mtime +7 -print -delete
 ```
+
+Since plugin 0.2.11, the compile daemons no longer fill `$TMPDIR` with `included<digits>` directories. Up to 0.2.10 every
+compile that linked left one (about 120 MB each: the static libraries Kotlin/Native unpacks for a link, deleted only when
+the daemon exits). Each daemon now has a temp directory of its own and removes what each compile unpacked there. The
+plugin does not touch what older versions left in `$TMPDIR`; to delete yours that are more than a day old:
+
+```bash
+find "$TMPDIR" -maxdepth 1 -type d -name 'included*' -user "$USER" -mmin +1440 -print -exec rm -rf {} +
+```
+
+Since plugin 0.2.11, the hint for a module of an included build (composite build) can be copied as it is. With Gradle
+9.6 and later it used to print a quote as the build name (`includedModule("'", ":gooze:gooze-widget'")`); it now names
+the build and the module path, for example `cmpHotReload { includedModule("gooze", ":gooze-widget") }`. The
+`dependency klibs:` lines are printed by every package, and by `hotReload` / `hotReloadWatch` only when they changed.
+The `changed objects:` line now counts an edit in a library module for that module (it used to count a Compose
+file's objects for the app).
+
+Since plugin 0.2.11, the setup example keeps the plugin repository to the plugin's own group (`exclusiveContent`,
+step 2 above). GitHub Pages sometimes answers 5xx instead of 404 for a path it does not have, and Gradle then stops
+instead of asking the next repository, so other plugins (Android, Kotlin) failed to resolve at random. If you set up
+the repository with an earlier README, change it to the form in step 2.
 
 Minimal sample (iosMain):
 

@@ -1,0 +1,35 @@
+# first run of this branch (0.2.11-tmp1 = f24c064, before the release-check fix) with the first version of the script.
+# 50 new included* in $TMPDIR, all empty, created during the package: the release baseline's compiler
+# JVM (macOS ignores TMPDIR for java.io.tmpdir). The two 'daemon temp directory' checks looked under a wrongly computed
+# socket directory (now read from the daemon log's READY line), so this run's per-step checks did not test anything.
+# #120 acceptance (included* temp directories), 2026-11-23 07:21:18, plugin 0.2.11-tmp1, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+included* in $TMPDIR before: 292 (left by earlier runs; not touched)
+PASS package (123.5s)
+PASS package: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS run (6.1s)
+PASS run: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 1 (8.8s)
+PASS HOT 1: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 2 (4.9s)
+PASS HOT 2: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 3 (4.4s)
+PASS HOT 3: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 4 (4.3s)
+PASS HOT 4: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 5 (4.4s)
+PASS HOT 5: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 6 (4.3s)
+PASS HOT 6: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 7 (4.3s)
+PASS HOT 7: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 8 (4.2s)
+PASS HOT 8: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 9 (4.1s)
+PASS HOT 9: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 10 (4.1s)
+PASS HOT 10: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+FAIL no new included* in $TMPDIR during package, run and 10 HOT | 50 new: ['included10587197286163695100', 'included10922268051098480967', 'included10981459464062456364', 'included10999239094105647060', 'included12751658706724065122'] ... (0 MB)
+  daemon logs: 11 request(s) removed included* directories, 45 in total
+FAIL the daemons' temp directories exist while they run | []
+PASS hotReloadDaemonStop: both daemon temp directories are gone | still there: []
+summary: 25/27 PASS; FAILED: ['no new included* in $TMPDIR during package, run and 10 HOT', "the daemons' temp directories exist while they run"]

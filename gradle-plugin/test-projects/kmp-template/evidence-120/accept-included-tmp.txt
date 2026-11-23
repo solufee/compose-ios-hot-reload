@@ -1,0 +1,32 @@
+# accept-included-tmp.py, plugin 0.2.11-tmp2 = fix/included-tmp 5c52a5c, toolchain .11.2, simulator HR-Plugin, nothing else linking meanwhile
+# #120 acceptance (included* temp directories), 2026-11-23 07:28:02, plugin 0.2.11-tmp2, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+included* in $TMPDIR before: 343 (left by earlier runs; not touched)
+PASS package (110.5s)
+PASS package: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS run (7.3s)
+PASS run: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 1 (8.2s)
+PASS HOT 1: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 2 (4.9s)
+PASS HOT 2: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 3 (4.3s)
+PASS HOT 3: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 4 (4.3s)
+PASS HOT 4: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 5 (4.2s)
+PASS HOT 5: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 6 (4.2s)
+PASS HOT 6: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 7 (4.2s)
+PASS HOT 7: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 8 (4.2s)
+PASS HOT 8: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 9 (4.2s)
+PASS HOT 9: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 10 (4.1s)
+PASS HOT 10: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS no new included* in $TMPDIR during package, run and 10 HOT | 0 new: [] (0 MB)
+  daemon logs: 11 request(s) removed included* directories, 45 in total
+PASS the daemons' temp directories exist while they run (beside their sockets) | ['<HOME>/Library/Caches/cmp-hot-reload/c2d4b0b5b405/tmp-compile', '<HOME>/Library/Caches/cmp-hot-reload/c2d4b0b5b405/tmp-klib']
+PASS hotReloadDaemonStop: both daemon temp directories are gone | still there: []
+summary: 27/27 PASS

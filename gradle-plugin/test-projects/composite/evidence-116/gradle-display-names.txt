@@ -1,0 +1,15 @@
+# #116: how Gradle identifies a project of an included build (build gooze, projects :gooze-widget and :feature:widget)
+# probe: a root build that depends on both through includeBuild("gooze"); prints each ProjectComponentIdentifier
+# the plugin now takes build = build.buildPath after the last ':' and projectPath; the display name is no longer parsed
+## Gradle 8.14
+ID displayName=[project :gooze:gooze-widget] buildPath=[:gooze] projectPath=[:gooze-widget]
+ID displayName=[project :gooze:feature:widget] buildPath=[:gooze] projectPath=[:feature:widget]
+## Gradle 9.5.1
+ID displayName=[project :gooze:gooze-widget] buildPath=[:gooze] projectPath=[:gooze-widget]
+ID displayName=[project :gooze:feature:widget] buildPath=[:gooze] projectPath=[:feature:widget]
+## Gradle 9.6.1
+ID displayName=[project ':gooze:gooze-widget'] buildPath=[:gooze] projectPath=[:gooze-widget]
+ID displayName=[project ':gooze:feature:widget'] buildPath=[:gooze] projectPath=[:feature:widget]
+## Gradle 9.7.0
+ID displayName=[project ':gooze:gooze-widget'] buildPath=[:gooze] projectPath=[:gooze-widget]
+ID displayName=[project ':gooze:feature:widget'] buildPath=[:gooze] projectPath=[:feature:widget]

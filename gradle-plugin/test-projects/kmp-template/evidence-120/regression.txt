@@ -1,0 +1,25 @@
+# simulator regression, plugin 0.2.11-tmp2 = 5c52a5c (the code of this PR), toolchain .11.2
+# sim1 HR-Plugin: unit, clean-run, watch, kmp, composite, relaunch; sim2 HR-Plugin-2: botas (accept-dup-91 --same-package, 40 rounds), in parallel
+07:30:59 start V=0.2.11-tmp2 SRC=5c52a5c TC=2.5.255-hotreload.11.2 U=67FC79E4-473A-47C9-87C0-1ADEA85CBBBB PORT=5568 suites: unit clean-run watch kmp composite relaunch
+07:31:19 unit rc=0 143 tests, 0 failed
+07:35:52 clean-run rc=0 summary: 4/4 PASS
+07:38:56 watch rc=0 summary: 17/17 PASS
+07:49:35 kmp rc=0 summary: 65/65 PASS
+08:03:03 composite rc=0 summary: 51/51 PASS
+08:06:41 relaunch rc=0 summary: 28/28 checks passed
+08:06:41 end
+
+07:30:59 start V=0.2.11-tmp2 SRC=5c52a5c TC=2.5.255-hotreload.11.2 U=20EC0404-3A9D-433C-90C0-ED0EDBE71093 PORT=5578 suites: botas
+07:36:57 botas rc=0 RESULT 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays: rc=0 gradle 4.5s seen 4.5s verdict=HOT pid 5494->5494 new BOTAS lines=1 summary: 190/190 PASS 
+07:36:57 end
+
+# window log (acceptance runs, then the regression)
+07:21:18 window start
+07:24:20 accept fix rc=0 summary: 25/27 PASS; FAILED: ['no new included* in $TMPDIR during package, run and 10 HOT', "the daemons' temp directories exist while they run"]
+07:28:02 acceptance (tmp2) start
+07:30:51 acceptance (tmp2) rc=0 summary: 27/27 PASS
+07:30:59 regression start (0.2.11-tmp2 = 5c52a5c)
+08:06:41 window end
+
+# included* in $TMPDIR: 343 at the regression's start (07:30), 343 now; 0 new since then.
+# (informational: $TMPDIR is shared, other lines' builds on this machine after 08:06 also write there; counted 2026-11-23 08:31:02)

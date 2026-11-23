@@ -5,7 +5,7 @@ pluginManagement {
     includeBuild("build-logic")
     repositories {
         // CMP hot reload plugin (a local Maven directory; setup.py fills it in)
-        maven { url = uri("@PLUGIN_REPO@") }
+        exclusiveContent { forRepository { maven { url = uri("@PLUGIN_REPO@") } }; filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") } }
         google()
         mavenCentral()
         gradlePluginPortal()

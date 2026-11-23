@@ -1,0 +1,32 @@
+# the same script (its first version: the daemon-directory checks looked in the wrong place, see run1) on plugin 0.2.10 (before #120)
+# #120 acceptance (included* temp directories), 2026-11-23 07:24:20, plugin 0.2.10, simulator 67FC79E4-473A-47C9-87C0-1ADEA85CBBBB
+included* in $TMPDIR before: 342 (left by earlier runs; not touched)
+PASS package (112.3s)
+PASS package: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS run (5.9s)
+PASS run: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 1 (8.4s)
+PASS HOT 1: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 2 (4.7s)
+PASS HOT 2: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 3 (4.4s)
+PASS HOT 3: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 4 (4.3s)
+PASS HOT 4: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 5 (4.4s)
+PASS HOT 5: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 6 (4.3s)
+PASS HOT 6: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 7 (4.2s)
+PASS HOT 7: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 8 (4.5s)
+PASS HOT 8: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 9 (4.4s)
+PASS HOT 9: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+PASS HOT 10 (4.6s)
+PASS HOT 10: no included* left in the daemons' temp directories, no direct-* left | left={} direct=[]
+FAIL no new included* in $TMPDIR during package, run and 10 HOT | 45 new: ['included11020670209349081463', 'included11345018327467651825', 'included12491112520348379516', 'included12570080804533542321', 'included12966743623696363410'] ... (120 MB)
+  daemon logs: 0 request(s) removed included* directories, 0 in total
+PASS the daemons' temp directories exist while they run | []
+PASS hotReloadDaemonStop: both daemon temp directories are gone | still there: []
+summary: 26/27 PASS; FAILED: ['no new included* in $TMPDIR during package, run and 10 HOT']

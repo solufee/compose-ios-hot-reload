@@ -213,6 +213,40 @@ class KmpTest {
         assertNull(Pipeline.classify(setOf("_OBJC_CLASS_\$_Foo"), pkgs))
     }
 
+    @Test
+    fun `a library edit is credited to the library - file-qualified private symbols and archive initializers carry its package (#116)`() {
+        val core = HrModule(":lib-build:core", ModuleKind.LIBRARY, "/c", emptyList())
+        val app = HrModule(":app", ModuleKind.APP, "/a", emptyList())
+        val pkgs = mapOf(app to setOf("org.example.app", ""), core to setOf("org.example.core"))
+        // the symbols of the object the composite acceptance's core edit rebuilds (nm -g -U; source path shortened)
+        val coreObject = setOf(
+            "__Konan_init_lib-build-core:liborg.example.core.-kw29du.a",
+            "__Konan_init_lib-build-core:org.example.core.-kw29du",
+            "_kfun:/w/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge\$1.org.example.core.CoreBadge\$1#\$<bridge-DNCU>invoke(androidx.compose.runtime.Composer?;kotlin.Int){}(kotlin.Any?;kotlin.Any?){}kotlin.Any?",
+            "_kfun:/w/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge\$1.org.example.core.CoreBadge\$1#\$clinit_trigger#static(){}",
+            "_kfun:/w/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge\$1.org.example.core.CoreBadge\$1#<init>(kotlin.Int){}",
+            "_kfun:/w/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge\$1.org.example.core.CoreBadge\$1#invoke(androidx.compose.runtime.Composer?;kotlin.Int){}",
+            "_kfun:org.example.core#CoreBadge(androidx.compose.runtime.Composer?;kotlin.Int){}",
+            "_kfun:org.example.core#coreLine(){}kotlin.String",
+        )
+        assertEquals(core, Pipeline.classify(coreObject, pkgs))
+        // the app's own root-package entry still goes to the app
+        assertEquals(app, Pipeline.classify(setOf("__Konan_init_7cd98cf055b05f05:libROOT.-kgksrl.a", "_kfun:#MainViewController(){}"), pkgs))
+    }
+
+    @Test
+    fun `the archive path names the library whose per-file cache it is, the program's archives are left to the symbols (#116)`() {
+        val core = HrModule(":lib-build:core", ModuleKind.LIBRARY, "/c", emptyList())
+        val feature = HrModule(":feature", ModuleKind.LIBRARY, "/f", emptyList())
+        val app = HrModule(":app", ModuleKind.APP, "/a", emptyList())
+        val mods = listOf(app, core, feature)
+        val ic = "/w/app/build/hotreload/ic/ios_simulator_arm64-gSTATIC-stdlib_cacheMONOLITHIC-user-pl"
+        assertEquals(core, Pipeline.moduleOfArchive("$ic/lib-build-core-per-file-cache/org.example.core.-kw29du/bin/liborg.example.core.-kw29du.a", mods))
+        assertEquals(feature, Pipeline.moduleOfArchive("$ic/feature-per-file-cache/org.example.feature.x1/bin/liborg.example.feature.x1.a", mods))
+        assertNull(Pipeline.moduleOfArchive("$ic/7cd98cf055b05f05-per-file-cache/org.example.app.ri7chu/bin/liborg.example.app.ri7chu.a", mods))
+        assertNull(Pipeline.moduleOfArchive("/w/elsewhere/libfoo.a", mods))
+    }
+
     private fun settings(app: HrModule) = HrSettings(
         rootDir = tmp.path, workDir = File(tmp, "w").path, dist = "/d", kotlinc = "/d/bin/kotlinc-native", compilerJar = "/d/c.jar",
         composePlugin = "/c.jar", klibList = "/k.txt", kaldoDylib = "/l.dylib", kaldoSha256 = null, target = "ios_simulator_arm64",

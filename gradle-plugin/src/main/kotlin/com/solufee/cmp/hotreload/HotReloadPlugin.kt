@@ -239,6 +239,8 @@ class HotReloadPlugin : Plugin<Project> {
             val depKlibs = project.files()
             val depIds = mutableListOf<Provider<List<String>>>()
             val depVia = mutableListOf<Provider<List<String>>>()
+            // #116: projects of other builds as Gradle identifies them ("display name<TAB>build name<TAB>project path")
+            val depProjects = mutableListOf<Provider<List<String>>>()
             // With DSL errors (e.g. an includedModule naming a build that is not included) nothing is resolved or
             // compiled: hotReloadCheckToolchain reports them first.
             if (ext.resolveDependencyKlibs.get() && errors.isEmpty()) {
@@ -257,6 +259,13 @@ class HotReloadPlugin : Plugin<Project> {
                     depKlibs.from(view.files)
                     depIds += view.artifacts.resolvedArtifacts.map { set -> set.map { "${it.id.componentIdentifier.displayName}|${it.file.path}" } }
                     depVia += cfg.incoming.resolutionResult.rootComponent.map { Kmp.requesters(it) }
+                    depProjects += view.artifacts.resolvedArtifacts.map { set ->
+                        set.mapNotNull { a ->
+                            (a.id.componentIdentifier as? org.gradle.api.artifacts.component.ProjectComponentIdentifier)?.let { p ->
+                                "${p.displayName}\t${p.build.buildPath.substringAfterLast(':')}\t${p.projectPath}"
+                            }
+                        }
+                    }
                 }
             }
             depKlibs.from(ext.extraKlibs)
@@ -268,6 +277,13 @@ class HotReloadPlugin : Plugin<Project> {
             val watched = (modules.flatMap { it.ownSourceDirs } +
                 moduleDirs.flatMap { d -> File(d, "src").listFiles()?.map { File(it, "composeResources").path } ?: emptyList() }).distinct()
             val continuousBuild = project.gradle.startParameter.isContinuous
+            // #122: what the Kotlin plugin's build statistics cost every build (hotReloadRun / hotReloadWatch warn once)
+            val fusMetrics = providers.gradleProperty(KotlinProfileHint.PROPERTY)
+            val kotlinProfile = KotlinProfileHint.profileDir(project.gradle.gradleUserHomeDir).path
+            project.tasks.withType(HotReloadTask::class.java).configureEach {
+                kotlinFusMetrics.set(fusMetrics)
+                kotlinProfileDir.set(kotlinProfile)
+            }
             project.tasks.withType(ReloadTask::class.java).configureEach {
                 watchedSources.from(watched)
                 continuous.set(continuousBuild)
@@ -280,6 +296,7 @@ class HotReloadPlugin : Plugin<Project> {
                     externalKlibIds.set(allIds)
                     fromSourceModules.set(included.map { it.fromSource })
                     externalKlibVia.set(depVia.fold(project.provider { emptyList<String>() }) { acc, p -> acc.zip(p) { a, b -> a + b } })
+                    externalProjects.set(depProjects.fold(project.provider { emptyList<String>() }) { acc, p -> acc.zip(p) { a, b -> a + b } })
                     // #76: the project's compiler plugin jars, resolved by Gradle for this task ("modulePath|jar").
                     kmp.pluginClasspaths.values.forEach { compilerPluginFiles.from(it) }
                     compilerPluginIds.set(kmp.pluginClasspaths.entries.fold(project.provider { emptyList<String>() }) { acc, (path, cp) ->

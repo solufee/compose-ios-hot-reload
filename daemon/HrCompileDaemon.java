@@ -15,7 +15,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Persistent Kotlin/Native compiler for hot reload.
@@ -31,6 +35,14 @@ import java.util.List;
  * its public org.jetbrains.kotlin.cli.klib.Main.exec(stdout, stderr, args),
  * which returns an exit code instead of exiting the process. Its stdout goes
  * to the output file, its stderr to the daemon log.
+ *
+ * Temp directories (#120): Kotlin/Native unpacks the static libraries a link
+ * needs into java.io.tmpdir/included<digits> (~120 MB for skiko) and deletes
+ * them only when the JVM exits, which a daemon never does. With
+ * -Dhr.cleanIncluded=true (the Gradle plugin also gives the daemon a
+ * java.io.tmpdir of its own) the daemon removes, after each request, the
+ * included* directories that request created: it lists them before and after;
+ * requests run one at a time, so nothing else is using them.
  */
 public class HrCompileDaemon {
     public static void main(String[] args) throws Exception {
@@ -52,7 +64,11 @@ public class HrCompileDaemon {
         Method invoke = base.getMethod("doMainNoExit", base, String[].class);
         Method klibExec = null;  // loaded on the first @klib request
 
+        boolean cleanIncluded = "true".equals(System.getProperty("hr.cleanIncluded"));
+        Path tmp = Path.of(System.getProperty("java.io.tmpdir"));
+
         while (true) {
+            Set<String> includedBefore = cleanIncluded ? included(tmp) : null;
             try (SocketChannel ch = server.accept()) {
                 BufferedReader in = new BufferedReader(
                         new InputStreamReader(Channels.newInputStream(ch), StandardCharsets.UTF_8));
@@ -107,7 +123,42 @@ public class HrCompileDaemon {
                 System.out.flush();
             } catch (Throwable t) {
                 t.printStackTrace();
+            } finally {
+                if (includedBefore != null) {
+                    int n = removeNewIncluded(tmp, includedBefore);
+                    if (n > 0) {
+                        System.out.println("TMP removed " + n + " included dir(s) of this request");
+                        System.out.flush();
+                    }
+                }
             }
         }
+    }
+
+    /** Names of the included* directories directly in dir (the ones Kotlin/Native unpacks for a link). */
+    static Set<String> included(Path dir) {
+        Set<String> names = new HashSet<>();
+        try (Stream<Path> s = Files.list(dir)) {
+            s.filter(p -> Files.isDirectory(p) && p.getFileName().toString().startsWith("included"))
+                    .forEach(p -> names.add(p.getFileName().toString()));
+        } catch (Exception e) {
+            // no directory yet: nothing to compare against
+        }
+        return names;
+    }
+
+    /** Deletes the included* directories in dir that are not in before; returns how many. Nothing else is touched. */
+    static int removeNewIncluded(Path dir, Set<String> before) {
+        int n = 0;
+        for (String name : included(dir)) {
+            if (before.contains(name)) continue;
+            try (Stream<Path> walk = Files.walk(dir.resolve(name))) {
+                for (Path p : walk.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p);
+                n++;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return n;
     }
 }

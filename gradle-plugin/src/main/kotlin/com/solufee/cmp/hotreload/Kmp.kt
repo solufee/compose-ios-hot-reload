@@ -203,7 +203,7 @@ object Kmp {
      * Duplicates among the dependencies are dropped. Fails when a linked klib's ABI or metadata is outside what the
      * toolchain's compiler reads. Warns about cinterop klibs (native bindings) that do not replace a toolchain component.
      */
-    fun selectKlibs(toolchainKlibs: List<String>, stdlib: File, deps: List<Dependency>, composeVersion: String, logger: Logger?): Selection {
+    fun selectKlibs(toolchainKlibs: List<String>, stdlib: File, deps: List<Dependency>, composeVersion: String, logger: Logger?, summary: Boolean = true): Selection {
         val providedVersions = toolchainKlibs.mapNotNull { p -> manifest(File(p))["unique_name"]?.let { it to toolchainVersion(p, composeVersion) } }.toMap()
         val provided = providedVersions.keys
         val tcByName = toolchainKlibs.mapNotNull { p -> manifest(File(p))["unique_name"]?.let { it to p } }.groupBy({ it.first }, { it.second })
@@ -289,22 +289,41 @@ object Kmp {
         if (problems.isNotEmpty()) {
             throw GradleException("CMP hot reload: these dependencies cannot be linked with the toolchain:\n" + problems.joinToString("\n") { "  - $it" })
         }
-        logger?.lifecycle("dependency klibs: ${kept.size} linked, ${replaced.size} replaced by the toolchain's copies" +
-            (if (dropped.isEmpty()) "" else ", ${dropped.size} toolchain klib(s) replaced by the project's newer copies") +
-            (if (duplicates.isEmpty()) "" else ", ${duplicates.size} duplicates skipped"))
-        if (newer.isNotEmpty()) {
-            logger?.lifecycle("dependency klibs: the project's version is used (newer than the toolchain's, as in the release build): " +
-                newer.distinct().joinToString(", "))
-        }
-        if (older.isNotEmpty()) {
-            logger?.lifecycle("dependency klibs: the toolchain's version is used (newer than the project's; the toolchain's Compose " +
-                "modules are built against it, while the release build keeps the project's version): ${older.distinct().joinToString(", ")}")
-        }
+        val sel = Selection(kept.values.toList(), replaced, duplicates, newer.distinct(), cinterop.distinct(), dropped.toList(), older.distinct())
+        if (summary) selectionReport(sel).forEach { logger?.lifecycle(it) }
         if (cinterop.isNotEmpty()) {
             logger?.warn("CMP hot reload: warning: cinterop klibs (bindings to native code) are not supported in 0.2.0; " +
                 "linking or running them may fail:\n" + cinterop.distinct().joinToString("\n") { "  - $it" })
         }
-        return Selection(kept.values.toList(), replaced, duplicates, newer.distinct(), cinterop.distinct(), dropped.toList(), older.distinct())
+        return sel
+    }
+
+    /** The "dependency klibs: ..." summary of a [Selection] (what is linked, which copy of each library is used). */
+    fun selectionReport(sel: Selection): List<String> = listOfNotNull(
+        "dependency klibs: ${sel.klibs.size} linked, ${sel.replaced.size} replaced by the toolchain's copies" +
+            (if (sel.toolchainDropped.isEmpty()) "" else ", ${sel.toolchainDropped.size} toolchain klib(s) replaced by the project's newer copies") +
+            (if (sel.duplicates.isEmpty()) "" else ", ${sel.duplicates.size} duplicates skipped"),
+        sel.newer.takeIf { it.isNotEmpty() }?.let { "dependency klibs: the project's version is used (newer than the toolchain's, as in the release build): " + it.joinToString(", ") },
+        sel.older.takeIf { it.isNotEmpty() }?.let { "dependency klibs: the toolchain's version is used (newer than the project's; the toolchain's Compose " +
+            "modules are built against it, while the release build keeps the project's version): ${it.joinToString(", ")}" },
+    )
+
+    /**
+     * #116: the includedModule(build, path) to suggest for a project of another build that is linked as its klib. [build] and
+     * [projectPath] come from Gradle's ProjectComponentIdentifier (the build's name, the project path inside that build);
+     * without them the display name is parsed (`project :b:m`, or `project ':b:m'` as newer Gradle versions print it).
+     */
+    fun includedModuleHint(displayName: String, build: String?, projectPath: String?): Pair<String, String> {
+        if (!build.isNullOrEmpty() && !projectPath.isNullOrEmpty()) return build to projectPath
+        val path = displayName.removePrefix("project").trim().trim('\'', '"').trim().trim(':')
+        return path.substringBefore(':') to ":" + path.substringAfter(':', "")
+    }
+
+    /** #116: the report line for a project of another build that is linked as its klib, with the includedModule(...) to copy. */
+    fun includedBuildHint(displayName: String, build: String?, projectPath: String?): String {
+        val (b, m) = includedModuleHint(displayName, build, projectPath)
+        return "dependency klibs: project $m comes from the included build $b and is linked as the klib that build produces; " +
+            "its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule(\"$b\", \"$m\") }"
     }
 
     /** Oldest klib ABI the compiler reads (Kotlin 1.6.10). */

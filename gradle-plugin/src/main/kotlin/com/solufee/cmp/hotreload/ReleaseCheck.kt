@@ -77,15 +77,18 @@ class ReleaseCheck(private val s: HrSettings, private val logger: Logger) {
         File(out, "klib").mkdirs()
         val cmds = commands(out)
         // The compiler's temporary-file location changes the order of some data slots (and so __text);
-        // a fixed private TMPDIR makes the build reproducible in and outside Gradle.
+        // a fixed private TMPDIR makes the build reproducible in and outside Gradle. #120: on macOS the JVM takes
+        // java.io.tmpdir from the system, not from TMPDIR, so the compiler JVM gets it explicitly (JAVA_OPTS, read by
+        // kotlinc-native); otherwise the static libraries it unpacks for the link (included<digits>) land in $TMPDIR.
         val tmp = File(dir, "tmp").apply { deleteRecursively(); mkdirs() }
         File(out, "commands.sh").writeText(
             "#!/bin/bash\n# Release build, reproducible outside Gradle (run with a clean environment)\nset -e\n" +
                 "rm -rf '${tmp.path}' && mkdir -p '${tmp.path}'\nexport TMPDIR='${tmp.path}'\n" +
+                "export JAVA_OPTS='-Djava.io.tmpdir=${tmp.path}'\n" +
                 cmds.joinToString("\n") { c -> c.joinToString(" ") { "'" + it.replace("'", "'\\''") + "'" } } + "\n",
         )
         // Only JAVA_HOME and PATH come from outside; every hot-reload switch is removed.
-        val env = mapOf("JAVA_HOME" to s.javaHome, "TMPDIR" to tmp.path)
+        val env = environment(s.javaHome, tmp)
         val labels = s.libraries.map { it.label } + s.app.label
         for ((i, c) in cmds.withIndex()) {
             logger.lifecycle("release: compiling ${labels[i]}")
@@ -181,6 +184,10 @@ class ReleaseCheck(private val s: HrSettings, private val logger: Logger) {
     }
 
     companion object {
+        /** The release compiles' environment: the JDK and a private temp directory, for the tools (TMPDIR) and the compiler JVM (#120). */
+        fun environment(javaHome: String, tmp: File): Map<String, String> =
+            mapOf("JAVA_HOME" to javaHome, "TMPDIR" to tmp.path, "JAVA_OPTS" to "-Djava.io.tmpdir=${tmp.path}")
+
         /** Identity keys (the first word of each line) whose values differ; keys that only describe hot reload builds are left out. */
         fun identityChanges(baseline: List<String>, current: List<String>): List<String> {
             val hotReloadOnly = setOf("abi", "packaging", "kaldo", "llvm")

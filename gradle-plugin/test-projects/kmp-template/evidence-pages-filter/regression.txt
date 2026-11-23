@@ -1,0 +1,15 @@
+# simulator regression on this branch (0d7df62), plugin 0.2.10 (unchanged) from a local copy of the published Maven files, toolchain .11.2, HR-Plugin-2
+# every test project resolves the plugin through the filtered repository; the settings line the scripts generated:
+        exclusiveContent { forRepository { maven { url = uri("file://<local Maven dir>") } }; filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") } }
+
+21:59:53 start V=0.2.10 SRC=0d7df62 TC=2.5.255-hotreload.11.2 U=20EC0404-3A9D-433C-90C0-ED0EDBE71093 PORT=5578 suites: unit clean-run watch kmp composite botas
+22:00:13 unit rc=0 134 tests, 0 failed
+22:04:51 clean-run rc=0 summary: 4/4 PASS
+22:08:11 watch rc=0 summary: 17/17 PASS
+22:19:27 kmp rc=0 summary: 65/65 PASS
+22:33:06 composite rc=0 summary: 51/51 PASS
+22:38:38 botas rc=0 RESULT 7b) only the lambda in LamA.module (module$1 of LamA.kt): LamB's lambda stays: rc=0 gradle 4.2s seen 4.2s verdict=HOT pid 94006->94006 new BOTAS lines=1 summary: 190/190 PASS 
+22:38:38 end
+
+# an earlier run (60a2f54) failed at once: the scripts wrote the regex with single backslashes, which Kotlin rejects
+# ('Unsupported escape sequence'); fixed in 0d7df62 and rerun from scratch (above).

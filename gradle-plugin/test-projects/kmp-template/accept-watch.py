@@ -114,7 +114,7 @@ os.makedirs(WORK)
 zipfile.ZipFile(a.zip).extractall(WORK)
 os.chmod(os.path.join(P, "gradlew"), 0o755)
 edit(os.path.join(P, "settings.gradle.kts"), "pluginManagement {\n    repositories {\n",
-     f'pluginManagement {{\n    repositories {{\n        maven {{ url = uri("{a.plugin_repo}") }}\n')
+     f'pluginManagement {{\n    repositories {{\n        exclusiveContent {{ forRepository {{ maven {{ url = uri("{a.plugin_repo}") }} }}; filter {{ includeGroupByRegex("com\\\\.solufee\\\\.cmp(\\\\..*)?") }} }}\n')
 edit(os.path.join(P, "shared/build.gradle.kts"), "plugins {\n", f'plugins {{\n    id("com.solufee.cmp.hotreload") version "{a.plugin_version}"\n')
 open(os.path.join(P, "local.properties"), "w").write(
     f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\ncmp.hotreload.port={a.port}\n" + "".join(f"{p}\n" for p in a.prop))

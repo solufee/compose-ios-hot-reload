@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9、0.2.10）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9–0.2.11）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -27,7 +27,10 @@
 ```kotlin
 pluginManagement {
     repositories {
-        maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") }
+        exclusiveContent {
+            forRepository { maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") } }
+            filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") }
+        }
     }
 }
 include("app", "ui")
@@ -180,13 +183,18 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
   `com/solufee/cmp/hotreload/com.solufee.cmp.hotreload.gradle.plugin/<版本>/`。发布流程把这个目录原样放到公开仓库的 GitHub Pages
   （`https://solufee.github.io/compose-ios-hot-reload/maven/`），读取不需要 token。这个任务本身不上传任何东西。
 - 插件没有外部运行时依赖（POM 和 `.module` 里没有依赖），使用方的 `pluginManagement` 只需要这一个仓库。
+- 这个仓库要用 `exclusiveContent` 只开放 `com.solufee.cmp` 组（插件 jar 和 plugin marker `com.solufee.cmp.hotreload`）：GitHub Pages 对没有的路径偶尔回 5xx，
+  Gradle 遇到 5xx 会直接失败、不再去问其他仓库。
 - 使用方：
 
 ```kotlin
 // settings.gradle.kts
 pluginManagement {
     repositories {
-        maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") }
+        exclusiveContent {
+            forRepository { maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") } }
+            filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") }
+        }
         gradlePluginPortal()
     }
 }

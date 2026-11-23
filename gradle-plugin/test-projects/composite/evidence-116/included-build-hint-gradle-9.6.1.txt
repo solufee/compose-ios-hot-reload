@@ -1,0 +1,39 @@
+# #116 before/after on the composite fixture (accept-composite.py's project), section D state: includedModule("lib-build", ":core") only,
+# so :lib-build:util is linked as the klib lib-build produces. Gradle switched to 9.6.1 (it quotes display names, like the user's).
+# simulator HR-Plugin, toolchain .11.2
+
+## plugin 0.2.10 (published), ./gradlew :app:hotReloadPackage
+dependency klibs: 2 linked, 88 replaced by the toolchain's copies
+dependency klibs: the toolchain's version is used (newer than the project's; the toolchain's Compose modules are built against it, while the release build keeps the project's version): androidx.savedstate:savedstate-compose-iossimulatorarm64 1.4.0 -> 1.5.0, androidx.savedstate:savedstate-iossimulatorarm64 1.4.0 -> 1.5.0, androidx.collection:collection-iossimulatorarm64 1.5.0 -> 1.6.0, org.jetbrains.skiko:skiko-iossimulatorarm64 0.150.2 -> 0.156.1
+dependency klibs: project ':lib-build:util' comes from the included build ' and is linked as the klib that build produces; its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule("'", ":lib-build:util'") }
+app klib (classifier): compiling (module klibs changed: lib-build-core; dependency klibs changed: util)
+BUILD SUCCESSFUL in 40s
+
+## plugin 0.2.11-imh1 (this branch, 844209e), ./gradlew :app:hotReloadPackage
+CMP hot reload: build identity changed (plugin 0.2.10 -> 0.2.11-imh1); cleared the compiled state (931 MB) in <P>/app/build/hotreload
+dependency klibs: 2 linked, 88 replaced by the toolchain's copies
+dependency klibs: the toolchain's version is used (newer than the project's; the toolchain's Compose modules are built against it, while the release build keeps the project's version): androidx.savedstate:savedstate-compose-iossimulatorarm64 1.4.0 -> 1.5.0, androidx.savedstate:savedstate-iossimulatorarm64 1.4.0 -> 1.5.0, androidx.collection:collection-iossimulatorarm64 1.5.0 -> 1.6.0, org.jetbrain
+dependency klibs: project :util comes from the included build lib-build and is linked as the klib that build produces; its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule("lib-build", ":util") }
+BUILD SUCCESSFUL in 1m 57s
+
+## ./gradlew :app:hotReloadRun (the package exists: nothing compiled, no report)
+CMP hot reload: app started (attempt 1, pid 45197, 8.4 s, ready: first frame (toolchain marker), launch -> first frame 8298 ms, port 5568, log <P>/app/launch.log)
+BUILD SUCCESSFUL in 12s
+
+## edit lib-build/core Core.kt ("core-12 "), ./gradlew :app:hotReload: the dependency set is unchanged, so no 'dependency klibs' lines
+klib lib-build-core: compiling (sources changed: Core.kt)
+klib lib-build-core: <P>/app/build/hotreload/klib/lib-build-core/lib-build-core.klib
+changed objects: app=3 lib-build-core=1 feature=0
+symbols: app defined=100 kept_in_merged=100
+symbols: lib-build-core defined=8 kept_in_merged=8
+compat: HOT (classifier 70 ms, waited 1 ms after the patch was ready)
+BUILD SUCCESSFUL in 14s
+
+## edit lib-build/core Core.kt ("core-13 "), ./gradlew :app:hotReload: the dependency set is unchanged, so no 'dependency klibs' lines
+klib lib-build-core: compiling (sources changed: Core.kt)
+klib lib-build-core: <P>/app/build/hotreload/klib/lib-build-core/lib-build-core.klib
+changed objects: app=3 lib-build-core=1 feature=0
+symbols: app defined=100 kept_in_merged=100
+symbols: lib-build-core defined=8 kept_in_merged=8
+compat: HOT (classifier 59 ms, waited 1 ms after the patch was ready)
+BUILD SUCCESSFUL in 8s

@@ -1,0 +1,48 @@
+# #116 item 4: why 'changed objects' credited a library edit to the app
+# reproduced on the composite fixture, section D state (core declared, util as a klib), plugin 0.2.10, Gradle 9.5.1, toolchain .11.2
+# (the same case in the 0.2.10 release gate, accept-composite.txt: 'core body (declared) while util is a klib -> HOT ... changed objects: app=4 lib-build-core=0 feature=0')
+
+## edit Core.kt ("core-10 " -> "core-11 "), ./gradlew :app:hotReload --info
+klib lib-build-core: compiling (sources changed: Core.kt)
+changed objects: app=4 lib-build-core=0 feature=0
+symbols: app defined=108 kept_in_merged=108
+compat: HOT (classifier 70 ms, waited 1 ms after the patch was ready)
+
+## the archives the compiler rebuilt (caches.txt, relative to app/build/hotreload/ic/<config>/)
+lib-build-core-per-file-cache/org.example.core.-kw29du/bin/liborg.example.core.-kw29du.a
+7cd98cf055b05f05-per-file-cache/ROOT.-kgksrl/bin/libROOT.-kgksrl.a
+7cd98cf055b05f05-per-file-cache/org.example.app.-82qzy9/bin/liborg.example.app.-82qzy9.a
+7cd98cf055b05f05-per-file-cache/org.example.app.ri7chu/bin/liborg.example.app.ri7chu.a
+# 4 archives: 1 of lib-build-core (its klib's per-file cache), 3 of the program (the app). 0.2.10 counted all 4 as app.
+
+## the core object's defined symbols (nm -g -U), and how 0.2.10 voted
+__Konan_init_lib-build-core:liborg.example.core.-kw29du.a
+    -> app  (archive initializer 'lib<package>...a': matches no package -> app)
+__Konan_init_lib-build-core:org.example.core.-kw29du
+    -> core (package org.example.core)
+_kfun:<P>/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge$1.org.example.core.CoreBadge$1#$<bridge-DNCU>invoke(androidx.compose.runtime.Composer?;kotlin.Int){}(kotlin.Any?;kotlin.Any?){}kotlin.Any?
+    -> app  (starts with a source path: matches no package -> root-package fallback = the app)
+_kfun:<P>/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge$1.org.example.core.CoreBadge$1#$clinit_trigger#static(){}
+    -> app  (starts with a source path: matches no package -> root-package fallback = the app)
+_kfun:<P>/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge$1.org.example.core.CoreBadge$1#<init>(kotlin.Int){}
+    -> app  (starts with a source path: matches no package -> root-package fallback = the app)
+_kfun:<P>/lib-build/core/src/commonMain/kotlin/org/example/core/Core.kt:org.example.core.CoreBadge$1.org.example.core.CoreBadge$1#invoke(androidx.compose.runtime.Composer?;kotlin.Int){}
+    -> app  (starts with a source path: matches no package -> root-package fallback = the app)
+_kfun:org.example.core#CoreBadge(androidx.compose.runtime.Composer?;kotlin.Int){}
+    -> core (package org.example.core)
+_kfun:org.example.core#coreLine(){}kotlin.String
+    -> core (package org.example.core)
+
+# votes: app 5, core 3 -> the object was credited to the app. The private lambda of the @Composable CoreBadge (4 symbols)
+# is what tips it: K/N qualifies private and local declarations with their source file. A Composable file with lambdas
+# (the user's BotAvator.kt) behaves the same way, hence 'ios-framework=9 shared-presentation-feature-home=0'.
+# Not a count by link unit: 0.2.10 classifies object by object, by symbol package; the object was simply misclassified.
+# What it affected: the label of the count and the grouping for the duplicate-name check (#91) of the patch; the patch itself
+# merged all objects, so the edit was still applied (the 0.2.10 gate's screen check of this case shows core-10).
+
+## fix (this branch): an archive under '<label>-per-file-cache/' belongs to the library whose klib is klib/<label>/<label>.klib;
+## other archives (the program's) are classified by symbol, now reading the package after a source path ('.kt:') and in 'lib<package>' initializers
+## after, same project, plugin 0.2.11-imh1 (see included-build-hint-gradle-9.6.1.txt):
+changed objects: app=3 lib-build-core=1 feature=0
+symbols: app defined=100 kept_in_merged=100
+symbols: lib-build-core defined=8 kept_in_merged=8

@@ -78,7 +78,7 @@ P = os.path.join(WORK, "KmpHr")
 os.chmod(os.path.join(P, "gradlew"), 0o755)
 s = open(os.path.join(P, "settings.gradle.kts")).read()
 open(os.path.join(P, "settings.gradle.kts"), "w").write(
-    s.replace("pluginManagement {\n    repositories {\n", f'pluginManagement {{\n    repositories {{\n        maven {{ url = uri("{a.plugin_repo}") }}\n', 1))
+    s.replace("pluginManagement {\n    repositories {\n", f'pluginManagement {{\n    repositories {{\n        exclusiveContent {{ forRepository {{ maven {{ url = uri("{a.plugin_repo}") }} }}; filter {{ includeGroupByRegex("com\\\\.solufee\\\\.cmp(\\\\..*)?") }} }}\n', 1))
 b = open(os.path.join(P, "shared/build.gradle.kts")).read()
 open(os.path.join(P, "shared/build.gradle.kts"), "w").write(
     b.replace("    alias(libs.plugins.composeCompiler)\n}", f'    alias(libs.plugins.composeCompiler)\n    id("com.solufee.cmp.hotreload") version "{a.plugin_version}"\n}}', 1))

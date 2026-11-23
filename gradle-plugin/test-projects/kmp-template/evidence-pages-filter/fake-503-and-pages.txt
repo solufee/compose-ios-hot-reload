@@ -1,0 +1,59 @@
+# Pages repository with and without the group filter, against a repository that answers 503 for paths it does not have
+# fake-503-repo.py: serves com/solufee/cmp/... from the published 0.2.10 Maven files (200, or 404 when missing), 503 for anything else
+# (what GitHub Pages sometimes does). Each project is a fresh wizard template; the repository is first in pluginManagement; plugin 0.2.10.
+
+## A: no filter (the README example up to 0.2.10, pointed at the fake repository)
+        maven { url = uri("http://127.0.0.1:<PORT>/"); isAllowInsecureProtocol = true }
+$ ./gradlew hotReloadCheckToolchain
+* What went wrong:
+Plugin [id: 'org.jetbrains.compose', version: '1.12.2', apply: false] was not found in any of the following sources:
+- Plugin Repositories (could not resolve plugin artifact 'org.jetbrains.compose:org.jetbrains.compose.gradle.plugin:1.12.2')
+  Searched in the following repositories:
+    maven(http://127.0.0.1:<PORT>/)
+    Google
+    MavenRepo
+    Gradle Central Plugin Repository
+BUILD FAILED in 4s
+# requests the fake repository got:
+503 HEAD /org/jetbrains/compose/org.jetbrains.compose.gradle.plugin/1.12.2/org.jetbrains.compose.gradle.plugin-1.12.2.pom
+503 HEAD /org/jetbrains/compose/org.jetbrains.compose.gradle.plugin/1.12.2/org.jetbrains.compose.gradle.plugin-1.12.2.pom
+503 HEAD /org/jetbrains/compose/org.jetbrains.compose.gradle.plugin/1.12.2/org.jetbrains.compose.gradle.plugin-1.12.2.pom
+# -> Gradle asked the first repository for the Compose plugin, got 503 and gave up without asking Google, Maven Central or the plugin portal.
+
+## B: with the filter (the new README example, pointed at the fake repository)
+        exclusiveContent {
+            forRepository { maven { url = uri("http://127.0.0.1:<PORT>/"); isAllowInsecureProtocol = true } }
+            filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") }
+        }
+$ ./gradlew hotReloadCheckToolchain
+CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+BUILD SUCCESSFUL in 3s
+# requests the fake repository got (only the plugin's own group; the 404 is the plugin marker's jar, which a marker never has):
+200 HEAD /com/solufee/cmp/hotreload/com.solufee.cmp.hotreload.gradle.plugin/0.2.10/com.solufee.cmp.hotreload.gradle.plugin-0.2.10.pom
+200 GET /com/solufee/cmp/hotreload/com.solufee.cmp.hotreload.gradle.plugin/0.2.10/com.solufee.cmp.hotreload.gradle.plugin-0.2.10.pom.sha1
+404 HEAD /com/solufee/cmp/hotreload/com.solufee.cmp.hotreload.gradle.plugin/0.2.10/com.solufee.cmp.hotreload.gradle.plugin-0.2.10.jar
+200 HEAD /com/solufee/cmp/cmp-hot-reload-gradle-plugin/0.2.10/cmp-hot-reload-gradle-plugin-0.2.10.pom
+200 GET /com/solufee/cmp/cmp-hot-reload-gradle-plugin/0.2.10/cmp-hot-reload-gradle-plugin-0.2.10.pom.sha1
+200 HEAD /com/solufee/cmp/cmp-hot-reload-gradle-plugin/0.2.10/cmp-hot-reload-gradle-plugin-0.2.10.module
+200 GET /com/solufee/cmp/cmp-hot-reload-gradle-plugin/0.2.10/cmp-hot-reload-gradle-plugin-0.2.10.module.sha1
+200 HEAD /com/solufee/cmp/cmp-hot-reload-gradle-plugin/0.2.10/cmp-hot-reload-gradle-plugin-0.2.10.jar
+200 GET /com/solufee/cmp/cmp-hot-reload-gradle-plugin/0.2.10/cmp-hot-reload-gradle-plugin-0.2.10.jar.sha1
+
+## C: the new README example verbatim (real GitHub Pages), fresh wizard template
+        exclusiveContent {
+            forRepository { maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") } }
+            filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") }
+        }
+$ ./gradlew hotReloadCheckToolchain
+CMP hot reload: toolchain OK (interfaceVersion 8, Kotlin 2.5.255-SNAPSHOT, Compose 1.13.0-rc01, Xcode 27.2 Build version 27B52)
+BUILD SUCCESSFUL in 2s
+$ ./gradlew hotReloadPackage
+package timing ms=116313 compile=106094 merge=8598 embed+bundle=1621 embed=788 bundle=833 baseline-wait=0
+BUILD SUCCESSFUL in 1m 58s
+$ ./gradlew hotReloadCheckToolchain --refresh-dependencies --info   (Gradle queries the repositories again)
+BUILD SUCCESSFUL in 16s
+# hosts Gradle sent requests to, and how often; solufee.github.io only for com/solufee/cmp/... paths:
+https://dl.google.com 4 request(s)
+https://plugins.gradle.org 2 request(s)
+https://repo.maven.apache.org 3 request(s)
+https://solufee.github.io compose-ios-hot-reload/maven/com/solufee/cmp/hotreload/com.solufee.cmp.hotreload.gradle.plugin/0.2.10/com.solufee.cmp.hotreload.gradle.plugin-0.2.10.jar (HEAD: the marker's jar, which never exists; the marker pom and the plugin itself were already in the Gradle cache)

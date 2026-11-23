@@ -153,4 +153,41 @@ class CompositeBuildTest {
         assertTrue("create(\"iosSharedMain\") { srcDir(\"src/iosSharedMain/kotlin\"); dependsOn(\"commonMain\") }" in w, w)
         assertEquals(emptyList<File>(), HotReloadPlugin.uncollectedSourceSets(util, fragments.flatMap { it.dirs } + File(util, "src/iosSharedMain/kotlin").path))
     }
+
+    @Test
+    fun `the includedModule hint names the build and the project path, whether Gradle quotes the display name or not (#116)`() {
+        val snippet = "cmpHotReload { includedModule(\"lib-build\", \":core\") }"
+        // from Gradle's ProjectComponentIdentifier (build name, project path): what the plugin passes
+        assertTrue(Kmp.includedBuildHint("project ':lib-build:core'", "lib-build", ":core").endsWith(snippet))
+        // without it, the display name: unquoted (Gradle 8) and quoted (newer Gradle, the user's report)
+        assertTrue(Kmp.includedBuildHint("project :lib-build:core", null, null).endsWith(snippet))
+        val quoted = Kmp.includedBuildHint("project ':lib-build:core'", null, null)
+        assertTrue(quoted.endsWith(snippet), quoted)
+        assertTrue(quoted.startsWith("dependency klibs: project :core comes from the included build lib-build and"), quoted)
+        assertFalse("'" in quoted, quoted)
+    }
+
+    @Test
+    fun `nested project paths keep every level of the path inside the included build (#116)`() {
+        // the user's shape: build gooze, project :gooze-widget (display name project ':gooze:gooze-widget')
+        assertEquals("gooze" to ":gooze-widget", Kmp.includedModuleHint("project ':gooze:gooze-widget'", "gooze", ":gooze-widget"))
+        assertEquals("gooze" to ":gooze-widget", Kmp.includedModuleHint("project ':gooze:gooze-widget'", null, null))
+        // two levels inside the included build
+        assertEquals("gooze" to ":feature:widget", Kmp.includedModuleHint("project ':gooze:feature:widget'", "gooze", ":feature:widget"))
+        assertEquals("gooze" to ":feature:widget", Kmp.includedModuleHint("project :gooze:feature:widget", null, null))
+        val line = Kmp.includedBuildHint("project ':gooze:feature:widget'", "gooze", ":feature:widget")
+        assertTrue(line.endsWith("cmpHotReload { includedModule(\"gooze\", \":feature:widget\") }"), line)
+    }
+
+    @Test
+    fun `the dependency report is printed by package and run every time, by a hot reload only when it changed (#116)`() {
+        val f = File(tmp, "work/" + com.solufee.cmp.hotreload.tasks.HotReloadTask.REPORT_FILE)
+        val a = listOf("dependency klibs: 8 linked", Kmp.includedBuildHint("project :lib-build:util", "lib-build", ":util"))
+        assertTrue(com.solufee.cmp.hotreload.tasks.HotReloadTask.reportNow(f, a, always = true))     // package / run
+        assertFalse(com.solufee.cmp.hotreload.tasks.HotReloadTask.reportNow(f, a, always = false))   // hotReload, same set
+        assertTrue(com.solufee.cmp.hotreload.tasks.HotReloadTask.reportNow(f, a, always = true))     // the next run prints it again
+        val b = a + Kmp.includedBuildHint("project :lib-build:core", "lib-build", ":core")
+        assertTrue(com.solufee.cmp.hotreload.tasks.HotReloadTask.reportNow(f, b, always = false))    // hotReload, the set changed
+        assertFalse(com.solufee.cmp.hotreload.tasks.HotReloadTask.reportNow(f, b, always = false))
+    }
 }

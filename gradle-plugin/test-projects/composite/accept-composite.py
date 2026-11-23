@@ -229,7 +229,7 @@ shutil.copy(os.path.join(WORK, "KmpHr/gradlew"), os.path.join(P, "gradlew"))
 shutil.copytree(os.path.join(WORK, "KmpHr/gradle/wrapper"), os.path.join(P, "gradle/wrapper"))
 os.chmod(os.path.join(P, "gradlew"), 0o755)
 for s in ["settings.gradle.kts", "lib-build/settings.gradle.kts"]:
-    t = open(os.path.join(P, s)).read().replace("// HR_PLUGIN_REPOSITORY", f'maven {{ url = uri("{a.plugin_repo}") }}')
+    t = open(os.path.join(P, s)).read().replace("// HR_PLUGIN_REPOSITORY", f'exclusiveContent {{ forRepository {{ maven {{ url = uri("{a.plugin_repo}") }} }}; filter {{ includeGroupByRegex("com\\\\.solufee\\\\.cmp(\\\\..*)?") }} }}')
     open(os.path.join(P, s), "w").write(t)
 for b in ["app/build.gradle.kts", "lib-build/demo/build.gradle.kts"]:
     t = open(os.path.join(P, b)).read().replace("HR_PLUGIN_VERSION", a.plugin_version)

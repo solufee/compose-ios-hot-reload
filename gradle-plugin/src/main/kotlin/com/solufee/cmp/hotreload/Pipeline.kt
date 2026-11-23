@@ -304,16 +304,26 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         logger.lifecycle("compile: kotlinc-native")
         // The output is echoed as before; it also travels with the failure so a plugin incompatibility can be named (#76).
         val cmd = listOf(s.kotlinc) + args
-        val r = Proc.run(cmd, env = compileEnvironment(cacheOnly), logger = logger)
+        // #120: a temp directory of its own, removed when the compiler has exited (it unpacks included<digits> there)
+        val tmp = File(work, "tmp/direct-${ProcessHandle.current().pid()}-${System.nanoTime()}")
+        Daemons.ensurePrivateDir(tmp)
+        val r = try {
+            Proc.run(cmd, env = compileEnvironment(cacheOnly, tmp), logger = logger)
+        } finally {
+            tmp.deleteRecursively()
+        }
         if (r.exit != 0) throw CompileFailed("CMP hot reload: `${cmd.joinToString(" ").take(300)}` failed (exit ${r.exit})", r.output)
     }
 
     /**
      * Environment of a direct compile. INTERFACE §3.3 #4: the package (host link) compile must not run with
-     * KONAN_HOT_RELOAD_CACHE_ONLY; Proc also scrubs it from the caller's environment.
+     * KONAN_HOT_RELOAD_CACHE_ONLY; Proc also scrubs it from the caller's environment. #120: with [tmp], the compiler JVM
+     * (JAVA_OPTS, read by kotlinc-native's run_konan) and the tools it starts (TMPDIR) use that directory.
      */
-    fun compileEnvironment(cacheOnly: Boolean): Map<String, String> =
-        mapOf("JAVA_HOME" to s.javaHome) + (if (cacheOnly) mapOf("KONAN_HOT_RELOAD_CACHE_ONLY" to "1") else emptyMap())
+    fun compileEnvironment(cacheOnly: Boolean, tmp: File? = null): Map<String, String> =
+        mapOf("JAVA_HOME" to s.javaHome) + (if (cacheOnly) mapOf("KONAN_HOT_RELOAD_CACHE_ONLY" to "1") else emptyMap()) +
+            (if (tmp != null) mapOf("TMPDIR" to tmp.path,
+                "JAVA_OPTS" to listOfNotNull(System.getenv("JAVA_OPTS")?.takeIf { it.isNotBlank() }, "-Djava.io.tmpdir=${tmp.path}").joinToString(" ")) else emptyMap())
 
     /** Environment of merge-payloads.py. INTERFACE §3.3 #1: KALDO_KEEP_COMPACT_UNWIND=1. */
     fun mergeEnvironment(packages: List<String>): Map<String, String> = buildMap {
@@ -708,7 +718,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             Proc.check(listOf("ar", "x", archive.path), cwd = dir, echo = false)
             dir.listFiles { f -> f.name.endsWith(".o") }!!.sorted().forEach { o ->
                 // One module (e.g. the KMP template's `shared`): every rebuilt object is its own.
-                val m = moduleOf(s.modules, modulePackages) { definedSymbols(o) }
+                val m = moduleOfArchive(a, s.modules) ?: moduleOf(s.modules, modulePackages) { definedSymbols(o) }
                     ?: throw GradleException("CMP hot reload: cannot tell which module ${o.path} belongs to (no Kotlin symbol of a known package)")
                 objects.getOrPut(m) { mutableListOf() } += o
             }
@@ -1002,14 +1012,34 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         fun moduleOf(modules: List<HrModule>, packages: Map<HrModule, Set<String>>, symbols: () -> Set<String>): HrModule? =
             if (modules.size == 1) modules.single() else classify(symbols(), packages)
 
+        /**
+         * #116: the module whose code a per-file cache archive holds, from its path: a library's klib is
+         * `klib/<label>/<label>.klib` ([com.solufee.cmp.hotreload.HrSettings.klibOf]) and the compiler keeps its per-file caches
+         * under `<label>-per-file-cache/`; the program's (the app's) directory has a hash name and is left to [classify].
+         */
+        fun moduleOfArchive(archive: String, modules: List<HrModule>): HrModule? {
+            val unit = archive.split('/').lastOrNull { it.endsWith(PER_FILE_CACHE) }?.removeSuffix(PER_FILE_CACHE) ?: return null
+            return modules.firstOrNull { it.kind != ModuleKind.APP && it.label == unit }
+        }
+
+        private const val PER_FILE_CACHE = "-per-file-cache"
+
         fun classify(symbols: Set<String>, packages: Map<HrModule, Set<String>>): HrModule? {
             val votes = mutableMapOf<HrModule, Int>()
             for (sym in symbols) {
                 // Functions, classes and globals carry the package after their prefix; file initializers
-                // (`__Konan_init_<hash>:<package>...`) after the colon.
-                val rest = KOTLIN_SYMBOL_PREFIXES.firstOrNull { sym.startsWith(it) }?.let { sym.removePrefix(it) }
+                // (`__Konan_init_<hash>:<package>...`) after the colon. #116: private and local declarations (e.g. Compose
+                // lambdas) are qualified with their source file (`_kfun:/path/File.kt:<package>...`), and a file's archive
+                // initializer names the archive (`__Konan_init_<klib>:lib<package>.<hash>.a`): the package follows.
+                val rest = (KOTLIN_SYMBOL_PREFIXES.firstOrNull { sym.startsWith(it) }?.let { sym.removePrefix(it) }
                     ?: sym.takeIf { it.startsWith("__Konan_init_") && ':' in it }?.substringAfter(':')
-                    ?: continue
+                    ?: continue).let { r ->
+                        when {
+                            r.startsWith("/") && ".kt:" in r -> r.substringAfter(".kt:")
+                            sym.startsWith("__Konan_init_") && r.startsWith("lib") && r.endsWith(".a") -> r.removePrefix("lib")
+                            else -> r
+                        }
+                    }
                 var best: HrModule? = null
                 var bestLen = -1
                 for ((m, pkgs) in packages) for (p in pkgs) {

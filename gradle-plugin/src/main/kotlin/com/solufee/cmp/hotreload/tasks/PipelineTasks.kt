@@ -62,6 +62,25 @@ abstract class HotReloadTask : DefaultTask() {
     @get:Internal
     abstract val compilerPluginIds: ListProperty<String>
 
+    /** #122: the Gradle property kotlin.internal.collectFUSMetrics (unset: null). */
+    @get:Internal
+    abstract val kotlinFusMetrics: Property<String>
+
+    /** #122: <Gradle user home>/kotlin-profile, where the Kotlin plugin keeps its build statistics. */
+    @get:Internal
+    abstract val kotlinProfileDir: Property<String>
+
+    /** #122: warns once per [session] when the Kotlin plugin's statistics slow every build down (see [KotlinProfileHint]). */
+    protected fun warnKotlinProfile(session: String) {
+        val dir = kotlinProfileDir.orNull ?: return
+        com.solufee.cmp.hotreload.KotlinProfileHint.once(session,
+            com.solufee.cmp.hotreload.KotlinProfileHint.warning(File(dir), kotlinFusMetrics.orNull))?.let { logger.warn(it) }
+    }
+
+    /** #116: projects of other builds linked as their klibs, "display name<TAB>build name<TAB>project path". */
+    @get:Internal
+    abstract val externalProjects: ListProperty<String>
+
     /** Settings with the dependency klibs that are linked (the toolchain's own copies taken out). */
     /** [report]: print the dependency summary (only the package, reload and release tasks do; library compiles stay quiet). */
     /** #76: each module gets its project compiler plugin jars (the Compose plugin excluded: the toolchain's own is used). */
@@ -84,7 +103,7 @@ abstract class HotReloadTask : DefaultTask() {
         pipeline.packageApp(tools, daemons, beside = { Compat(s, logger, pipeline, tools).baseline(daemons) })
     }
 
-    protected fun effectiveSettings(report: Boolean = true): HrSettings {
+    protected fun effectiveSettings(report: Boolean = true, reportAlways: Boolean = true): HrSettings {
         val s = withCompilerPlugins(settings.get())
         val ids = externalKlibIds.getOrElse(emptyList())
         if (ids.isEmpty()) return s
@@ -93,24 +112,46 @@ abstract class HotReloadTask : DefaultTask() {
             .filter { it.file.name.endsWith(".klib") || it.file.isDirectory }
         val fromSource = fromSourceModules.getOrElse(emptyList()).map { it.split("|") }
         val (dropped, deps) = all.partition { d -> fromSource.any { f -> com.solufee.cmp.hotreload.Kmp.isOwnBuildKlib(d, f[0], f[1], File(f[2]), File(f[3])) } }
-        if (report && dropped.isNotEmpty()) {
-            logger.lifecycle("dependency klibs: left out ${dropped.size} klib(s) of included-build modules compiled from source: " +
-                dropped.joinToString { it.id })
-        }
         val toolchain = Pipeline.externalKlibs(File(s.klibList).readLines(), File(s.dist))
-        val sel = com.solufee.cmp.hotreload.Kmp.selectKlibs(toolchain, File(s.dist, "klib/common/stdlib"), deps, composeVersion.get(), if (report) logger else null)
+        val sel = com.solufee.cmp.hotreload.Kmp.selectKlibs(toolchain, File(s.dist, "klib/common/stdlib"), deps, composeVersion.get(),
+            if (report) logger else null, summary = false)
         if (report) {
+            val lines = mutableListOf<String>()
+            if (dropped.isNotEmpty()) {
+                lines += "dependency klibs: left out ${dropped.size} klib(s) of included-build modules compiled from source: " + dropped.joinToString { it.id }
+            }
+            lines += com.solufee.cmp.hotreload.Kmp.selectionReport(sel)
             // Composite build: projects of another build that were not declared with includedModule(...) are linked
             // as the klibs their build produces (only this build's projects and declared modules are filtered out).
+            val projects = externalProjects.getOrElse(emptyList()).map { it.split('\t') }.filter { it.size == 3 }.associate { it[0] to (it[1] to it[2]) }
             deps.filter { it.id.startsWith("project ") && it.file.path in sel.klibs }.map { it.id }.distinct().forEach { id ->
-                val path = id.removePrefix("project ").trim()
-                val build = path.trim(':').substringBefore(':')
-                val module = ":" + path.trim(':').substringAfter(':', "")
-                logger.lifecycle("dependency klibs: $id comes from the included build $build and is linked as the klib that build produces; " +
-                    "its code is not hot reloaded (a change there restarts the app). To hot reload it: cmpHotReload { includedModule(\"$build\", \"$module\") }")
+                lines += com.solufee.cmp.hotreload.Kmp.includedBuildHint(id, projects[id]?.first, projects[id]?.second)
             }
+            reportOnce(File(s.workDir, REPORT_FILE), lines, reportAlways)
         }
         return s.copy(extraKlibs = sel.klibs, droppedToolchainKlibs = sel.toolchainDropped)
+    }
+
+    /**
+     * #116: the dependency report is printed by every package, run and release check; a hot reload (and each change in
+     * watch mode) prints it only when it differs from the last one printed, otherwise at info level.
+     */
+    private fun reportOnce(file: File, lines: List<String>, always: Boolean) {
+        if (reportNow(file, lines, always)) lines.forEach { logger.lifecycle(it) } else lines.forEach { logger.info(it) }
+    }
+
+    companion object {
+        /** #116: the dependency report last printed (hotReload prints it again only when it changed). */
+        const val REPORT_FILE = "dependency-report.txt"
+
+        /** True (and [file] updated) when the report is printed: [always], or it differs from the one last printed. */
+        fun reportNow(file: File, lines: List<String>, always: Boolean): Boolean {
+            val text = lines.joinToString("\n")
+            if (!always && file.isFile && file.readText() == text) return false
+            file.parentFile.mkdirs()
+            file.writeText(text)
+            return true
+        }
     }
 
     protected fun tools(s: HrSettings) = Tools.extract(File(s.workDir), logger)
@@ -202,6 +243,9 @@ abstract class PackageTask : HotReloadTask() {
  * every saved change.
  */
 abstract class ReloadTask : HotReloadTask() {
+    internal fun warnKotlinProfileAtWatch() =
+        warnKotlinProfile(if (continuous.get()) "watch:${settings.get().rootDir}" else "watch-once:${System.nanoTime()}")
+
     init {
         outputs.upToDateWhen { false }
         noWarm.convention(false)
@@ -229,7 +273,7 @@ abstract class ReloadTask : HotReloadTask() {
 
     @TaskAction
     fun reload() {
-        val s = effectiveSettings()
+        val s = effectiveSettings(reportAlways = false)
         val tools = tools(s)
         val daemons = daemons(s, tools)
         val pipeline = Pipeline(s, logger)
@@ -298,6 +342,8 @@ abstract class ReloadTask : HotReloadTask() {
 class WatchAnnounce : org.gradle.api.Action<org.gradle.api.Task> {
     override fun execute(task: org.gradle.api.Task) {
         val t = task as ReloadTask
+        // #122: a continuous watch warns at its first build only (once per project in this Gradle daemon); a single run each time
+        t.warnKotlinProfileAtWatch()
         val files = t.watchedSources.files.sumOf { f -> if (f.isDirectory) f.walkTopDown().count { it.isFile } else 1 }
         if (t.continuous.get()) {
             t.logger.lifecycle("hotReloadWatch: watching $files source and resource files of the hot modules; save a change to reload, Ctrl-C to stop")
@@ -321,6 +367,8 @@ abstract class RunTask : HotReloadTask() {
     @TaskAction
     fun run() {
         val s = settings.get()
+        // #122: once per hotReloadRun (a new app session)
+        warnKotlinProfile("run:${System.nanoTime()}")
         // #93: after hotReloadClean (or before the first package) there is nothing to launch; package once first. An
         // existing package is launched as it is (hotReloadPackage is never up to date, so depending on it would repackage
         // on every run).

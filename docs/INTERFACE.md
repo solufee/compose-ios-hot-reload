@@ -104,6 +104,14 @@ java -cp <compilerJar>:<classes> HrCompileDaemon <compilerJar> <socketPath>
   `org.jetbrains.kotlin.cli.klib.Main.exec(stdout, stderr, args)`（返回退出码、不会结束进程），stdout 写入
   输出文件、stderr 写入守护进程日志；响应同上（`OK <ms>` / `ERR <exitCode> <ms>`），日志行为 `KLIB <命令> -> ...`。
   分类器用它在热 JVM 里做 dump，省掉每次两次 JVM 启动。
+- **临时目录（#120）**：Kotlin/Native 链接时把 klib 里的静态库解到 `java.io.tmpdir/included<数字>/`（skiko 约 120 MB），
+  只在 JVM 退出时删除；常驻进程不退出，这些目录会一直堆积。启动时加 `-Dhr.cleanIncluded=true`，守护进程在每个请求前后
+  各列一次 `java.io.tmpdir` 下的 `included*` 目录，请求结束后删掉这次新出现的（只删目录名以 `included` 开头、请求前不存在的；
+  请求是串行的，删的时候没有别的请求在用）。不加这个属性时行为和以前一样。
+  Gradle 插件启动守护进程时给每个进程一个自己的临时目录：`-Djava.io.tmpdir=<socket 目录>/tmp-compile`（或 `tmp-klib`），
+  同时设置 `TMPDIR`，并加上 `-Dhr.cleanIncluded=true`；停止守护进程时把这两个目录整个删掉。
+  插件的 `kotlinc-native` 后备路径每次用 `<workDir>/tmp/direct-*`（`JAVA_OPTS=-Djava.io.tmpdir=…`、`TMPDIR`），编译结束后删除。
+  系统 `$TMPDIR` 里已有的 `included*` 插件不碰。
 
 ### 2.2 `hrc.py`
 

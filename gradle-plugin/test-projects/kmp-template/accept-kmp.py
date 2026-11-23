@@ -389,7 +389,7 @@ fun CoreBadge() {
     # ---------------------------------------------------------------- 2. TRYOUT section 7, steps 1-4
     say("## 2. TRYOUT section 7: plugin repository, plugin line, local.properties, .gitignore")
     edit(os.path.join(P, "settings.gradle.kts"), "pluginManagement {\n    repositories {\n",
-         f'pluginManagement {{\n    repositories {{\n        maven {{ url = uri("{a.plugin_repo}") }}\n')
+         f'pluginManagement {{\n    repositories {{\n        exclusiveContent {{ forRepository {{ maven {{ url = uri("{a.plugin_repo}") }} }}; filter {{ includeGroupByRegex("com\\\\.solufee\\\\.cmp(\\\\..*)?") }} }}\n')
     edit(build, "plugins {\n", f'plugins {{\n    id("com.solufee.cmp.hotreload") version "{a.plugin_version}"\n')
     write(os.path.join(P, "local.properties"),
           f"cmp.hotreload.toolchainDir={a.toolchain}\ncmp.hotreload.simulatorUdid={a.udid}\ncmp.hotreload.port={a.port}\n" +

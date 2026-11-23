@@ -36,8 +36,8 @@ class Daemons(private val s: HrSettings, private val logger: Logger) {
             Proc.check(listOf("${s.javaHome}/bin/javac", "-d", classes.path, tools.daemonSource.path), logger = logger)
         }
         File(s.workDir).mkdirs()
-        start(s.compileSocket, log("compile"), cacheOnly = true, xmx = "3G", classes = classes)
-        start(s.klibSocket, log("klib"), cacheOnly = false, xmx = "1500m", classes = classes)
+        start(s.compileSocket, log("compile"), cacheOnly = true, xmx = "3G", classes = classes, tmp = tmpDir(s, "compile"))
+        start(s.klibSocket, log("klib"), cacheOnly = false, xmx = "1500m", classes = classes, tmp = tmpDir(s, "klib"))
         stateFile.writeText(expected)
         Files.setPosixFilePermissions(stateFile.toPath(), PosixFilePermissions.fromString("rw-------"))
         checkPrivate()
@@ -46,18 +46,17 @@ class Daemons(private val s: HrSettings, private val logger: Logger) {
 
     private fun state(tools: Tools) = stateOf(s, tools.shas["HrCompileDaemon.java"])
 
-    private fun start(sock: String, log: File, cacheOnly: Boolean, xmx: String, classes: File) {
-        val cmd = listOf(
-            "${s.javaHome}/bin/java", "-ea", "-Xmx$xmx", "-XX:+UseSerialGC",
-            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=20", "-Dkonan.home=${s.dist}",
-            "-cp", "${s.compilerJar}:${classes.path}", "HrCompileDaemon", s.compilerJar, sock,
-        )
-        val pb = ProcessBuilder(cmd)
+    private fun start(sock: String, log: File, cacheOnly: Boolean, xmx: String, classes: File, tmp: File) {
+        // #120: a temp directory of its own; the daemon removes what each request unpacked there (included<digits>)
+        tmp.deleteRecursively()
+        ensurePrivateDir(tmp)
+        val pb = ProcessBuilder(command(s, sock, xmx, classes, tmp))
             .redirectErrorStream(true)
             .redirectOutput(ProcessBuilder.Redirect.to(log))
             .redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
         pb.environment().remove("KONAN_HOT_RELOAD_CACHE_ONLY")
         if (cacheOnly) pb.environment()["KONAN_HOT_RELOAD_CACHE_ONLY"] = "1"
+        pb.environment()["TMPDIR"] = tmp.path
         val p = pb.start()
         val deadline = System.currentTimeMillis() + 60_000
         while (System.currentTimeMillis() < deadline) {
@@ -92,6 +91,9 @@ class Daemons(private val s: HrSettings, private val logger: Logger) {
         sockets.forEach { File(it).delete() }
         stateFile.delete()
         if (pids.isNotEmpty()) logger.lifecycle("CMP hot reload: stopped compile daemons $pids")
+        // #120: the daemons' own temp directories go with them (only these two directories, nothing else in TMPDIR)
+        val freed = KINDS.map { tmpDir(s, it) }.filter { it.isDirectory }.sumOf { d -> d.walkBottomUp().filter { it.isFile }.sumOf { it.length() }.also { d.deleteRecursively() } }
+        if (freed > 1024 * 1024) logger.lifecycle("CMP hot reload: removed the daemons' temp directories (${freed / (1024 * 1024)} MB)")
     }
 
     /** Bytes the daemon has logged so far; pass to [logSince] after a failed request. */
@@ -118,6 +120,23 @@ class Daemons(private val s: HrSettings, private val logger: Logger) {
     }
 
     companion object {
+        val KINDS = listOf("compile", "klib")
+
+        /** #120: a daemon's private temp directory, next to its socket ([HrSettings.socketDir], 0700). */
+        fun tmpDir(s: HrSettings, kind: String): File = File(s.socketDir, "tmp-$kind")
+
+        /**
+         * The daemon's command line. #120: java.io.tmpdir is the daemon's own directory (Kotlin/Native unpacks the static
+         * libraries of a link there, `included<digits>`, and deletes them only at JVM exit), and `-Dhr.cleanIncluded=true`
+         * makes the daemon remove the ones each request created (daemon/HrCompileDaemon.java).
+         */
+        fun command(s: HrSettings, sock: String, xmx: String, classes: File, tmp: File): List<String> = listOf(
+            "${s.javaHome}/bin/java", "-ea", "-Xmx$xmx", "-XX:+UseSerialGC",
+            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=20", "-Dkonan.home=${s.dist}",
+            "-Djava.io.tmpdir=${tmp.path}", "-Dhr.cleanIncluded=true",
+            "-cp", "${s.compilerJar}:${classes.path}", "HrCompileDaemon", s.compilerJar, sock,
+        )
+
         /**
          * What the running daemons were started with; any difference restarts them. #90: the JDK is part of it (a
          * daemon on the old JDK would keep failing on a plugin that needs the new one after the user switched JDK).

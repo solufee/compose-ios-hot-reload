@@ -91,7 +91,10 @@ my-app/
 ```kotlin
 pluginManagement {
     repositories {
-        maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") }
+        exclusiveContent {
+            forRepository { maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") } }
+            filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") }
+        }
     }
 }
 rootProject.name = "my-app"
@@ -102,7 +105,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.10"
+    id("com.solufee.cmp.hotreload") version "0.2.11"
 }
 
 cmpHotReload {
@@ -334,6 +337,13 @@ Ctrl-C 结束。它用的是 Gradle 的连续构建（`-t`，也可以写 `./gra
 `composeResources/`，等改动停下来（默认 250 ms 静默期）再跑一次，配置缓存和编译守护进程一直复用；某一次编译出错只让那一次失败，
 继续监视。不加 `-t` 时 `hotReloadWatch` 只跑一次并提示加 `-t`。
 
+**连续保存时觉得慢（#122）**：只有 `~/.gradle/kotlin-profile` 很大时才会受影响，先看文件数：`find ~/.gradle/kotlin-profile -maxdepth 1 -type f | wc -l`；几千个以内感觉不到。Kotlin Gradle 插件把构建统计（FUS）存在这个目录。这是所有 Kotlin 构建共用的目录，
+不会自动清理；每次构建结束时它会把里面的文件全部列一遍、按修改时间排序。文件到了几万个时，每次热重载在补丁上屏之后
+Gradle 还要再忙 5–10 秒（实测 30052 个文件：4.7–10.2 秒；关掉统计后 0.04 秒）。上屏不受影响，但下一次保存要等它跑完。规避办法二选一：
+在 `gradle.properties`（工程的或 `~/.gradle/gradle.properties`）里加 `kotlin.internal.collectFUSMetrics=false`；或者自己删掉
+`~/.gradle/kotlin-profile` 里的旧文件。0.2.11 起，`hotReloadRun` 和 `hotReloadWatch` 启动时，如果这个目录超过 5000 个文件、且这个属性
+不是 `false`，会打一行警告（写明文件数），每个会话一次；插件不删这个目录，也不改这个属性。
+
 改到下列内容时，热替换不安全，会自动改为“温重启”：重新打包、重启 app，并回到原来的页面（插件 0.2.6 + 工具链 .10 实测：示例 app 改库模块约 10 秒、改 app 模块约 11.5 秒，其中重新打包约 4 秒和 5 秒；KMP 向导模板约 11.5 秒和 12.5 秒）：
 类的字段布局和构造函数、open/override/接口成员的签名、`inline` 函数、`suspend` 函数，以及新增顶层属性。输出里会逐行列出
 `WARM …` 原因，每条下面跟一行建议（`-> …`），然后是 `WARM OK ms=…`，最后一行是总结，例如
@@ -493,18 +503,24 @@ coroutines 1.10.2）和 `the toolchain's version is used …`（工具链里的�
 ```kotlin
 pluginManagement {
     repositories {
-        maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") }
+        exclusiveContent {
+            forRepository { maven { url = uri("https://solufee.github.io/compose-ios-hot-reload/maven/") } }
+            filter { includeGroupByRegex("com\\.solufee\\.cmp(\\..*)?") }
+        }
         // 下面是原来就有的 google { … }、mavenCentral()、gradlePluginPortal()，不动
     }
 }
 ```
+
+`exclusiveContent` 让这个仓库只用来找插件自己的组（`com.solufee.cmp`、`com.solufee.cmp.hotreload`）：GitHub Pages 对没有的路径偶尔回 5xx 而不是 404，
+Gradle 遇到 5xx 会直接失败、不再去问后面的仓库，不加过滤时 Android、Kotlin 等其他插件会随机解析失败。
 
 **第 2 步：`shared/build.gradle.kts`**（含 `MainViewController()` 的模块），在 `plugins { }` 里加一行：
 
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.10"
+    id("com.solufee.cmp.hotreload") version "0.2.11"
 }
 ```
 
@@ -602,7 +618,7 @@ Gradle 不让一个构建在配置阶段看到另一个构建的工程模型，�
 | included build 的模块怎么进来 | 由那个构建用它自己的 Kotlin 插件编成 klib，app 链接这个 klib | 插件用工具链直接编译它的源码，和主构建里的库模块一样 |
 | 改它的代码 | 能用，`hotReload` 会自动温重启（输出 `WARM external-klibs: …`） | 热替换（`compat: HOT`），规则同第 4、7 节 |
 | 它的 `expect`/`actual`、Compose 资源 | 资源会打进 app | 都支持（函数改签名、增删一对 `expect fun` 热替换；增删一对类、改资源时温重启） |
-| 打包时的提示 | 每个这样的模块打印一行 `… comes from the included build … To hot reload it: cmpHotReload { includedModule(…) }` | 无 |
+| 打包时的提示 | 每个这样的模块打印一行 `dependency klibs: project :<模块路径> comes from the included build <构建名> … To hot reload it: cmpHotReload { includedModule("<构建名>", ":<模块路径>") }`，片段可以直接复制。每次打包（`hotReloadPackage`，以及需要打包的 `hotReloadRun`）都打印；`hotReload` 只在这些行有变化时再打印（#116） | 无 |
 
 声明写在应用插件的 app 模块里，按依赖顺序写（被依赖的写在前面）：
 
