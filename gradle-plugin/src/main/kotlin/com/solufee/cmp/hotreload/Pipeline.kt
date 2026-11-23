@@ -346,8 +346,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
 
     /**
      * Inputs of a library klib (#21), sorted `kind key value` lines: the compiler arguments, every Kotlin source of the
-     * module (generated ones included) by path and sha256, each module klib it links by sha256 (an upstream module whose
-     * klib bytes changed rebuilds its dependents; klibs are deterministic, so an unchanged upstream rebuild does not),
+     * module (generated ones included) by path and sha256, each module klib it links by its ABI fingerprint (#124,
+     * [abiFingerprint]: a body-only edit upstream does not rebuild the dependents) or, when that is off or cannot be
+     * computed, by sha256 of its bytes (klibs are deterministic, so an unchanged upstream rebuild does not rebuild them),
      * and each dependency klib from Gradle by size and mtime. The toolchain's own klibs are covered by the arguments
      * (paths of the pinned toolchain) and the toolchain identity.
      */
@@ -363,10 +364,46 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         }
         s.libraries.filter { it.path in m.deps }.forEach { d ->
             val k = s.klibOf(d)
-            lines += "module ${d.label} ${if (k.isFile) Tools.sha256(k.readBytes()) else "missing"}"
+            lines += "module ${d.label} " + if (!k.isFile) "missing" else {
+                val sha = Tools.sha256(k.readBytes())
+                (if (s.abiFingerprint) abiFingerprint(k, sha) else null)?.let { "abi $it" } ?: "sha256 $sha"
+            }
         }
         externalKlibStamps().forEach { (path, stamp) -> lines += "external $path $stamp" }
         return lines.sorted()
+    }
+
+    /** #124: tools for [abiFingerprint] (extracted from the plugin jar on first use). */
+    private val fingerprintTools: Tools by lazy { Tools.extract(work, null) }
+
+    /** #124: runs `compat-classify.py abi-fingerprint`; replaced in tests. Returns its output (exit 0) or throws. */
+    internal var abiFingerprintCommand: (File) -> String = { klib ->
+        val cmd = listOf("python3", "-I", fingerprintTools.compatClassify.path, "abi-fingerprint", "--klib", klib.path,
+            "--klib-tool", s.klibTool, "--cache-dir", File(work, "abi-cache").path) +
+            (if (File(s.klibSocket).exists()) listOf("--daemon", s.klibSocket) else emptyList())
+        Proc.check(cmd, mapOf("JAVA_HOME" to s.javaHome), echo = false)
+    }
+
+    /**
+     * #124: what modules downstream of [klib] depend on (sha256 [sha]): its metadata dump (every declaration, private
+     * ones included, annotations, const values, Compose's stability annotations) and the IR of its inline functions;
+     * the bodies of non-inline functions are not part of it. Remembered next to the klib per [sha]. Null when it cannot be
+     * computed (the caller then uses [sha]: a failure only costs the downstream recompiles it would have saved).
+     */
+    fun abiFingerprint(klib: File, sha: String): String? {
+        val memo = File(klib.parentFile, klib.name + ".abi")
+        memo.takeIf { it.isFile }?.readText()?.trim()?.split(' ')?.takeIf { it.size == 2 && it[0] == sha }?.let { return it[1] }
+        return try {
+            val fp = abiFingerprintCommand(klib).trim().lines().last().trim()
+            if (!ABI_FINGERPRINT.matches(fp)) throw IllegalStateException("unexpected output: ${fp.take(80)}")
+            memo.writeText("$sha $fp\n")
+            fp
+        } catch (e: Exception) {
+            logger.warn("CMP hot reload: ABI fingerprint of ${klib.name} failed (${e.message?.lineSequence()?.firstOrNull()?.take(200)}); " +
+                "its dependents compare its klib bytes instead")
+            memo.delete()
+            null
+        }
     }
 
     /**
@@ -400,6 +437,108 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         if (!out.exists()) throw GradleException("CMP hot reload: compiler reported success but ${out.path} is missing")
         record.writeText(inputs.joinToString("\n", postfix = "\n"))
         return true
+    }
+
+    /** #129: where a module's last [libraryStamp] is kept (next to its klib and input record). */
+    fun klibStampFile(m: HrModule): File = File(s.klibOf(m).parentFile, "stamp.txt")
+
+    /**
+     * #129: what the reload's library pass found: modules skipped by their stamp, checked by their inputs (unchanged),
+     * compiled. The order is the compile order.
+     */
+    data class LibraryPass(val skipped: List<String>, val checked: List<String>, val compiled: List<String>, val ms: Long)
+
+    /** #129: the library modules in dependency order (each after the library modules it links). */
+    fun libraryOrder(): List<HrModule> {
+        val byPath = s.libraries.associateBy { it.path }
+        val done = linkedSetOf<String>()
+        fun visit(m: HrModule, stack: Set<String>) {
+            if (m.path in done) return
+            if (m.path in stack) throw GradleException("CMP hot reload: library modules depend on each other in a cycle: ${(stack + m.path).joinToString(" -> ")}")
+            m.deps.mapNotNull { byPath[it] }.forEach { visit(it, stack + m.path) }
+            done += m.path
+        }
+        s.libraries.forEach { visit(it, emptySet()) }
+        return done.map { byPath.getValue(it) }
+    }
+
+    /**
+     * #129: the reload's own library pass (instead of one Gradle task per module). Each module, in dependency order, is
+     * - skipped when its [libraryStamp] equals the one recorded after its last check or compile, its klib and input record
+     *   exist, and no module it links was compiled in this pass: then nothing it is compiled from can have changed;
+     * - otherwise handed to the same check as the per-module task ([compileKlibIfChanged]: sources hashed, upstream
+     *   modules by ABI fingerprint (#124)), which compiles it only when its inputs differ.
+     * After each check or compile the stamp is recorded again.
+     */
+    fun compileLibrariesInReload(daemons: Daemons?): LibraryPass {
+        val t0 = System.currentTimeMillis()
+        val global = globalStamp()
+        val skipped = mutableListOf<String>(); val checked = mutableListOf<String>(); val compiled = mutableSetOf<String>()
+        for (m in libraryOrder()) {
+            val stampFile = klibStampFile(m)
+            val upstreamCompiled = m.deps.any { it in compiled }
+            val stamp = global + libraryStamp(m)
+            if (canSkip(m, stamp, upstreamCompiled)) {
+                skipped += m.label
+                continue
+            }
+            if (compileKlibIfChanged(m, s.klibOf(m), klibInputsFile(m), "klib ${m.label}", daemons)) {
+                logger.lifecycle("klib ${m.label}: ${s.klibOf(m).path}")
+                compiled += m.path
+            } else {
+                checked += m.label
+            }
+            stampFile.writeText((global + libraryStamp(m)).joinToString("\n", postfix = "\n"))
+        }
+        val pass = LibraryPass(skipped, checked, s.libraries.filter { it.path in compiled }.map { it.label }, System.currentTimeMillis() - t0)
+        logger.lifecycle("klibs: ${pass.compiled.size} compiled, ${pass.checked.size} checked and unchanged, ${pass.skipped.size} unchanged by file metadata " +
+            "(${pass.ms} ms)" + (if (pass.skipped.isEmpty()) "" else "; skipped: ${pass.skipped.joinToString()}"))
+        return pass
+    }
+
+    /** #129: whether [m] can be skipped: [stamp] equals the recorded one, klib and input record exist, nothing upstream compiled. */
+    fun canSkip(m: HrModule, stamp: List<String>, upstreamCompiled: Boolean): Boolean {
+        val f = klibStampFile(m)
+        return !upstreamCompiled && s.klibOf(m).isFile && klibInputsFile(m).isFile && f.isFile &&
+            f.readLines().filter { it.isNotBlank() } == stamp
+    }
+
+    /**
+     * #129: metadata of everything a module's klib is compiled from, without reading any file's contents: the compiler
+     * arguments (they carry the options and plugins from the build scripts, the linked klibs' paths and the source list),
+     * every file under its source directories (generated ones included) and its build files, its own klib and input record,
+     * and the klibs and input records of the library modules it links. A file is stamped by path, size, mtime, ctime and
+     * inode: a tool that sets mtime back (touch -r, rsync -t, "keep timestamps") still changes ctime.
+     */
+    fun libraryStamp(m: HrModule): List<String> {
+        val lines = mutableListOf("args ${Tools.sha256(libraryArgs(m).joinToString("\u0000").toByteArray())}")
+        m.sourceDirs.map(::File).forEach { d ->
+            if (!d.exists()) lines += "dir ${d.path} missing"
+            else d.walkTopDown().filter { it.isFile }.forEach { f -> lines += "src " + fileStamp(f) }
+        }
+        (s.moduleBuildFiles[m.path] ?: emptyList()).forEach { lines += "build " + fileStamp(File(it)) }
+        lines += "klib " + fileStamp(s.klibOf(m))
+        lines += "record " + fileStamp(klibInputsFile(m))
+        s.libraries.filter { it.path in m.deps }.forEach { d ->
+            lines += "dep-klib " + fileStamp(s.klibOf(d))
+            lines += "dep-record " + fileStamp(klibInputsFile(d))
+        }
+        return lines.sorted()
+    }
+
+    /**
+     * #129: metadata of what every module's compile depends on beyond its own files: the build identity (#98), the
+     * build's settings, properties and version catalogs (root and included builds), and the external klibs (from Gradle;
+     * a directory klib by every file in it).
+     */
+    fun globalStamp(): List<String> {
+        val lines = mutableListOf("identity " + fileStamp(File(work, BuildIdentity.FILE)))
+        s.globalBuildFiles.forEach { lines += "global " + fileStamp(File(it)) }
+        s.extraKlibs.map(::File).forEach { f ->
+            if (f.isDirectory) f.walkTopDown().filter { it.isFile }.forEach { lines += "external " + fileStamp(it) }
+            else lines += "external " + fileStamp(f)
+        }
+        return lines.sorted()
     }
 
     /**
@@ -808,6 +947,17 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
     }
 
     companion object {
+        /**
+         * #129: a file's metadata for the klib stamps: path, size, mtime and ctime (nanoseconds) and inode; "missing" when
+         * it does not exist. No contents are read.
+         */
+        fun fileStamp(f: File): String {
+            if (!f.exists()) return "${f.path} missing"
+            val a = java.nio.file.Files.readAttributes(f.toPath(), "unix:size,lastModifiedTime,ctime,ino", java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            fun t(k: String) = (a[k] as java.nio.file.attribute.FileTime).to(java.util.concurrent.TimeUnit.NANOSECONDS)
+            return "${f.path} ${a["size"]} ${t("lastModifiedTime")} ${t("ctime")} ${a["ino"]}"
+        }
+
         /** Minimal UIKit app around a function returning the root UIViewController (KMP template layout). */
         fun generatedMainSource(entry: String, executable: String): String = """
             |// Generated by com.solufee.cmp.hotreload (cmpHotReload { app { iosEntry = "$entry" } }). Do not edit.
@@ -886,6 +1036,9 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
          * compiling (the compiler lists only what it built in this run) plus this run's, de-duplicated.
          * The list is cleared when a patch is sent or the app is packaged.
          */
+        /** #124: output of `compat-classify.py abi-fingerprint`. */
+        val ABI_FINGERPRINT = Regex("[0-9a-f]{64}")
+
         /** Why a klib is compiled: "first build", or what differs between two [libraryInputs] (#21). */
         fun klibChangeReason(before: List<String>?, now: List<String>): String {
             if (before == null) return "no previous build"
@@ -896,7 +1049,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             fun describe(kind: String, label: String): String? {
                 val keys = changed.filter { it.startsWith("$kind ") }.map { it.removePrefix("$kind ") }
                 if (keys.isEmpty()) return null
-                val names = keys.map { if (kind == "source" || kind == "external") File(it).name else it }
+                val names = keys.map { if (kind == "source" || kind == "external") File(it).name else it.substringBefore(' ') }.distinct()
                 return "$label: ${names.take(3).joinToString()}" + (if (names.size > 3) " and ${names.size - 3} more" else "")
             }
             return listOfNotNull(

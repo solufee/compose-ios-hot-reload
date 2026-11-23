@@ -205,6 +205,22 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
      */
     abstract val perfMap: Property<Boolean>
 
+    /**
+     * #124: a library module is recompiled when an upstream module's ABI fingerprint changed (public and private
+     * declarations, annotations, const values, inline function bodies), not on every byte change of its klib: a
+     * body-only edit of a non-inline function upstream no longer recompiles the modules downstream. When the
+     * fingerprint cannot be computed the klib bytes are used. False: klib bytes always (0.2.11 behaviour). Default true.
+     */
+    abstract val abiFingerprint: Property<Boolean>
+
+    /**
+     * #129: hotReload / hotReloadWatch compile the library klibs inside their own action (one setup per reload instead of
+     * one Gradle task per module), and skip a module without hashing its sources when the metadata of all its compile
+     * inputs is unchanged (path, size, mtime, ctime, inode of sources, generated sources, build files; the compiler
+     * arguments; the klibs it links). False: one Gradle task per module, as up to 0.2.11. Default true.
+     */
+    abstract val klibInReload: Property<Boolean>
+
     val simulator: SimulatorSpec = objects.newInstance(SimulatorSpec::class.java)
     fun simulator(action: Action<in SimulatorSpec>) = action.execute(simulator)
 

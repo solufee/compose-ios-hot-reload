@@ -47,7 +47,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.11"
+    id("com.solufee.cmp.hotreload") version "0.2.12"
 }
 ```
 
@@ -230,6 +230,34 @@ Since plugin 0.2.11, the setup example keeps the plugin repository to the plugin
 step 2 above). GitHub Pages sometimes answers 5xx instead of 404 for a path it does not have, and Gradle then stops
 instead of asking the next repository, so other plugins (Android, Kotlin) failed to resolve at random. If you set up
 the repository with an earlier README, change it to the form in step 2.
+
+Since plugin 0.2.12, a hot reload in a project with several library modules does less work before the patch is
+compiled:
+- An edit inside a function body in a library module no longer recompiles the modules that depend on it. They are
+  recompiled only when the module's API changes (declarations, annotations, constants, inline function bodies).
+- `hotReload` and `hotReloadWatch` compile the library klibs in their own task, instead of one Gradle task per module,
+  and skip a module whose source and build files are untouched (by path, size, timestamps and inode).
+
+Measured on one real multi-module app (8 library modules, an edit of a Compose function in a feature module, 20 saves
+per run, Apple Silicon Mac; your numbers depend on your project and machine):
+
+| | save to screen, median | P90 |
+|---|---|---|
+| 0.2.11 | 5.4–5.5 s | 5.7–5.9 s |
+| with the first change only | 5.0–5.1 s | 5.3–5.4 s |
+| 0.2.12 (both changes) | 4.6 s | 5.0 s |
+
+Both are on by default. If a reload ever uses stale code from a library module, switch them off in the module that
+applies the plugin and report it:
+
+```kotlin
+cmpHotReload {
+    abiFingerprint = false   // dependents rebuild on any change of a library's klib, as in 0.2.11
+    klibInReload = false     // one Gradle task per library module, as in 0.2.11
+}
+```
+
+(or `-Pcmp.hotreload.abiFingerprint=false` / `-Pcmp.hotreload.klibInReload=false` for one run).
 
 Minimal sample (iosMain):
 

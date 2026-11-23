@@ -66,6 +66,8 @@ class HotReloadPlugin : Plugin<Project> {
         ext.simulator.reinstall.convention(prop("cmp.hotreload.reinstall").map { it.toBoolean() }.orElse(true))
         ext.resolveDependencyKlibs.convention(prop("cmp.hotreload.resolveDependencyKlibs").map { it.toBoolean() }.orElse(true))
         ext.perfMap.convention(prop("cmp.hotreload.perfMap").map { it.toBoolean() }.orElse(false))
+        ext.abiFingerprint.convention(prop("cmp.hotreload.abiFingerprint").map { it.toBoolean() }.orElse(true))
+        ext.klibInReload.convention(prop("cmp.hotreload.klibInReload").map { it.toBoolean() }.orElse(true))
         ext.modules.configureEach {
             sourceDir.convention("src/main/kotlin")
             infoPlist.convention("Info.plist")
@@ -192,6 +194,17 @@ class HotReloadPlugin : Plugin<Project> {
                 this.requiredFiles.set(requiredFiles)
             }
 
+            // #129: build files whose metadata is part of the klib stamps (see HrSettings.moduleBuildFiles)
+            fun buildFilesIn(dir: File?): List<String> = if (dir == null) emptyList() else
+                listOf("build.gradle.kts", "build.gradle").map { File(dir, it) }.filter { it.isFile }.map { it.path }
+            val moduleBuildFiles: Map<String, List<String>> = modules.associate { m ->
+                m.path to buildFilesIn(included.firstOrNull { it.module.path == m.path }?.dir ?: project.findProject(m.path)?.projectDir)
+            }
+            val buildRoots = (listOf(project.rootProject.projectDir) + project.gradle.includedBuilds.map { it.projectDir }).distinct()
+            val globalBuildFiles: List<String> = buildRoots.flatMap { r ->
+                listOf("settings.gradle.kts", "settings.gradle", "build.gradle.kts", "build.gradle", "gradle.properties", "local.properties")
+                    .map { File(r, it) } + (File(r, "gradle").listFiles { f -> f.name.endsWith(".toml") }?.toList() ?: emptyList())
+            }.filter { it.isFile }.map { it.path }.distinct()
             val settings: Provider<HrSettings> = manifest.map { tc ->
                 HrSettings(
                     rootDir = rootDir.path,
@@ -230,6 +243,10 @@ class HotReloadPlugin : Plugin<Project> {
                     stableKeys = ext.stableKeys.get(),
                     libsInExecutable = ext.libsInExecutable.get(),
                     perfMap = ext.perfMap.get(),
+                    abiFingerprint = ext.abiFingerprint.get(),
+                    klibInReload = ext.klibInReload.get(),
+                    moduleBuildFiles = moduleBuildFiles,
+                    globalBuildFiles = globalBuildFiles,
                     iosEntry = iosEntry,
                     composeResources = composeResources,
                     infoPlistContent = plistContent,
@@ -358,14 +375,14 @@ class HotReloadPlugin : Plugin<Project> {
                 description = "Classify the change (INTERFACE §10); hot: compile what changed, merge, check symbols and send it; " +
                     "warm: rebuild and relaunch with the saved state (--no-warm: only report)"
                 this.settings.set(settings)
-                dependsOn(allKlibs)
+                dependsOn(if (ext.klibInReload.get()) identity else allKlibs)   // #129: with klibInReload the reload compiles the klibs itself
                 mustRunAfter("hotReloadPackage", "hotReloadRun")
             }
             project.tasks.register("hotReloadWatch", ReloadTask::class.java) {
                 group = GROUP
                 description = "With -t (./gradlew hotReloadWatch -t): a hot reload on every saved change of the hot modules' sources and resources"
                 this.settings.set(settings)
-                dependsOn(allKlibs)
+                dependsOn(if (ext.klibInReload.get()) identity else allKlibs)   // #129: with klibInReload the reload compiles the klibs itself
                 mustRunAfter("hotReloadPackage", "hotReloadRun")
                 doFirst(WatchAnnounce())
             }

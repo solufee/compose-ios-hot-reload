@@ -93,6 +93,21 @@ data class HrSettings(
     val libsInExecutable: Boolean = false,
     /** #107: run the app with KALDO_PERF_MAP=1 (cmpHotReload { perfMap }, cmp.hotreload.perfMap); default off. */
     val perfMap: Boolean = false,
+    /**
+     * #124: a library klib's upstream modules count by their ABI fingerprint (metadata + inline function IR, from
+     * compat-classify.py `abi-fingerprint`) instead of their klib bytes, so a body-only edit upstream does not recompile
+     * the modules downstream. False: by klib bytes (sha256), as up to 0.2.11 (cmp.hotreload.abiFingerprint).
+     */
+    val abiFingerprint: Boolean = true,
+    /** #129: hotReload compiles the library klibs itself (see HotReloadExtension.klibInReload) (cmp.hotreload.klibInReload). */
+    val klibInReload: Boolean = true,
+    /**
+     * #129: build files that feed a module's compile beyond its sources ("module path" -> files: the module's build.gradle(.kts)),
+     * and of the whole build (settings, gradle.properties, version catalogs, local.properties, of the root and included builds).
+     * Only their metadata is stamped; any change means the module's inputs are checked as before.
+     */
+    val moduleBuildFiles: Map<String, List<String>> = emptyMap(),
+    val globalBuildFiles: List<String> = emptyList(),
     // 0.2.0: Kotlin Multiplatform projects
     /** Klibs from the modules' Gradle dependencies, after the toolchain's own copies were taken out. */
     val extraKlibs: List<String> = emptyList(),

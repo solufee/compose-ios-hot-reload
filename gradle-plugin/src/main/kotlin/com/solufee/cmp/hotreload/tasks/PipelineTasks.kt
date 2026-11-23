@@ -73,8 +73,10 @@ abstract class HotReloadTask : DefaultTask() {
     /** #122: warns once per [session] when the Kotlin plugin's statistics slow every build down (see [KotlinProfileHint]). */
     protected fun warnKotlinProfile(session: String) {
         val dir = kotlinProfileDir.orNull ?: return
-        com.solufee.cmp.hotreload.KotlinProfileHint.once(session,
-            com.solufee.cmp.hotreload.KotlinProfileHint.warning(File(dir), kotlinFusMetrics.orNull))?.let { logger.warn(it) }
+        // #129: decide "already warned in this session" before listing the directory (tens of thousands of files)
+        com.solufee.cmp.hotreload.KotlinProfileHint.onceLazy(session) {
+            com.solufee.cmp.hotreload.KotlinProfileHint.warning(File(dir), kotlinFusMetrics.orNull)
+        }?.let { logger.warn(it) }
     }
 
     /** #116: projects of other builds linked as their klibs, "display name<TAB>build name<TAB>project path". */
@@ -277,6 +279,8 @@ abstract class ReloadTask : HotReloadTask() {
         val tools = tools(s)
         val daemons = daemons(s, tools)
         val pipeline = Pipeline(s, logger)
+        // #129: the library klibs, in this task's own setup (hotReload / hotReloadWatch no longer depend on one task per module)
+        if (s.klibInReload) pipeline.compileLibrariesInReload(daemons)
         val compat = Compat(s, logger, pipeline, tools)
         if (!compat.hasBaseline()) {
             logger.warn("CMP hot reload: no classifier baseline in ${s.compatDir}; run ./gradlew hotReloadPackage (classifier skipped)")

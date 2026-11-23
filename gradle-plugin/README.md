@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9–0.2.11）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9–0.2.12）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -119,6 +119,8 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `keepCompactUnwind` | `true` | 打包时导出 `KALDO_KEEP_COMPACT_UNWIND=1`（INTERFACE §3.3 第 1 条） |
 | `libsInExecutable` | `false`（`cmp.hotreload.libsInExecutable`） | 工具链 .10 起（#56）：默认热重载 `.app` 不再把约 130 MB 的库对象嵌进可执行文件，app 启动时由 libKaldo 从 `build/hotreload/app/merged-bootstrap.libs.o` 读取（打包快约 3 s，可执行文件 255 → 49 MB）；这样的 `.app` 只能在打包它的这台 Mac 上运行，删掉 `build/hotreload` 后要重新打包（`hotReloadRun` 发现文件不在时会报错）。`true` 把它嵌回可执行文件，得到可以拷走的 `.app`。只影响热重载构建，release 不受影响 |
 | `perfMap` | `false`（`cmp.hotreload.perfMap`） | #107：给 app 设 `KALDO_PERF_MAP=1`，libKaldo 把热重载代码（JIT 链接）的地址和符号名写进 `/tmp/perf-<pid>.map`，供 Instruments、lldb 等符号化这些帧，做性能分析或查崩溃时用。每次启动约 70 MB。插件记下自己启动的 app 的 pid（`build/hotreload/perf-map-pids.txt`），下一次启动（hotReloadRun、温重启）和 `hotReloadClean` 时删掉已经退出的那些进程的 map，只删记录过的。0.2.9 及以前默认就开着而且从不删，`/tmp` 里可能攒了很多 `perf-*.map`，可以手动删掉 |
+| `abiFingerprint` | `true`（`cmp.hotreload.abiFingerprint`） | #124：库模块看上游模块的 ABI 指纹（元数据：所有声明含 private、注解、常量值、Compose 稳定性注解；加上全部 inline 函数含 inline @Composable 的 IR），不再看上游 klib 的字节。上游只改非 inline 函数体时，下游模块不重编。指纹算不出来时退回按字节（sha256）比较，日志里有一行 warn。设为 `false` 恢复 0.2.11 的按字节比较。正确性实验见 `evidence/abi-fingerprint-124/RESULTS.md` |
+| `klibInReload` | `true`（`cmp.hotreload.klibInReload`） | #129：`hotReload` / `hotReloadWatch` 在自己的任务里按依赖顺序编各库模块的 klib，每次热重载只做一遍准备（设置、工具、连守护进程），不再一个模块一个 Gradle 任务。编译输入的元数据（源码含生成的源码、构建文件的路径、大小、mtime、ctime、inode；编译参数；它链接的 klib）都没变、上游这次也没重编的模块直接跳过，不做哈希；其余照旧按内容和 #124 的 ABI 指纹判定。settings、gradle.properties、版本目录、外部 klib 任一变化都全部重新检查。`false`：回到每个模块一个 Gradle 任务（0.2.11 的做法）。打包、启动、release 检查不受影响 |
 | `stableKeys` | `true`（`cmp.hotreload.stableKeys`） | 0.2.5 / 工具链 .9 起（#29/#47）：热重载构建的每一次编译（库 klib、打包、补丁、分类器的 app klib）都给 Compose 编译器加 `-P plugin:androidx.compose.compiler.plugins.kotlin:featureFlag=HotReloadStableKeys`，composable 改参数时 `remember` 保留，`remember` 形状变了安全重置。只有工具链的 Compose 编译器认得这个 flag 时才加（看插件 jar 里的 `FeatureFlag`；.8 及以前不加）；release 构建永远不加。打包时记下当时的状态，`hotReload` 发现和打包时不一致就拒绝并提示重新打包。打包日志有一行 `stable keys …: on/off/unsupported` |
 | `mainWaitMs` | `2000`（`cmp.hotreload.mainWaitMs`） | 工具链 .8 起（#27/#40）：每次 reload 在 app 主线程上执行（插件传 `KONAN_HR_RELOAD_ON_MAIN=1`）；主线程在这么多毫秒内没接手，补丁不应用（`KONAN_HR_MAIN_WAIT_MS`），`hotReload` 以非零退出并提示 “the app was busy, patch not applied”，这次的改动留到下一次重发；`hotReloadWatch -t` 里只有这一次失败，继续监听。下次启动 app 时生效 |
 | `forceRecompose` | `true`（`cmp.hotreload.forceRecompose`） | 工具链 .6 起：每次热替换成功后整个界面完整重组一次，参数没变的调用点也显示新代码，`remember` 状态保留。`false` 时传 `KONAN_HR_FORCE_RECOMPOSE=0`（.5 的行为）；下次启动 app 时生效 |

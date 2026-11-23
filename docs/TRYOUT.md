@@ -105,7 +105,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.11"
+    id("com.solufee.cmp.hotreload") version "0.2.12"
 }
 
 cmpHotReload {
@@ -520,7 +520,7 @@ Gradle 遇到 5xx 会直接失败、不再去问后面的仓库，不加过滤�
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.11"
+    id("com.solufee.cmp.hotreload") version "0.2.12"
 }
 ```
 

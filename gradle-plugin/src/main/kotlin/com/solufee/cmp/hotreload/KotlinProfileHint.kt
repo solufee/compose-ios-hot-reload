@@ -34,4 +34,13 @@ object KotlinProfileHint {
 
     /** [message] the first time for [session] in this Gradle daemon, null after that (and for a null message). */
     fun once(session: String, message: String?): String? = if (message != null && warned.add(session)) message else null
+
+    /**
+     * #129: like [once], but [message] is only computed when [session] has not warned yet (counting the directory is the
+     * expensive part, and a watch session asks on every round). A session that had nothing to say is asked again later.
+     */
+    fun onceLazy(session: String, message: () -> String?): String? {
+        if (session in warned) return null
+        return once(session, message())
+    }
 }

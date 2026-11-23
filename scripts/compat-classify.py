@@ -781,6 +781,46 @@ def cmd_classify(args):
     return 3 if reasons else 0
 
 
+ABI_FINGERPRINT_VERSION = 1
+
+
+def abi_fingerprint(klib, tool, sock=None):
+    """#124: what a downstream klib depends on in [klib]: the whole `dump-metadata` text (every public and internal
+    signature, const values, annotations, class stability; the `// module name:` comment line dropped) and the IR
+    of every inline function (inline @Composable included), whose bodies callers may carry. A body change of a
+    non-inline function leaves it unchanged; a signature, const value or inline-body change changes it."""
+    meta = dump(tool, sock, "dump-metadata", klib)
+    ir = dump(tool, sock, "dump-ir", klib)
+    meta = "\n".join(l for l in meta.splitlines() if not l.strip().startswith("// module name:"))
+    inline = {k: b["hash"] for k, b in parse_ir(ir).items() if "inline" in b["kind"].split("+")}
+    h = hashlib.sha256()
+    h.update(f"abi-fingerprint v{ABI_FINGERPRINT_VERSION}\n".encode())
+    h.update(meta.encode())
+    h.update(b"\n--inline--\n")
+    h.update(json.dumps(inline, sort_keys=True).encode())
+    return h.hexdigest()
+
+
+def cmd_abi_fingerprint(args):
+    sha = sha256_file(args.klib)
+    key = None
+    if args.cache_dir:
+        os.makedirs(args.cache_dir, exist_ok=True)
+        key = os.path.join(args.cache_dir, f"abi-{script_hash()}-{sha}.txt")
+        if os.path.exists(key):
+            print(open(key).read().strip())
+            os.utime(key)
+            return 0
+    fp = abi_fingerprint(args.klib, args.klib_tool, args.daemon)
+    if key:
+        tmp = key + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(fp + "\n")
+        os.replace(tmp, key)
+    print(fp)
+    return 0
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -803,6 +843,12 @@ def main(argv):
             xp.add_argument("--force-recompose", action="store_true",
                             help="the running app recomposes fully after each reload (KONAN_HR_FORCE_RECOMPOSE=1)")
         xp.set_defaults(func=func)
+    fp = sub.add_parser("abi-fingerprint", help="#124: ABI fingerprint of a klib (metadata + inline IR)")
+    fp.add_argument("--klib", required=True)
+    fp.add_argument("--klib-tool")
+    fp.add_argument("--daemon")
+    fp.add_argument("--cache-dir")
+    fp.set_defaults(func=cmd_abi_fingerprint)
     cp = sub.add_parser("classify")
     cp.add_argument("--old", required=True)
     cp.add_argument("--new", required=True)
