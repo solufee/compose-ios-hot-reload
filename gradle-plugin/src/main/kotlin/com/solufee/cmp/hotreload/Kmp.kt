@@ -68,6 +68,38 @@ object Kmp {
         return CompilerPlugins(cp, withoutComposeOptions(opts?.map { it.toString() } ?: emptyList()))
     }
 
+    /** #133: the project's compiler settings read from [p]'s compile task, as arguments; [reason] when they could not be read. */
+    class ProjectCompilerArgs(val args: List<String>, val reason: String?)
+
+    /**
+     * #133: what [p]'s `compileKotlinIosSimulatorArm64` gets beyond compiler plugins: `compilerOptions` (freeCompilerArgs,
+     * optIn, languageVersion, apiVersion, progressiveMode, allWarningsAsErrors, suppressWarnings) and the task's
+     * `languageSettings` (enabled language features; its opt-ins are already in compilerOptions.optIn), read through
+     * reflection like [compilerPlugins] so any KGP version works or reports why it does not.
+     */
+    fun projectCompilerArgs(p: Project): ProjectCompilerArgs? {
+        val task = p.tasks.findByName(COMPILE_TASK) ?: return null
+        val co = runCatching { call(task, "getCompilerOptions") }.getOrNull()
+            ?: return ProjectCompilerArgs(emptyList(), "$COMPILE_TASK of ${p.path} has no compilerOptions this plugin can read")
+        fun value(o: Any?, m: String): Any? = runCatching { call(o ?: return@runCatching null, m) }.getOrNull()
+            .let { if (it is org.gradle.api.provider.Provider<*>) it.orNull else it }
+        fun strings(o: Any?, m: String): List<String> = (value(o, m) as? Collection<*>)?.map { it.toString() } ?: emptyList()
+        fun version(v: Any?): String? = v?.let { (runCatching { call(it, "getVersion") }.getOrNull() as? String) ?: it.toString() }
+        val free = value(co, "getFreeCompilerArgs") as? Collection<*>
+            ?: return ProjectCompilerArgs(emptyList(), "compilerOptions.freeCompilerArgs of ${p.path} cannot be read with this KGP")
+        val ls = runCatching { call(task, "getLanguageSettings") }.getOrNull()
+        return ProjectCompilerArgs(CompilerArgs.fromProject(
+            freeCompilerArgs = free.map { it.toString() },
+            optIn = strings(co, "getOptIn"),
+            languageVersion = version(value(co, "getLanguageVersion")),
+            apiVersion = version(value(co, "getApiVersion")),
+            progressive = value(co, "getProgressiveMode") == true,
+            allWarningsAsErrors = value(co, "getAllWarningsAsErrors") == true,
+            suppressWarnings = value(co, "getSuppressWarnings") == true,
+            languageFeatures = strings(ls, "getEnabledLanguageFeatures"),
+        ), null)
+    }
+
     fun withoutComposeJars(jars: List<File>): List<File> = jars.filter { !COMPOSE_JAR.containsMatchIn(it.name) }
     fun withoutComposeOptions(options: List<String>): List<String> = options.filter { !it.startsWith("plugin:$COMPOSE_PLUGIN_ID:") }
 

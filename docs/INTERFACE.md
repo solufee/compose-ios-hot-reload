@@ -549,3 +549,54 @@ final 成员不再报（直接调用，不经虚表）。`@ExportObjCClass` 不�
 - 打包方如果自带 app 壳，要实现同样的参数和文件，`warm` 才能恢复状态；不实现也能温重启，
   但只能回到第 0 页。
 
+
+## 11. 工程自己的编译参数（插件 0.2.13，#133）
+
+热重载的每一次编译（库 klib、打包、补丁、分类器的 app klib；release 检查的两次编译也一样）都带上该模块正常构建
+`compileKotlinIosSimulatorArm64` 的编译设置，再追加 `cmpHotReload { extraCompilerArgs }`。只影响热重载构建，release 构建零改动。
+
+**读什么**（反射读同一个编译任务，只取字符串，配置缓存安全）：
+
+| 来源 | 变成的参数 |
+|---|---|
+| `compilerOptions.languageVersion` / `apiVersion` | `-language-version X` / `-api-version X` |
+| `compilerOptions.progressiveMode` / `allWarningsAsErrors` / `suppressWarnings` | `-progressive` / `-Werror` / `-nowarn` |
+| `compilerOptions.optIn`（KGP 已经并入 `languageSettings.optIn`） | `-opt-in X` |
+| `languageSettings` 启用的语言特性 | `-XXLanguage:+Feature` |
+| `compilerOptions.freeCompilerArgs` | 原样 |
+
+KGP 自己加的 `-enable-assertions`、`-Xexport-kdoc`、`-verbose` 等不在这些设置里，不读。读不到（KGP 换了 getter）时打印一行
+warn 说明原因，只用 `extraCompilerArgs`，不猜。
+
+**顺序和优先级**：工程的参数 → 全局 `extraCompilerArgs` → 模块的 `extraCompilerArgs(":path", ...)`，整体排在插件自己的参数之后、
+源码和 `-o` 之前。included build 的模块（`includedModule`）只用 `extraCompilerArgs`。
+
+**按“选项 + 值”成对处理**：`-opt-in X` 和 `-opt-in=X`、`-language-version X` 和 `-language-version=X` 是同一个选项；读取、过滤、
+去重都按对处理。带值的选项：`-opt-in`、`-language-version`、`-api-version`、`-P`、`-o`/`-output`、`-p`/`-produce`、`-target`、
+`-module-name`、`-l`/`-library`、`-linker-option(s)`、`-friend-modules`、`-native-library`、`-include-binary`、`-manifest`、
+`-entry`/`-e`、`-kotlin-home`；其他 `-Xkey=value` 按 key 和 value 一起比较。
+
+**过滤和去重规则**
+
+| 参数（来自工程或 extraCompilerArgs） | 规则 | 原因 |
+|---|---|---|
+| `-Xplugin=…`、`-P plugin:…` | 去掉 | 工程的编译器插件由 #76 传；Compose 用工具链自己的编译器插件 |
+| `-o`、`-output`、`-p`、`-produce`、`-target`、`-g` | 去掉 | 编什么、编到哪、目标平台由插件决定（目标固定 `ios_simulator_arm64`，`-g` 一直开） |
+| `-module-name`、`-Xshort-module-name`、`-l`/`-library`、`-linker-option(s)`、`-friend-modules`、`-native-library`、`-include-binary`、`-nopack`、`-nostdlib`、`-nodefaultlibs`、`-manifest`、`-entry`/`-e`、`-kotlin-home` | 去掉 | klib 选择、链接、模块身份归插件（唯一名决定库替换） |
+| `-Xmulti-platform`、`-Xfragments`、`-Xfragment-refines`、`-Xfragment-sources`、`-Xrefines-paths` | 去掉 | 源码片段由插件按 KMP 层级自己算 |
+| `-Xcompilation-scheme`、`-Xenable-incremental-compilation`、`-Xpartial-linkage*`、`-Xic-*`、`-Xauto-cache-*`、`-Xdump-*` | 去掉 | 热重载自己的缓存和增量方案 |
+| `-Xbinary=…` | 去掉，并 warn 写出被去掉的参数 | 二进制选项改变包的运行时（GC、分配器…）和拆分载荷方案，以后逐个评估 |
+| `-opt-in X`（两种写法、逗号列表） | 传，按值合并 | 和插件自带的 `-opt-in=kotlinx.cinterop.ExperimentalForeignApi` 重复时只留一份 |
+| `-language-version`、`-api-version` | 传，只留一个，后面的赢（模块 > 全局 > 工程） | 两个同名参数是编译器错误 |
+| 插件这次编译已经有的参数（如 `-Xexpect-actual-classes`） | 不重复 | 插件给多平台模块自己加 |
+| 其他（`-Xcontext-parameters`、`-XXLanguage:±F`、`-progressive`、`-Werror`、`-nowarn`、其他 `-X…`） | 传，完全相同的只留一份 | 和正常构建一致 |
+
+被去掉的参数在 `--info` 里列出（`left out of hot reload compiles`）；每次编译的完整参数也在 `--info` 里（`compile args (…)`），
+这一行只在 `--info` 打印，正常输出不变。
+
+**版本检查**：`-language-version` / `-api-version` 的值不在工具链编译器的 `LanguageVersion` 里（读编译器 jar）时，编译前报错，
+列出它认识的版本，并提示用模块的 `extraCompilerArgs` 给热重载单独指定一个；它认识但已不支持的旧版本（如 1.6）由编译器
+自己报错（`language version 1.6 is no longer supported`）。
+
+**构建指纹**：每个模块合并后的参数是构建指纹（#98）的 `compilerArgs` 一行，也进 #124 / #129 的编译输入记录；改了参数，
+受影响的 klib 重编，打包时整个热重载状态重建。

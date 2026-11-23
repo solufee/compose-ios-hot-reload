@@ -54,9 +54,9 @@ class ReleaseCheck(private val s: HrSettings, private val logger: Logger) {
         val klibDir = File(out, "klib")
         fun klib(m: HrModule) = File(klibDir, "${m.label}.klib")
         val libs = s.libraries.map { m ->
-            listOf(s.kotlinc, "-target", s.target, "-p", "library", "-opt",
+            (listOf(s.kotlinc, "-target", s.target, "-p", "library", "-opt",
                 "-Xplugin=${s.composePlugin}", "-opt-in=kotlinx.cinterop.ExperimentalForeignApi") +
-                pipeline.projectPluginArgs(m) + ext + s.libraries.filter { it.path in m.deps }.flatMap { listOf("-l", klib(it).path) } +
+                pipeline.projectPluginArgs(m)).let { base -> base + pipeline.projectCompilerArgs(m, base + pipeline.sourceArgs(m)) } + ext + s.libraries.filter { it.path in m.deps }.flatMap { listOf("-l", klib(it).path) } +
                 pipeline.sourceArgs(m) + listOf("-o", klib(m).path.removeSuffix(".klib"))
         }
         // A program compiled without -module-name gets a generated module name that changes on every build;
@@ -65,7 +65,8 @@ class ReleaseCheck(private val s: HrSettings, private val logger: Logger) {
         val exe = pipeline.appInfo().executable
         val app = listOf(s.kotlinc, "-target", s.target, "-p", "program", "-opt", "-module-name", exe,
             "-Xplugin=${s.composePlugin}", "-opt-in=kotlinx.cinterop.ExperimentalForeignApi") +
-            pipeline.projectPluginArgs(s.app) + s.linkerOptions.map { "-linker-option=$it" } +
+            pipeline.projectPluginArgs(s.app).let { pa -> pa + pipeline.projectCompilerArgs(s.app, pa + pipeline.sourceArgs(s.app) +
+                listOf("-g", "-opt-in=kotlinx.cinterop.ExperimentalForeignApi")) } + s.linkerOptions.map { "-linker-option=$it" } +
             listOf("-linker-option=-force_load", "-linker-option=${s.objcUtilsLib}") +
             ext + s.libraries.flatMap { listOf("-l", klib(it).path) } +
             listOf("-o", File(out, "$exe-release.kexe").path) + pipeline.sourceArgs(s.app)

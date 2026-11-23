@@ -222,6 +222,22 @@ include("app", "ui")
     }
 
     @Test
+    fun `extraCompilerArgs, global and per module, in both option spellings, keep the configuration cache (#133)`() {
+        setup(null, modules = """app(":app")
+            library(":ui")
+            extraCompilerArgs.addAll("-opt-in", "a.B", "-Xcontext-parameters")
+            extraCompilerArgs(":ui", "-language-version=2.1", "-opt-in", "c.D")""")
+        File(project, "app/src/main/kotlin").mkdirs()
+        File(project, "app/src/main/kotlin/main.kt").writeText("fun main() {}\n")
+        File(project, "ui/src/main/kotlin").mkdirs()
+        File(project, "ui/src/main/kotlin/ui.kt").writeText("package myui\n")
+        val first = runner("hotReloadPackage", "--dry-run").build()
+        assertTrue(":hotReloadBuildIdentity" in first.output, first.output)
+        val again = runner("hotReloadPackage", "--dry-run").build()
+        assertTrue("Reusing configuration cache" in again.output, again.output)
+    }
+
+    @Test
     fun `the hot reload tasks store in the configuration cache (no Project captured by the settings, #98)`() {
         // a toolchain manifest, so the settings provider has a value to compute (the check task then fails on it)
         val tc = File(project, "tc").apply { mkdirs() }

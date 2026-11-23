@@ -47,7 +47,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.12"
+    id("com.solufee.cmp.hotreload") version "0.2.13"
 }
 ```
 
@@ -258,6 +258,25 @@ cmpHotReload {
 ```
 
 (or `-Pcmp.hotreload.abiFingerprint=false` / `-Pcmp.hotreload.klibInReload=false` for one run).
+
+Since plugin 0.2.13, hot reload compiles a module with the compiler settings of its normal iOS simulator compile:
+`compilerOptions { freeCompilerArgs; optIn; languageVersion; apiVersion; progressiveMode; allWarningsAsErrors;
+suppressWarnings }` and the opt-ins and language features of its `languageSettings`. Before, a module that needed one
+of them (for example an `@RequiresOptIn` API opted in through `optIn`, or a `-X` language flag) built normally but
+failed to compile in hot reload. Arguments that only the plugin may set (targets, outputs, linking, compiler plugins,
+caches, `-Xbinary`) are left out; `--info` lists them, and a left-out `-Xbinary=…` also prints a warning naming it
+(binary options change the package's runtime). If an argument does not reach hot reload, or hot reload needs one
+the normal build does not have, add it in the module that applies the plugin:
+
+```kotlin
+cmpHotReload {
+    extraCompilerArgs.addAll("-opt-in", "com.example.MyApi")      // every module's hot reload compiles
+    extraCompilerArgs(":core", "-language-version", "2.4")        // one module; wins over the global list and the build
+}
+```
+
+A `-language-version` or `-api-version` the toolchain's compiler does not know stops with the list of the versions it
+does. The full rule table is in [docs/INTERFACE.md §11](docs/INTERFACE.md).
 
 Minimal sample (iosMain):
 

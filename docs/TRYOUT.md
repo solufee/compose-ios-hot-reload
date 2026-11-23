@@ -105,7 +105,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.12"
+    id("com.solufee.cmp.hotreload") version "0.2.13"
 }
 
 cmpHotReload {
@@ -307,6 +307,10 @@ fun main(args: Array<String>) {
 - 插件 0.2.8 起，工程自己挂的 Kotlin 编译器插件（kotlinx-serialization、Koin 编译器插件等）和 KSP 生成的代码都进热重载的编译。
   增删 Koin 定义（`@Single` 这类注解、KSP 生成的定义）会自动温重启（依赖容器在启动时建好）；改类里的实现照旧热替换。
   `./gradlew hotReloadPackage hotReloadRun` 一定先打包再启动（0.2.7 及以前 Gradle 可能先启动旧包）。
+- 插件 0.2.13 起，热重载编译带上模块正常构建的编译设置：`compilerOptions` 的 `freeCompilerArgs`、`optIn`、`languageVersion`、
+  `apiVersion`、`progressiveMode`、`allWarningsAsErrors`、`suppressWarnings`，`languageSettings` 的 opt-in 和语言特性。以前用了
+  `optIn` 打开的 `@RequiresOptIn` API 或某个 `-X` 语言开关的模块，正常构建能编，热重载会编译失败。插件自己的参数（目标、输出、
+  链接、编译器插件、缓存、`-Xbinary`）不传，`--info` 里列出；要补参数用下面“可选配置”里的 `extraCompilerArgs`。规则表见 INTERFACE §11。
 - 模拟器开着“应用辅助功能”（`ApplicationAccessibilityEnabled` = 1，Accessibility Inspector 这类工具会打开它）时，每次启动 app
   多 ~1.7 s；`hotReloadRun` 和温重启会打印一行提示，附关闭命令。插件只读这个设置，不会去改。
 
@@ -407,7 +411,7 @@ xcrun simctl terminate <UDID 或 booted> com.example.myapp    # 停掉 app（换
 
 编译守护进程闲着时不占 CPU，下次 `hotReload` 会自动复用；只有换了工具链或插件版本时，插件才会自己重启它们。
 
-升级插件、换工具链（包括把新版工具链解压到同一个目录）、改编译器插件或它们的参数、改工程的 Kotlin 版本以后，**不用跑 `hotReloadClean`**（#98）：
+升级插件、换工具链（包括把新版工具链解压到同一个目录）、改编译器插件或它们的参数、改编译参数（0.2.13 起）、改工程的 Kotlin 版本以后，**不用跑 `hotReloadClean`**（#98）：
 每次打包或启动前，插件把这些东西按内容算成一份构建指纹（`build/hotreload/build-identity.txt`），和上次的比；不一样就停掉编译守护进程、
 清掉旧的编译状态（模块 klib、编译器缓存、merge 缓存、分类器快照和打包好的 app），日志里有一行
 `CMP hot reload: build identity changed (<哪一项从什么变成什么>); cleared the compiled state (N MB)`，然后照常从头打包（约 2 分钟）。
@@ -520,7 +524,7 @@ Gradle 遇到 5xx 会直接失败、不再去问后面的仓库，不加过滤�
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.12"
+    id("com.solufee.cmp.hotreload") version "0.2.13"
 }
 ```
 
@@ -597,6 +601,8 @@ cmpHotReload {
     deviceFamily = listOf(1, 2)           // 生成的 Info.plist 的 UIDeviceFamily：1 iPhone（默认）、2 iPad；在 iPad 模拟器上要含 2 才是 iPad 尺寸全屏
     extraKlibs.from("libs/my-lib.klib")   // 另外要链进来的 klib（不在 Gradle 依赖里的）
     resolveDependencyKlibs = false        // 不从 Gradle 解析依赖，只用工具链和 extraKlibs
+    extraCompilerArgs.addAll("-opt-in", "com.example.MyApi")   // 0.2.13：追加给所有模块的热重载编译
+    extraCompilerArgs(":core", "-language-version", "2.4")     // 只给 :core；赢过全局和正常构建的设置
 }
 ```
 

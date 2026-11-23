@@ -192,6 +192,21 @@ abstract class HotReloadExtension @Inject constructor(objects: ObjectFactory) {
     abstract val extraKlibs: ConfigurableFileCollection
 
     /**
+     * #133: compiler arguments for every hot reload compile of every module, after the ones taken from each module's
+     * normal compile (freeCompilerArgs, optIn, languageVersion, ...). Plugin-owned arguments are dropped and duplicates
+     * merged (docs/INTERFACE.md §11). For a module only: [extraCompilerArgs] with a module path.
+     */
+    abstract val extraCompilerArgs: org.gradle.api.provider.ListProperty<String>
+
+    /** #133: per module (Gradle path, e.g. ":core"), after [extraCompilerArgs]; for a single-valued option this one wins. */
+    abstract val moduleExtraCompilerArgs: org.gradle.api.provider.MapProperty<String, List<String>>
+
+    /** #133: `extraCompilerArgs(":core", "-Xcontext-parameters")`. */
+    fun extraCompilerArgs(modulePath: String, vararg args: String) {
+        moduleExtraCompilerArgs.put(modulePath, (moduleExtraCompilerArgs.getting(modulePath).orNull ?: emptyList()) + args)
+    }
+
+    /**
      * Link the klibs of the modules' Gradle dependencies (configuration `iosSimulatorArm64CompileKlibraries`,
      * transitive). Kotlin stdlib, Compose and the AndroidX libraries the toolchain ships are replaced by the
      * toolchain's copies. Default true.

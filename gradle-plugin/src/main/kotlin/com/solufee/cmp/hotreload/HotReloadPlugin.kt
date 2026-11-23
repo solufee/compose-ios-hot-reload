@@ -522,6 +522,17 @@ class HotReloadPlugin : Plugin<Project> {
             }
 
         /** The declared included modules (0.2.2), resolved against this build's included builds. */
+        /** #133: [projectArgs] + global and per-module extraCompilerArgs, filtered ([CompilerArgs.merge]); warns about dropped binary options. */
+        fun compilerArgsFor(project: Project, ext: HotReloadExtension, modulePath: String, projectArgs: List<String>): List<String> {
+            val merged = CompilerArgs.merge(projectArgs, ext.extraCompilerArgs.getOrElse(emptyList()),
+                ext.moduleExtraCompilerArgs.getOrElse(emptyMap())[modulePath] ?: emptyList())
+            merged.warnings.forEach { project.logger.warn("CMP hot reload: $it ($modulePath)") }
+            if (merged.dropped.isNotEmpty()) {
+                project.logger.info("CMP hot reload: $modulePath: left out of hot reload compiles (the plugin's own): ${merged.dropped.joinToString()}")
+            }
+            return merged.args
+        }
+
         fun includedModules(project: Project, ext: HotReloadExtension, errors: MutableList<String>): List<Included> {
             if (ext.includedModules.isEmpty()) return emptyList()
             // A plugin applied in an included build sees its siblings through the root build.
@@ -553,7 +564,9 @@ class HotReloadPlugin : Plugin<Project> {
                 val srcDir = fragments.firstNotNullOfOrNull { f -> f.dirs.firstOrNull { File(it).isDirectory } } ?: dir.path
                 Included(
                     // Another build's project model is not visible here: its default build directory.
-                    module = HrModule(spec.name, ModuleKind.LIBRARY, srcDir, emptyList(), fragments, buildDir = File(dir, "build").absolutePath),
+                    // #133: another build's compile task is not visible either: only cmpHotReload.extraCompilerArgs
+                    module = HrModule(spec.name, ModuleKind.LIBRARY, srcDir, emptyList(), fragments,
+                        compilerArgs = compilerArgsFor(project, ext, spec.name, emptyList()), buildDir = File(dir, "build").absolutePath),
                     componentKey = "$buildName|$path",
                     generatorTasks = generators.map { ib.task(it) },
                     composeResources = if (hasResources) File(dir, "build/generated/compose/resourceGenerator/assembledResources/iosSimulatorArm64Main").path else null,
@@ -678,8 +691,13 @@ class HotReloadPlugin : Plugin<Project> {
                 // #76: the module's own compiler plugins, as its normal Kotlin/Native compile has them (no plugin is special-cased).
                 val plugins = Kmp.compilerPlugins(p)
                 plugins?.classpath?.let { kmp.pluginClasspaths[d.path] = it }
+                // #133: the module's own compiler settings (freeCompilerArgs, optIn, language/API version, ...) and extraCompilerArgs
+                val projectArgs = Kmp.projectCompilerArgs(p)
+                projectArgs?.reason?.let { project.logger.warn("CMP hot reload: $it; for ${d.path} only cmpHotReload.extraCompilerArgs is passed") }
+                val args = compilerArgsFor(project, ext, d.path, projectArgs?.args ?: emptyList())
                 result += HrModule(d.path, d.kind, srcDir, deps.filter { dep -> libs.any { it.path == dep } }, fragments,
-                    pluginOptions = plugins?.options ?: emptyList(), buildDir = p.layout.buildDirectory.get().asFile.absolutePath)
+                    pluginOptions = plugins?.options ?: emptyList(), compilerArgs = args,
+                    buildDir = p.layout.buildDirectory.get().asFile.absolutePath)
             }
             // App first, then libraries in declaration order.
             return result.sortedBy { if (it.kind == ModuleKind.APP) 0 else 1 }

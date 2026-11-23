@@ -225,10 +225,29 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         else -> "unsupported"
     }
 
-    fun libraryArgs(m: HrModule, out: File = s.klibOf(m)): List<String> = listOf(
-        "-target", s.target, "-p", "library", "-g",
-        "-Xplugin=${s.composePlugin}",
-    ) + composeOptions + projectPluginArgs(m) + listOf("-opt-in=kotlinx.cinterop.ExperimentalForeignApi") + klibLinks(m) + sourceArgs(m) + listOf("-o", out.path.removeSuffix(".klib"))
+    fun libraryArgs(m: HrModule, out: File = s.klibOf(m)): List<String> {
+        val base = listOf("-target", s.target, "-p", "library", "-g", "-Xplugin=${s.composePlugin}") + composeOptions + projectPluginArgs(m) +
+            listOf("-opt-in=kotlinx.cinterop.ExperimentalForeignApi")
+        val sources = sourceArgs(m)
+        return base + projectCompilerArgs(m, base + sources) + klibLinks(m) + sources + listOf("-o", out.path.removeSuffix(".klib"))
+    }
+
+    /**
+     * #133: the module's own compiler settings ([HrModule.compilerArgs]) without what [base] (this compile's plugin-owned
+     * arguments) already has; the language/API versions are checked against the toolchain's compiler first.
+     */
+    fun projectCompilerArgs(m: HrModule, base: List<String>): List<String> {
+        if (m.compilerArgs.isEmpty()) return emptyList()
+        checkLanguageVersions
+        return CompilerArgs.without(m.compilerArgs, base)
+    }
+
+    /** #133: every module's -language-version / -api-version against the versions the toolchain's compiler knows (once). */
+    private val checkLanguageVersions: Unit by lazy {
+        val known = CompilerArgs.knownLanguageVersions(File(s.compilerJar))
+        val problems = s.modules.flatMap { m -> CompilerArgs.unsupportedVersions(m.compilerArgs, known, compilerVersion()).map { "${m.path}: $it" } }
+        if (problems.isNotEmpty()) throw GradleException("CMP hot reload: " + problems.joinToString("\n"))
+    }
 
     /**
      * #52 (#32, toolchain .9+): the package compile writes the bootstrap payload paths to a list instead of copying
@@ -250,7 +269,7 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
             *composeOptions.toTypedArray(),
             *projectPluginArgs(s.app).toTypedArray(),
             "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
-        ) + s.linkerOptions.map { "-linker-option=$it" } +
+        ).let { base -> base + projectCompilerArgs(s.app, base + sourceArgs(s.app)) } + s.linkerOptions.map { "-linker-option=$it" } +
             listOf("-linker-option=-force_load", "-linker-option=${s.objcUtilsLib}") +
             klibLinks(null) +
             (dumpCaches?.let { listOf("-Xdump-built-caches-to=${it.path}") } ?: emptyList()) +
@@ -284,6 +303,8 @@ class Pipeline(private val s: HrSettings, private val logger: Logger) {
         args: List<String>, daemonSocket: String?, kind: String, cacheOnly: Boolean, daemons: Daemons?,
         retryDirectOnError: Boolean,
     ) {
+        // the full argument list of every hot reload compile (--info), to compare with the normal build's compile
+        logger.info("compile args ($kind${if (cacheOnly) ", cache only" else ""}): " + args.joinToString(" "))
         if (daemonSocket != null && daemons != null) {
             val offset = daemons.logSize(kind)
             when (val r = CompileDaemonClient.request(daemonSocket, args)) {

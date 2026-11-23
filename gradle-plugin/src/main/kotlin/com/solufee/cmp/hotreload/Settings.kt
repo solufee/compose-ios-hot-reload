@@ -28,6 +28,12 @@ data class HrModule(
     val compilerPlugins: List<String> = emptyList(),
     val pluginOptions: List<String> = emptyList(),
     /**
+     * #133: the project's compiler settings for this module (freeCompilerArgs, optIn, language/API version, ... of its
+     * normal compile) and cmpHotReload's extraCompilerArgs, filtered and deduplicated ([CompilerArgs.merge]); passed to
+     * every hot reload compile of the module and the release check.
+     */
+    val compilerArgs: List<String> = emptyList(),
+    /**
      * #76: the module's build directory (absolute, from `project.layout.buildDirectory` at configuration); source
      * directories under it are generated. Null when unknown (then nothing counts as generated).
      */

@@ -50,6 +50,9 @@ object BuildIdentity {
             "compilerPlugins " + plugins.joinToString(" ") { "${File(it).name}=${shas.sha(File(it)).take(16)}" }.ifEmpty { "-" },
             "pluginOptions " + s.modules.filter { it.pluginOptions.isNotEmpty() }.sortedBy { it.path }
                 .joinToString(" ") { m -> "${m.path}=${m.pluginOptions.sorted().joinToString(",")}" }.ifEmpty { "-" },
+            // #133: the modules' own compiler settings and extraCompilerArgs: another value must rebuild (as compiler plugins do)
+            "compilerArgs " + s.modules.filter { it.compilerArgs.isNotEmpty() }.sortedBy { it.path }
+                .joinToString(" ") { m -> "${m.path}=${m.compilerArgs.joinToString(",")}" }.ifEmpty { "-" },
             // switches that change generated code (Compose) or what the merge step produces and caches
             "abi stableKeys=${s.stableKeys}",
             "packaging keepCompactUnwind=${s.keepCompactUnwind} libsInExecutable=${s.libsInExecutable}",
@@ -77,10 +80,29 @@ object BuildIdentity {
                 val old = before.associateBy { it.substringBefore(' ') }
                 current.filter { old[it.substringBefore(' ')] != it }.joinToString("; ") { line ->
                     val key = line.substringBefore(' ')
-                    "$key ${old[key]?.substringAfter(' ')?.take(40) ?: "-"} -> ${line.substringAfter(' ').take(40)}"
+                    val (a, b) = differingParts(old[key]?.substringAfter(' ') ?: "-", line.substringAfter(' '))
+                    "$key $a -> $b"
                 }
             }
         }
+    }
+
+    /**
+     * [a] and [b] in full when both are short; otherwise the parts that differ (a common start and end left out as
+     * "…"), at most 60 characters each, so a change in a long line (e.g. one more compiler argument) shows.
+     */
+    fun differingParts(a: String, b: String): Pair<String, String> {
+        if (a.length <= 60 && b.length <= 60) return a to b
+        var p = 0
+        while (p < a.length && p < b.length && a[p] == b[p]) p++
+        var q = 0
+        while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] == b[b.length - 1 - q]) q++
+        fun part(s: String): String {
+            val mid = s.substring(p, s.length - q).ifEmpty { "(nothing)" }
+            val cut = if (mid.length > 60) mid.take(60) + "…" else mid
+            return (if (p > 0) "…" else "") + cut + (if (q > 0 && mid.length <= 60) "…" else "")
+        }
+        return part(a) to part(b)
     }
 
     /**
