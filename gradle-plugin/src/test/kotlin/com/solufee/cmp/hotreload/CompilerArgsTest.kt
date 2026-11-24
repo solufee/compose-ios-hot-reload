@@ -104,8 +104,8 @@ class CompilerArgsTest {
     fun `hot reload compiles carry the module's arguments once, after the plugin's, and check the versions`() {
         val dir = File(tmp, "core/src/commonMain/kotlin").apply { mkdirs() }
         File(dir, "A.kt").writeText("package core\nfun a() = 1\n")
-        val core = HrModule(":core", ModuleKind.LIBRARY, dir.path, emptyList(), compilerArgs = listOf("-Xcontext-parameters", "-opt-in=kotlinx.cinterop.ExperimentalForeignApi"))
-        val app = HrModule(":app", ModuleKind.APP, File(tmp, "app").apply { mkdirs() }.path, listOf(":core"), compilerArgs = listOf("-language-version", "2.1"))
+        val core = HrModule(":core", ModuleKind.LIBRARY, dir.path, emptyList(), compilerArgs = listOf("-Xcontext-parameters", "-opt-in=kotlinx.cinterop.ExperimentalForeignApi", "-Werror", "-Xexplicit-api=strict"))
+        val app = HrModule(":app", ModuleKind.APP, File(tmp, "app").apply { mkdirs() }.path, listOf(":core"), compilerArgs = listOf("-language-version", "2.1", "-Werror", "-progressive", "-Xexplicit-api=strict"))
         val s = HrSettings(
             rootDir = tmp.path, workDir = File(tmp, "work").path, dist = "/d", kotlinc = "/k", compilerJar = compilerJar("2.0", "2.1").path,
             composePlugin = "/nonexistent.jar", klibList = File(tmp, "klibs.txt").apply { writeText("") }.path, kaldoDylib = "/l", kaldoSha256 = null,
@@ -119,6 +119,12 @@ class CompilerArgsTest {
         assertTrue(lib.indexOf("-Xcontext-parameters") > lib.indexOf("-opt-in=kotlinx.cinterop.ExperimentalForeignApi"), lib.toString())
         assertTrue(lib.indexOf("-Xcontext-parameters") < lib.indexOf("-o"), lib.toString())
         val prog = p.programArgs(File(tmp, "x.kexe"), null)
+        // #137: -Werror reaches the klib compiles but not the split-scheme package/patch compile (its scheme always warns);
+        // the other modes stay
+        assertTrue("-Werror" in lib && "-Xexplicit-api=strict" in lib, lib.toString())
+        assertFalse("-Werror" in prog, prog.toString())
+        assertTrue("-progressive" in prog && "-Xexplicit-api=strict" in prog && "-Xcompilation-scheme=split" in prog, prog.toString())
+        assertTrue("-Werror" in p.libraryArgs(app), "the app klib (classifier, packaging) keeps -Werror")
         assertEquals(listOf("2.1"), prog.withIndex().filter { (i, _) -> i > 0 && prog[i - 1] == "-language-version" }.map { it.value })
         // a version the compiler does not know stops the compile, before anything is built
         val bad = Pipeline(s.copy(modules = listOf(app.copy(compilerArgs = listOf("-language-version", "2.7")), core)), Logging.getLogger("t"))

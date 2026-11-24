@@ -111,6 +111,23 @@ object CompilerArgs {
         return Merged(kept.flatMap { it.render() }, dropped, warnings)
     }
 
+    /**
+     * #137: the package and patch compiles use the split compilation scheme (`-Xcompilation-scheme=split`, the
+     * plugin's own), for which Kotlin/Native always prints "split compilation is an experimental feature …"; with
+     * `-Werror` (allWarningsAsErrors) that warning alone fails the compile. So those two compiles do not get `-Werror`;
+     * every klib compile (library modules, and the app module's klib when packaging) still does. Logged once at info.
+     */
+    fun withoutWerrorForSplit(args: List<String>, logger: org.gradle.api.logging.Logger?): List<String> {
+        if ("-Werror" !in args) return args
+        if (werrorNoted.compareAndSet(false, true)) {
+            logger?.info("CMP hot reload: -Werror (allWarningsAsErrors) is not passed to the package and patch compiles: their split " +
+                "compilation scheme always prints a compiler warning; the klib compiles keep it")
+        }
+        return args.filter { it != "-Werror" }
+    }
+
+    private val werrorNoted = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** [args] without the options [base] (the plugin's own arguments of that compile) already has, pairs included. */
     fun without(args: List<String>, base: List<String>): List<String> {
         val have = parse(base).toSet()

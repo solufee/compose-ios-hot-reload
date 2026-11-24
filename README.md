@@ -47,7 +47,7 @@ Kotlin Multiplatform wizard template):
 ```kotlin
 plugins {
     // existing Kotlin Multiplatform and Compose plugins
-    id("com.solufee.cmp.hotreload") version "0.2.13"
+    id("com.solufee.cmp.hotreload") version "0.2.14"
 }
 ```
 
@@ -277,6 +277,14 @@ cmpHotReload {
 
 A `-language-version` or `-api-version` the toolchain's compiler does not know stops with the list of the versions it
 does. The full rule table is in [docs/INTERFACE.md §11](docs/INTERFACE.md).
+
+**Upgrading from 0.2.13: go straight to 0.2.14.** 0.2.13 fails to package a project that uses `explicitApi()`: the
+UIKit entry the plugin generates for the app module (`HotReloadMain.kt`) was compiled with the project's explicit API
+mode and had no visibility modifiers (`visibility must be specified in explicit API mode`). Since plugin 0.2.14 that
+generated source compiles without an error or a warning under explicit API mode (strict or warning),
+`allWarningsAsErrors` and `progressiveMode`; your own code stays under the modes you set. With `allWarningsAsErrors`,
+0.2.13 also failed on a compiler notice about the plugin's own split compilation scheme; 0.2.14 keeps `-Werror` for the
+klib compiles and leaves it out of the package and patch compiles (that notice is always printed there).
 
 Minimal sample (iosMain):
 

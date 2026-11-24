@@ -590,6 +590,7 @@ warn 说明原因，只用 `extraCompilerArgs`，不猜。
 | `-language-version`、`-api-version` | 传，只留一个，后面的赢（模块 > 全局 > 工程） | 两个同名参数是编译器错误 |
 | 插件这次编译已经有的参数（如 `-Xexpect-actual-classes`） | 不重复 | 插件给多平台模块自己加 |
 | 其他（`-Xcontext-parameters`、`-XXLanguage:±F`、`-progressive`、`-Werror`、`-nowarn`、其他 `-X…`） | 传，完全相同的只留一份 | 和正常构建一致 |
+| `-Werror` 在打包、补丁编译里（0.2.14，#137） | 去掉（klib 编译照传） | 这两次编译用插件自己的 split 编译方案，编译器对它总有一条警告 |
 
 被去掉的参数在 `--info` 里列出（`left out of hot reload compiles`）；每次编译的完整参数也在 `--info` 里（`compile args (…)`），
 这一行只在 `--info` 打印，正常输出不变。
@@ -597,6 +598,14 @@ warn 说明原因，只用 `extraCompilerArgs`，不猜。
 **版本检查**：`-language-version` / `-api-version` 的值不在工具链编译器的 `LanguageVersion` 里（读编译器 jar）时，编译前报错，
 列出它认识的版本，并提示用模块的 `extraCompilerArgs` 给热重载单独指定一个；它认识但已不支持的旧版本（如 1.6）由编译器
 自己报错（`language version 1.6 is no longer supported`）。
+
+**插件生成的源码**（0.2.14，#137）：插件生成的 Kotlin 源码（app 模块的 UIKit 入口 `HotReloadMain.kt`）和用户代码一起编译，
+所以它遵守这些模式：explicit API（`-Xexplicit-api=strict` 或 `warning`）、`allWarningsAsErrors`（`-Werror`）、`progressiveMode`
+（`-progressive`）下零报错、零警告（每个声明都写可见性和显式类型，只有 `main` 是 public）。`-Xexplicit-api` 照常透传，不过滤，
+用户自己的代码仍受它约束。0.2.13 的生成源码不满足 explicit API，开了 `explicitApi()` 的工程打包失败，请直接用 0.2.14。
+`-Werror`（`allWarningsAsErrors`）只传给 klib 编译（库模块，以及打包时 app 模块的 klib），不传给打包和补丁这两次程序编译：它们用插件自己的
+`-Xcompilation-scheme=split`，Kotlin/Native 对它总会打印 `split compilation is an experimental feature …`，带 `-Werror` 时只这一条
+警告就会让编译失败（0.2.13 的另一个失败点）。`--info` 里有一行说明。所以热重载时 app 模块新出现的警告不会让补丁失败，正常构建照样会报。
 
 **构建指纹**：每个模块合并后的参数是构建指纹（#98）的 `compilerArgs` 一行，也进 #124 / #129 的编译输入记录；改了参数，
 受影响的 klib 重编，打包时整个热重载状态重建。

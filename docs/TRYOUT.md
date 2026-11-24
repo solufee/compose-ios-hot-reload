@@ -105,7 +105,7 @@ include("app", "ui")
 
 ```kotlin
 plugins {
-    id("com.solufee.cmp.hotreload") version "0.2.13"
+    id("com.solufee.cmp.hotreload") version "0.2.14"
 }
 
 cmpHotReload {
@@ -311,6 +311,11 @@ fun main(args: Array<String>) {
   `apiVersion`、`progressiveMode`、`allWarningsAsErrors`、`suppressWarnings`，`languageSettings` 的 opt-in 和语言特性。以前用了
   `optIn` 打开的 `@RequiresOptIn` API 或某个 `-X` 语言开关的模块，正常构建能编，热重载会编译失败。插件自己的参数（目标、输出、
   链接、编译器插件、缓存、`-Xbinary`）不传，`--info` 里列出；要补参数用下面“可选配置”里的 `extraCompilerArgs`。规则表见 INTERFACE §11。
+- **0.2.13 升级请直接升 0.2.14**：0.2.13 在开了 `explicitApi()` 的工程上打包失败（插件给 app 模块生成的 UIKit 入口
+  `HotReloadMain.kt` 没写可见性，报 `visibility must be specified in explicit API mode`）。0.2.14 起这份生成源码在
+  explicit API（strict / warning）、`allWarningsAsErrors`、`progressiveMode` 下零报错零警告；你自己的代码照样受这些模式约束。
+  开了 `allWarningsAsErrors` 时，`-Werror` 只用在 klib 编译上，不用在打包和补丁编译上：这两次编译用插件自己的 split 编译方案，
+  编译器对它总会打印一条警告（0.2.13 也因为这条失败）。
 - 模拟器开着“应用辅助功能”（`ApplicationAccessibilityEnabled` = 1，Accessibility Inspector 这类工具会打开它）时，每次启动 app
   多 ~1.7 s；`hotReloadRun` 和温重启会打印一行提示，附关闭命令。插件只读这个设置，不会去改。
 
@@ -524,7 +529,7 @@ Gradle 遇到 5xx 会直接失败、不再去问后面的仓库，不加过滤�
 ```kotlin
 plugins {
     // 原来的 kotlinMultiplatform、composeMultiplatform、composeCompiler 不动
-    id("com.solufee.cmp.hotreload") version "0.2.13"
+    id("com.solufee.cmp.hotreload") version "0.2.14"
 }
 ```
 

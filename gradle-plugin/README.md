@@ -5,7 +5,7 @@
 并逐项说明哪里不对、怎么修。
 
 > 编译、打包、热重载、启动、守护进程全部在插件内实现，不调用参考脚本 `hotreload.sh`、`run.sh`、`daemon-start.sh`；
-> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9–0.2.13）。
+> 插件只通过 `docs/INTERFACE.md` 里的工具和协议使用工具链。对接接口 **v8**，支持的工具链发行版是 **2.5.255-hotreload.11.2**（插件 0.2.9–0.2.14）。
 > 默认打开 `KALDO_KEEP_COMPACT_UNWIND`，异常可以穿过热替换进来的代码，页面切换（composable dispose）不受限制。
 
 **第一次使用请看 [docs/TRYOUT.md](../docs/TRYOUT.md)**：从下载工具链到第一次热重载的完整步骤和最小模板。本文是插件的参考手册。
@@ -133,7 +133,7 @@ app 模块需要 `Info.plist`（`CFBundleExecutable`、`CFBundleIdentifier`、`U
 | `app(":x") { iosEntry }` | 自动找 `fun MainViewController()`（模块里有 `fun main(` 时不生成入口） | 返回 `UIViewController` 的函数全名；插件生成调用它的 UIKit 入口 |
 | `app(":x") { bundleId }` | `infoPlist` 里的；没有 Info.plist 时为入口所在包名 + `.hotreload` | 只用于插件生成的 Info.plist（app 名为根项目名的字母数字部分） |
 | `includedModule("<build>", ":<path>") { projectDir; sourceSets; generatorTasks }` | 无 | 复合构建（0.2.2）：included build 里的 KMP 模块从源码编译、参与热重载；按依赖顺序声明。默认按 KMP 默认层级和 Compose 生成目录找源码，资源生成任务通过跨构建任务引用先跑。不声明的 included 模块用那个构建编出的 klib 链接，改动时温重启（`WARM external-klibs`）。有不在默认层级里的 `src/<set>Main/kotlin` 时打印警告并给出要声明的 `sourceSets`（0.2.3）。见 TRYOUT 第 8 节 |
-| `extraCompilerArgs` / `extraCompilerArgs(":path", ...)` | 空 | 0.2.13（#133）：热重载编译本来就带上模块正常构建的编译设置（`freeCompilerArgs`、`optIn`、`languageVersion`、`apiVersion`、`progressiveMode`、`allWarningsAsErrors`、`suppressWarnings`、`languageSettings` 的 opt-in 和语言特性），这两项追加在后面：先全局，再模块（模块的赢）。插件自己的参数（目标、输出、链接、编译器插件、缓存、`-Xbinary`）被去掉，`--info` 列出；`-opt-in X` / `-opt-in=X` 等按“选项 + 值”成对去重；`-language-version` / `-api-version` 只留一个，工具链编译器不认识时报错。规则表见 INTERFACE §11。参数进构建指纹（`compilerArgs` 一行） |
+| `extraCompilerArgs` / `extraCompilerArgs(":path", ...)` | 空 | 0.2.13（#133）：热重载编译本来就带上模块正常构建的编译设置（`freeCompilerArgs`、`optIn`、`languageVersion`、`apiVersion`、`progressiveMode`、`allWarningsAsErrors`、`suppressWarnings`、`languageSettings` 的 opt-in 和语言特性），这两项追加在后面：先全局，再模块（模块的赢）。插件自己的参数（目标、输出、链接、编译器插件、缓存、`-Xbinary`）被去掉，`--info` 列出；`-opt-in X` / `-opt-in=X` 等按“选项 + 值”成对去重；`-language-version` / `-api-version` 只留一个，工具链编译器不认识时报错。规则表见 INTERFACE §11。参数进构建指纹（`compilerArgs` 一行）。插件生成的 `HotReloadMain.kt` 在 explicit API（strict / warning）、`allWarningsAsErrors`、`progressiveMode` 下零报错零警告（0.2.14，#137；0.2.13 在开了 `explicitApi()` 的工程上打包失败，请直接升 0.2.14） |
 | `extraKlibs` | 空 | 另外要链进来的 klib 文件或目录；所在目录也作为自动缓存的根（`-Xauto-cache-from`） |
 | `resolveDependencyKlibs` | `true` | 从 `iosSimulatorArm64CompileKlibraries` 解析依赖 klib（KMP 模块）。同一个库只链一份（按 klib 的 `unique_name` 和 Maven 组件整体判断）：Compose 模块用工具链的那份，其他库取工程和工具链两者中较新的那份（0.2.10，#110），打包日志列出每个库用了哪一份；klib ABI 不在 1.6.0–2.5.0、metadata 高于 2.6.0、某个 Compose 模块比工具链里同名的那份新时打包前报错（写出拉进它的依赖）；cinterop klib 打警告（0.2.0 不支持） |
 
